@@ -120,3 +120,11 @@ csharp = ['dep:wit-bindgen-csharp']
 csharp-mono = ['csharp']
 moonbit = ['dep:wit-bindgen-moonbit']
 async = []
+
+# The component model `implements` clause requires composition support that is
+# not yet in a released `wac`. Until that ships on crates.io, point the `wac`
+# crates at the `implements` branch.
+[patch.crates-io]
+wac-parser = { git = "https://github.com/ricochet/wac", branch = "implements" }
+wac-types = { git = "https://github.com/ricochet/wac", branch = "implements" }
+wac-graph = { git = "https://github.com/ricochet/wac", branch = "implements" }

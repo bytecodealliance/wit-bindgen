@@ -1,0 +1,16 @@
+package example:composition;
+
+// Instantiate the `test` component twice to back the two labeled imports of the
+// runner. The component model `implements` clause lets the runner import the
+// same `store` interface under two different plain names (`primary` and
+// `backup`), each wired here to its own independent instance.
+let primary = new test:test { ... };
+let backup = new test:test { ... };
+
+let runner = new test:runner {
+  primary: primary.store,
+  backup: backup.store,
+  ...
+};
+
+export runner...;

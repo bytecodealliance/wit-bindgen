@@ -1,0 +1,23 @@
+//@ dependencies = ['test']
+//@ wac = 'compose.wac'
+
+package test:implements;
+
+interface store {
+  get: func(key: string) -> option<string>;
+  set: func(key: string, value: string);
+}
+
+// The `runner` imports the same `store` interface twice under two different
+// plain names. This exercises the component model `implements` clause where
+// `primary` and `backup` both resolve to `(implements "test:implements/store")`.
+world runner {
+  import primary: store;
+  import backup: store;
+
+  export run: func();
+}
+
+world test {
+  export store;
+}

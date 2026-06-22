@@ -1024,7 +1024,7 @@ name = "test-helpers"
 version = "0.0.0"
 dependencies = [
  "codegen-macro",
- "wasm-encoder 0.252.0",
+ "wasm-encoder",
  "wit-bindgen-core",
  "wit-component",
  "wit-parser",
@@ -1161,9 +1161,8 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "wac-graph"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1294c33de03c933cceedb23457c9317ca87b3df11580250ec35a6fadc8c229da"
+version = "0.10.1"
+source = "git+https://github.com/ricochet/wac?branch=implements#cffa858037e482602329b160e1d866f16d19cf6f"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -1173,16 +1172,15 @@ dependencies = [
  "semver",
  "thiserror",
  "wac-types",
- "wasm-encoder 0.247.0",
- "wasm-metadata 0.247.0",
- "wasmparser 0.247.0",
+ "wasm-encoder",
+ "wasm-metadata",
+ "wasmparser",
 ]
 
 [[package]]
 name = "wac-parser"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fc78e70c11d6727b9b4b38f96f12f12f115f2f66a88b405918f8c1b6a1be646"
+version = "0.10.1"
+source = "git+https://github.com/ricochet/wac?branch=implements#cffa858037e482602329b160e1d866f16d19cf6f"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -1194,23 +1192,22 @@ dependencies = [
  "serde",
  "thiserror",
  "wac-graph",
- "wasm-encoder 0.247.0",
- "wasm-metadata 0.247.0",
- "wasmparser 0.247.0",
+ "wasm-encoder",
+ "wasm-metadata",
+ "wasmparser",
 ]
 
 [[package]]
 name = "wac-types"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8d2a240ab5ee560f160b161886e53b7eded2d5a9949964c832edfa1636f283b"
+version = "0.10.1"
+source = "git+https://github.com/ricochet/wac?branch=implements#cffa858037e482602329b160e1d866f16d19cf6f"
 dependencies = [
  "anyhow",
  "id-arena",
  "indexmap",
  "semver",
- "wasm-encoder 0.247.0",
- "wasmparser 0.247.0",
+ "wasm-encoder",
+ "wasmparser",
 ]
 
 [[package]]
@@ -1234,19 +1231,9 @@ dependencies = [
  "serde_derive",
  "serde_yaml2",
  "smallvec",
- "wasm-encoder 0.252.0",
- "wasmparser 0.252.0",
+ "wasm-encoder",
+ "wasmparser",
  "wat",
-]
-
-[[package]]
-name = "wasm-encoder"
-version = "0.247.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30b6733b8b91d010a6ac5b0fb237dc46a19650bc4c67db66857e2e787d437204"
-dependencies = [
- "leb128fmt",
- "wasmparser 0.247.0",
 ]
 
 [[package]]
@@ -1256,14 +1243,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8185ae345fa5687c054626ff9a50e7089797a343d9904d1dc9820eb4c4d3196f"
 dependencies = [
  "leb128fmt",
- "wasmparser 0.252.0",
+ "wasmparser",
 ]
 
 [[package]]
 name = "wasm-metadata"
-version = "0.247.0"
+version = "0.252.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "665fe59e56cc9b419ca6fcca56673e3421d1a5011e3b65caf6b726fd9e041d10"
+checksum = "2b7e08e02a3cd55bf778009d4cd6faae50da011f293644daf78a531a32d6d142"
 dependencies = [
  "anyhow",
  "auditable-serde",
@@ -1274,33 +1261,8 @@ dependencies = [
  "serde_json",
  "spdx",
  "url",
- "wasm-encoder 0.247.0",
- "wasmparser 0.247.0",
-]
-
-[[package]]
-name = "wasm-metadata"
-version = "0.252.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b7e08e02a3cd55bf778009d4cd6faae50da011f293644daf78a531a32d6d142"
-dependencies = [
- "anyhow",
- "indexmap",
- "wasm-encoder 0.252.0",
- "wasmparser 0.252.0",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.247.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e6fb4c2bee46c5ea4d40f8cdb5c131725cd976718ec56f1c8e82fbde5fa2a80"
-dependencies = [
- "bitflags",
- "hashbrown 0.17.1",
- "indexmap",
- "semver",
- "serde",
+ "wasm-encoder",
+ "wasmparser",
 ]
 
 [[package]]
@@ -1326,7 +1288,7 @@ dependencies = [
  "leb128fmt",
  "memchr",
  "unicode-width 0.2.2",
- "wasm-encoder 0.252.0",
+ "wasm-encoder",
 ]
 
 [[package]]
@@ -1378,8 +1340,8 @@ dependencies = [
  "clap",
  "heck",
  "indexmap",
- "wasm-encoder 0.252.0",
- "wasm-metadata 0.252.0",
+ "wasm-encoder",
+ "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
 ]
@@ -1391,7 +1353,7 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
- "wasm-encoder 0.252.0",
+ "wasm-encoder",
  "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-bindgen-cpp",
@@ -1424,8 +1386,8 @@ dependencies = [
  "heck",
  "indexmap",
  "test-helpers",
- "wasm-encoder 0.252.0",
- "wasm-metadata 0.252.0",
+ "wasm-encoder",
+ "wasm-metadata",
  "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-component",
@@ -1441,7 +1403,7 @@ dependencies = [
  "heck",
  "indexmap",
  "regex",
- "wasm-metadata 0.252.0",
+ "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
  "wit-parser",
@@ -1454,8 +1416,8 @@ dependencies = [
  "anyhow",
  "clap",
  "heck",
- "wasm-encoder 0.252.0",
- "wasm-metadata 0.252.0",
+ "wasm-encoder",
+ "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
 ]
@@ -1496,7 +1458,7 @@ dependencies = [
  "serde_json",
  "syn",
  "test-helpers",
- "wasm-metadata 0.252.0",
+ "wasm-metadata",
  "wit-bindgen",
  "wit-bindgen-core",
  "wit-component",
@@ -1534,8 +1496,8 @@ dependencies = [
  "wac-types",
  "wasi-preview1-component-adapter-provider",
  "wasm-compose",
- "wasm-encoder 0.252.0",
- "wasmparser 0.252.0",
+ "wasm-encoder",
+ "wasmparser",
  "wat",
  "wit-bindgen-csharp",
  "wit-component",
@@ -1555,9 +1517,9 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "wasm-encoder 0.252.0",
- "wasm-metadata 0.252.0",
- "wasmparser 0.252.0",
+ "wasm-encoder",
+ "wasm-metadata",
+ "wasmparser",
  "wat",
  "wit-parser",
 ]
@@ -1578,7 +1540,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "unicode-ident",
- "wasmparser 0.252.0",
+ "wasmparser",
 ]
 
 [[package]]
