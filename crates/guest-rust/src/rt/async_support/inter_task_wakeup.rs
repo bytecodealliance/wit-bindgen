@@ -57,13 +57,17 @@ impl FutureState<'_> {
         }
         self.inter_task_wakeup.stream_reading = false;
         let handle = self.inter_task_wakeup.stream.as_mut().unwrap().handle();
+        // Remove the stream from our waitable set before cancelling. A
+        // synchronous `stream.cancel-read` traps if the stream is still a member
+        // of a waitable set, so this must happen first. This matches the
+        // unregister-then-cancel ordering in `WaitableOperation::cancel`.
+        self.remove_waitable(handle);
         // Note that the return code here is discarded. No matter what the read
         // is cancelled, and whether we actually read something or whether we
         // cancelled doesn't matter.
         unsafe {
             UnitStreamOps.cancel_read(handle);
         }
-        self.remove_waitable(handle);
     }
 }
 
