@@ -1,12 +1,13 @@
 #![deny(missing_docs)]
 
+use self::try_lock::TryLock;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::task::Wake;
 use core::ffi::c_void;
 use core::future::Future;
-use core::mem;
+use core::mem::{self, ManuallyDrop};
 use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -104,15 +105,28 @@ use spawn_disabled as spawn;
 
 /// Represents a task created by either a call to an async-lifted export or a
 /// future run using `block_on` or `start_task`.
-struct FutureState<'a> {
+struct TaskState<'a> {
     /// Remaining work to do (if any) before this task can be considered "done".
     ///
     /// Note that we won't tell the host the task is done until this is drained
     /// and `waitables` is empty.
     tasks: spawn::Tasks<'a>,
 
-    /// The waitable set containing waitables created by this task, if any.
-    waitable_set: Option<WaitableSet>,
+    /// Dual-mode rust-level Waker and C ABI level "task" for wasip3
+    /// integration.
+    shared: Arc<SharedTaskState>,
+
+    /// Clone of `shared` field, but represented as `std::task::Waker`.
+    waker: Waker,
+
+    /// State related to supporting inter-task wakeup scenarios.
+    inter_task_wakeup: inter_task_wakeup::State,
+}
+
+struct SharedTaskState {
+    /// One of `SLEEP_STATE_*` indicating the current status.
+    sleep_state: AtomicU32,
+    inter_task_stream: inter_task_wakeup::WakerState,
 
     /// State of all waitables in `waitable_set`, and the ptr/callback they're
     /// associated with.
@@ -123,56 +137,44 @@ struct FutureState<'a> {
     // the `wasi_snapshot_preview1` adapter when targeting `wasm32-wasip2` and
     // later, and that's expensive enough that we'd prefer to avoid it for apps
     // which otherwise make no use of the adapter.
-    waitables: BTreeMap<u32, (*mut c_void, unsafe extern "C" fn(*mut c_void, u32))>,
+    //
+    // Also note that the `TryLock` here should never be contended, but it's
+    // used for interior mutability.
+    waitables: TryLock<BTreeMap<u32, CabiWaitable>>,
 
-    /// Raw structure used to pass to `cabi::wasip3_task_set`
-    wasip3_task: cabi::wasip3_task,
-
-    /// Rust-level state for the waker, notably a bool as to whether this has
-    /// been woken.
-    waker: Arc<FutureWaker>,
-
-    /// Clone of `waker` field, but represented as `std::task::Waker`.
-    waker_clone: Waker,
-
-    /// State related to supporting inter-task wakeup scenarios.
-    inter_task_wakeup: inter_task_wakeup::State,
+    /// The waitable set containing waitables created by this task, if any.
+    //
+    // Note the `TryLock` is the same as `waitables` above, it's serving the
+    // purpose of interior mutability.
+    waitable_set: TryLock<Option<WaitableSet>>,
 }
 
-impl FutureState<'_> {
-    fn new(future: BoxFuture<'_>) -> FutureState<'_> {
-        let waker = Arc::new(FutureWaker::default());
-        FutureState {
-            waker_clone: waker.clone().into(),
-            waker,
+/// An entry of `SharedTaskState::waitables` which is added through the C ABI.
+struct CabiWaitable {
+    callback: unsafe extern "C" fn(*mut c_void, u32),
+    callback_ptr: *mut c_void,
+}
+
+unsafe impl Send for CabiWaitable {}
+
+impl TaskState<'_> {
+    fn new(future: BoxFuture<'_>) -> TaskState<'_> {
+        let shared = Arc::new(SharedTaskState {
+            sleep_state: AtomicU32::new(0),
+            inter_task_stream: Default::default(),
+            waitables: Default::default(),
+            waitable_set: Default::default(),
+        });
+        TaskState {
+            waker: shared.clone().into(),
+            shared,
             tasks: spawn::Tasks::new(future),
-            waitable_set: None,
-            waitables: BTreeMap::new(),
-            wasip3_task: cabi::wasip3_task {
-                // This pointer is filled in before calling `wasip3_task_set`.
-                ptr: ptr::null_mut(),
-                version: cabi::WASIP3_TASK_V1,
-                waitable_register,
-                waitable_unregister,
-            },
             inter_task_wakeup: Default::default(),
         }
     }
 
-    fn get_or_create_waitable_set(&mut self) -> &WaitableSet {
-        self.waitable_set.get_or_insert_with(WaitableSet::new)
-    }
-
-    fn add_waitable(&mut self, waitable: u32) {
-        self.get_or_create_waitable_set().join(waitable)
-    }
-
-    fn remove_waitable(&mut self, waitable: u32) {
-        WaitableSet::remove_waitable_from_all_sets(waitable)
-    }
-
     fn remaining_work(&self) -> bool {
-        !self.waitables.is_empty()
+        !self.shared.waitables.try_lock().unwrap().is_empty()
     }
 
     /// Handles the `event{0,1,2}` event codes and returns a corresponding
@@ -190,7 +192,7 @@ impl FutureState<'_> {
 
                 // Cancellation is mapped to destruction in Rust, so return a
                 // code/bool indicating we're done. The caller will then
-                // appropriately deallocate this `FutureState` which will
+                // appropriately deallocate this `TaskState` which will
                 // transitively run all destructors.
                 return CallbackCode::Exit;
             }
@@ -200,7 +202,7 @@ impl FutureState<'_> {
         self.with_p3_task_set(|me| {
             // Transition our sleep state to ensure that the inter-task stream
             // isn't used since there's no need to use that here.
-            me.waker
+            me.shared
                 .sleep_state
                 .store(SLEEP_STATE_WOKEN, Ordering::Relaxed);
 
@@ -221,13 +223,13 @@ impl FutureState<'_> {
             me.cancel_inter_task_stream_read();
 
             loop {
-                let mut context = Context::from_waker(&me.waker_clone);
+                let mut context = Context::from_waker(&me.waker);
 
                 // On each turn of this loop reset the state to "polling"
                 // which clears out any pending wakeup if one was sent. This
                 // in theory helps minimize wakeups from previous iterations
                 // happening in this iteration.
-                me.waker
+                me.shared
                     .sleep_state
                     .store(SLEEP_STATE_POLLING, Ordering::Relaxed);
 
@@ -242,7 +244,8 @@ impl FutureState<'_> {
                     Poll::Ready(()) => {
                         assert!(me.tasks.is_empty());
                         if me.remaining_work() {
-                            let waitable = me.waitable_set.as_ref().unwrap().as_raw();
+                            let set = me.shared.waitable_set.try_lock().unwrap();
+                            let waitable = set.as_ref().unwrap().as_raw();
                             break CallbackCode::Wait(waitable);
                         } else {
                             break CallbackCode::Exit;
@@ -255,10 +258,12 @@ impl FutureState<'_> {
                     // something.
                     Poll::Pending => {
                         assert!(!me.tasks.is_empty());
-                        if me.waker.sleep_state.load(Ordering::Relaxed) == SLEEP_STATE_WOKEN {
+                        if me.shared.sleep_state.load(Ordering::Relaxed) == SLEEP_STATE_WOKEN {
                             if me.remaining_work() {
-                                let (event0, event1, event2) =
-                                    me.waitable_set.as_ref().unwrap().poll();
+                                let (event0, event1, event2) = {
+                                    let set = me.shared.waitable_set.try_lock().unwrap();
+                                    set.as_ref().unwrap().poll()
+                                };
                                 if event0 != EVENT_NONE {
                                     me.deliver_waitable_event(event1, event2);
                                     continue;
@@ -270,11 +275,12 @@ impl FutureState<'_> {
                         // Transition our state to "sleeping" so wakeup
                         // notifications know that they need to signal the
                         // inter-task stream.
-                        me.waker
+                        me.shared
                             .sleep_state
                             .store(SLEEP_STATE_SLEEPING, Ordering::Relaxed);
                         me.read_inter_task_stream();
-                        let waitable = me.waitable_set.as_ref().unwrap().as_raw();
+                        let set = me.shared.waitable_set.try_lock().unwrap();
+                        let waitable = set.as_ref().unwrap().as_raw();
                         break CallbackCode::Wait(waitable);
                     }
                 }
@@ -286,7 +292,7 @@ impl FutureState<'_> {
     /// waitable should be present because it's part of the waitable set which
     /// is kept in-sync with our map.
     fn deliver_waitable_event(&mut self, waitable: u32, code: u32) {
-        self.remove_waitable(waitable);
+        WaitableSet::remove_waitable_from_all_sets(waitable);
 
         if self
             .inter_task_wakeup
@@ -295,17 +301,19 @@ impl FutureState<'_> {
             return;
         }
 
-        let (ptr, callback) = self.waitables.remove(&waitable).unwrap();
+        let c = {
+            let mut waitables = self.shared.waitables.try_lock().unwrap();
+            waitables.remove(&waitable).unwrap()
+        };
         unsafe {
-            callback(ptr, code);
+            (c.callback)(c.callback_ptr, code);
         }
     }
 
     fn with_p3_task_set<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-        // Finish our `wasip3_task` by initializing its self-referential pointer,
-        // and then register it for the duration of this function with
-        // `wasip3_task_set`. The previous value of `wasip3_task_set` will get
-        // restored when this function returns.
+        // Initialize a temporary `wasip3_task` structure on the stack and
+        // inform `wasip3_task_set` that we're now within that task. Note the
+        // RAII guard to reset the task back to its previous contents.
         struct ResetTask(*mut cabi::wasip3_task);
         impl Drop for ResetTask {
             fn drop(&mut self) {
@@ -314,16 +322,32 @@ impl FutureState<'_> {
                 }
             }
         }
-        let self_raw = self as *mut FutureState<'_>;
-        self.wasip3_task.ptr = self_raw.cast();
-        let prev = unsafe { cabi::wasip3_task_set(&mut self.wasip3_task) };
+        // The `ptr` field of `wasip3_task` is to `SharedTaskState` which is
+        // what's cloned/handed out/etc.
+        let shared_raw: *const SharedTaskState = &*self.shared;
+        let mut wasip3_task = cabi::wasip3_task_v2 {
+            v1: cabi::wasip3_task {
+                ptr: shared_raw.cast_mut().cast(),
+                version: cabi::WASIP3_TASK_V2,
+                waitable_register: SharedTaskState::CABI_VTABLE.waitable_register,
+                waitable_unregister: SharedTaskState::CABI_VTABLE.waitable_unregister,
+            },
+            vtable: &SharedTaskState::CABI_VTABLE,
+        };
+
+        // Explicitly take a mutable borrow on the entire `wasip3_task`
+        // structure, and then cast its raw pointer to the "smaller" historical
+        // version, ensuring the final pointer has provenace over the entire
+        // structure.
+        let wasip3_task: *mut cabi::wasip3_task_v2 = &mut wasip3_task;
+        let prev = unsafe { cabi::wasip3_task_set(wasip3_task.cast::<cabi::wasip3_task>()) };
         let _reset = ResetTask(prev);
 
         f(self)
     }
 }
 
-impl Drop for FutureState<'_> {
+impl Drop for TaskState<'_> {
     fn drop(&mut self) {
         // If there's an active read of the inter-task stream, go ahead and
         // cancel it, since we're about to drop the stream anyway.
@@ -342,32 +366,78 @@ impl Drop for FutureState<'_> {
     }
 }
 
-unsafe extern "C" fn waitable_register(
-    ptr: *mut c_void,
-    waitable: u32,
-    callback: unsafe extern "C" fn(*mut c_void, u32),
-    callback_ptr: *mut c_void,
-) -> *mut c_void {
-    let ptr = ptr.cast::<FutureState<'static>>();
-    assert!(!ptr.is_null());
-    unsafe {
-        (*ptr).add_waitable(waitable);
-        match (*ptr).waitables.insert(waitable, (callback_ptr, callback)) {
-            Some((prev, _)) => prev,
+impl SharedTaskState {
+    const CABI_VTABLE: cabi::wasip3_task_vtable = cabi::wasip3_task_vtable {
+        waitable_register: Self::cabi_waitable_register,
+        waitable_unregister: Self::cabi_waitable_unregister,
+        drop: Self::cabi_drop,
+        clone: Self::cabi_clone,
+    };
+
+    /// Adds the `waitable` provided to this task's waitable set.
+    fn add_waitable(&self, waitable: u32) {
+        let mut set = self.waitable_set.try_lock().unwrap();
+        set.get_or_insert_with(WaitableSet::new).join(waitable);
+    }
+
+    /// Implementation of the CABI `waitable_register` function.
+    fn waitable_register(
+        &self,
+        waitable: u32,
+        callback: unsafe extern "C" fn(*mut c_void, u32),
+        callback_ptr: *mut c_void,
+    ) -> *mut c_void {
+        self.add_waitable(waitable);
+        let mut waitables = self.waitables.try_lock().unwrap();
+        let c = CabiWaitable {
+            callback,
+            callback_ptr,
+        };
+        match waitables.insert(waitable, c) {
+            Some(prev) => prev.callback_ptr,
             None => ptr::null_mut(),
         }
     }
-}
 
-unsafe extern "C" fn waitable_unregister(ptr: *mut c_void, waitable: u32) -> *mut c_void {
-    let ptr = ptr.cast::<FutureState<'static>>();
-    assert!(!ptr.is_null());
-    unsafe {
-        (*ptr).remove_waitable(waitable);
-        match (*ptr).waitables.remove(&waitable) {
-            Some((prev, _)) => prev,
+    /// Implementation of the CABI `waitable_unregister` function.
+    fn waitable_unregister(&self, waitable: u32) -> *mut c_void {
+        WaitableSet::remove_waitable_from_all_sets(waitable);
+        let mut waitables = self.waitables.try_lock().unwrap();
+        match waitables.remove(&waitable) {
+            Some(prev) => prev.callback_ptr,
             None => ptr::null_mut(),
         }
+    }
+
+    /// Helper to go from a raw `c_void` FFI pointer to a typed
+    /// self-representation.
+    unsafe fn cabi_to_self(ptr: *mut c_void) -> ManuallyDrop<Arc<SharedTaskState>> {
+        unsafe { ManuallyDrop::new(Arc::from_raw(ptr.cast::<SharedTaskState>())) }
+    }
+
+    unsafe extern "C" fn cabi_waitable_register(
+        ptr: *mut c_void,
+        waitable: u32,
+        callback: unsafe extern "C" fn(*mut c_void, u32),
+        callback_ptr: *mut c_void,
+    ) -> *mut c_void {
+        let me = unsafe { Self::cabi_to_self(ptr) };
+        me.waitable_register(waitable, callback, callback_ptr)
+    }
+
+    unsafe extern "C" fn cabi_waitable_unregister(ptr: *mut c_void, waitable: u32) -> *mut c_void {
+        let me = unsafe { Self::cabi_to_self(ptr) };
+        me.waitable_unregister(waitable)
+    }
+
+    unsafe extern "C" fn cabi_clone(ptr: *mut c_void) -> *mut c_void {
+        let me = unsafe { Self::cabi_to_self(ptr) };
+        Arc::into_raw(Arc::clone(&me)).cast_mut().cast()
+    }
+
+    unsafe extern "C" fn cabi_drop(ptr: *mut c_void) {
+        let mut me = unsafe { Self::cabi_to_self(ptr) };
+        unsafe { ManuallyDrop::drop(&mut me) }
     }
 }
 
@@ -380,14 +450,7 @@ const SLEEP_STATE_WOKEN: u32 = 1;
 /// Wakeups on this status signal the inter-task stream.
 const SLEEP_STATE_SLEEPING: u32 = 2;
 
-#[derive(Default)]
-struct FutureWaker {
-    /// One of `SLEEP_STATE_*` indicating the current status.
-    sleep_state: AtomicU32,
-    inter_task_stream: inter_task_wakeup::WakerState,
-}
-
-impl Wake for FutureWaker {
+impl Wake for SharedTaskState {
     fn wake(self: Arc<Self>) {
         Self::wake_by_ref(&self)
     }
@@ -483,11 +546,11 @@ impl ReturnCode {
 /// immediately with its result.
 #[doc(hidden)]
 pub fn start_task(task: impl Future<Output = ()> + 'static) -> i32 {
-    // Allocate a new `FutureState` which will track all state necessary for
+    // Allocate a new `TaskState` which will track all state necessary for
     // our exported task.
-    let state = Box::into_raw(Box::new(FutureState::new(Box::pin(task))));
+    let state = Box::into_raw(Box::new(TaskState::new(Box::pin(task))));
 
-    // Store our `FutureState` into our context-local-storage slot and then
+    // Store our `TaskState` into our context-local-storage slot and then
     // pretend we got EVENT_NONE to kick off everything.
     //
     // SAFETY: we should own `context.set` as we're the root level exported
@@ -505,13 +568,13 @@ pub fn start_task(task: impl Future<Output = ()> + 'static) -> i32 {
 ///
 /// # Unsafety
 ///
-/// This function assumes that `context_get()` returns a `FutureState`.
+/// This function assumes that `context_get()` returns a `TaskState`.
 #[doc(hidden)]
 pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     // Acquire our context-local state, assert it's not-null, and then reset
     // the state to null while we're running to help prevent any unintended
     // usage.
-    let state = context_get().cast::<FutureState<'static>>();
+    let state = context_get().cast::<TaskState<'static>>();
     assert!(!state.is_null());
     unsafe {
         context_set(ptr::null_mut());
@@ -540,7 +603,7 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
 // TODO: refactor so `'static` bounds aren't necessary
 pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
     let mut result = None;
-    let mut state = FutureState::new(Box::pin(async {
+    let mut state = TaskState::new(Box::pin(async {
         result = Some(future.await);
     }));
     let mut event = (EVENT_NONE, 0, 0);
@@ -550,8 +613,14 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
                 drop(state);
                 break result.unwrap();
             }
-            CallbackCode::Yield => event = state.waitable_set.as_ref().unwrap().poll(),
-            CallbackCode::Wait(_) => event = state.waitable_set.as_ref().unwrap().wait(),
+            CallbackCode::Yield => {
+                let set = state.shared.waitable_set.try_lock().unwrap();
+                event = set.as_ref().unwrap().poll()
+            }
+            CallbackCode::Wait(_) => {
+                let set = state.shared.waitable_set.try_lock().unwrap();
+                event = set.as_ref().unwrap().wait()
+            }
         }
     }
 }
