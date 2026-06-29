@@ -135,10 +135,6 @@ pub struct wasip3_task_v2 {
 /// This was introduced in the "v2" ABI and is a member of `wasip3_task_v2`.
 #[repr(C)]
 pub struct wasip3_task_vtable {
-    /// Currently `WASIP3_TASK_V2` as that was the first version that specified
-    /// vtables.
-    pub version: u32,
-
     /// Register a new `waitable` for this exported task.
     ///
     /// This exported task will add `waitable` to its `waitable-set`. When it

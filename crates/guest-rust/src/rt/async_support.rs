@@ -368,7 +368,6 @@ impl Drop for TaskState<'_> {
 
 impl SharedTaskState {
     const CABI_VTABLE: cabi::wasip3_task_vtable = cabi::wasip3_task_vtable {
-        version: cabi::WASIP3_TASK_V2,
         waitable_register: Self::cabi_waitable_register,
         waitable_unregister: Self::cabi_waitable_unregister,
         drop: Self::cabi_drop,
