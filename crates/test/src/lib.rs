@@ -1081,6 +1081,30 @@ status: {}",
     ///
     /// Stores the output at `compile.output`.
     fn convert_p1_to_component(&self, p1: &Path, compile: &Compile<'_>) -> Result<()> {
+        self.convert_p1_to_component_impl(p1, compile, false)
+    }
+
+    /// Converts the WASIp1 module at `p1` to a component, appending component
+    /// type metadata from the test WIT even if existing metadata is present.
+    ///
+    /// Some toolchains emit incomplete or stale component type metadata even
+    /// when asked to skip componentization, while still needing their own
+    /// metadata for WASI imports. Use this when the test harness must add
+    /// guest-world metadata without discarding toolchain metadata.
+    fn convert_p1_to_component_appending_type_metadata(
+        &self,
+        p1: &Path,
+        compile: &Compile<'_>,
+    ) -> Result<()> {
+        self.convert_p1_to_component_impl(p1, compile, true)
+    }
+
+    fn convert_p1_to_component_impl(
+        &self,
+        p1: &Path,
+        compile: &Compile<'_>,
+        append_component_type: bool,
+    ) -> Result<()> {
         let mut resolve = wit_parser::Resolve::default();
         let (pkg, _) = resolve
             .push_path(&compile.component.bindgen.wit_path)
@@ -1088,7 +1112,7 @@ status: {}",
         let world = resolve.select_world(&[pkg], Some(&compile.component.bindgen.world))?;
         let mut module = fs::read(&p1).context("failed to read wasm file")?;
 
-        if !has_component_type_sections(&module) {
+        if append_component_type || !has_component_type_sections(&module) {
             let encoded =
                 wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
             let section = wasm_encoder::CustomSection {
