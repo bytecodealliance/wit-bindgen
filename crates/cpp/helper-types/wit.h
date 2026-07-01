@@ -46,11 +46,8 @@ public:
 /// @brief Replaces void in the error position of a result
 struct Void {};
 
-/// A string in linear memory, freed unconditionally using free
-///
-/// A normal C++ string makes no guarantees about where the characters
-/// are stored and how this is freed.
-class string {
+class borrowed_string {
+protected:
   uint8_t const *data_;
   size_t length;
   // C++ is horrible!
@@ -58,43 +55,17 @@ class string {
   static uint8_t const* empty_ptr() { return (uint8_t const *)1; }
 
 public:
-  // this constructor is helpful for creating vector<string>
-  string(string const &b) : string(string::from_view(b.get_view())) {}
-  string(string &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
-  string &operator=(string const &) = delete;
-  string &operator=(string &&b) {
-    if (data_ && data_!=empty_ptr()) {
-      free(const_cast<uint8_t *>(data_));
-    }
-    data_ = b.data_;
-    length = b.length;
-    b.data_ = nullptr;
-    return *this;
-  }
-  string(char const *d, size_t l) : data_((uint8_t const *)d), length(l) {}
+  borrowed_string(borrowed_string &&b) : data_(b.data_), length(b.length) {}
+  borrowed_string &operator=(borrowed_string const &) = delete;
+  borrowed_string(char const *d, size_t l) : data_((uint8_t const *)d), length(l) {}
   char const *data() const { return (char const *)data_; }
   size_t size() const { return length; }
   bool empty() const { return !length; }
-  ~string() {
-    if (data_ && data_!=empty_ptr()) {
-      free(const_cast<uint8_t *>(data_));
-    }
-  }
-  // leak the memory
-  void leak() { data_ = nullptr; }
-  // typically called by post
-  static void drop_raw(void *ptr) { free(ptr); }
   std::string_view get_view() const {
     return std::string_view((const char *)data_, length);
   }
   std::string to_string() const {
     return std::string((const char *)data_, length);
-  }
-  static string from_view(std::string_view v) {
-    if (!v.size()) return string((char const*)empty_ptr(), 0);
-    char* addr = (char*)malloc(v.size());
-    memcpy(addr, v.data(), v.size());
-    return string(addr, v.size());
   }
   char* begin() {
     return (char*)data_;
@@ -110,16 +81,75 @@ public:
   }
 };
 
-/// A vector in linear memory, freed unconditionally using free
+/// A string in linear memory, freed unconditionally using free
 ///
-/// You can't detach the data memory from a vector, nor create one
-/// in a portable way from a buffer and lenght without copying.
-template <class T> class vector {
+/// A normal C++ string makes no guarantees about where the characters
+/// are stored and how this is freed.
+class string : public borrowed_string {
+  // this constructor is helpful for creating vector<string>
+  string(string const &b) : string(string::from_view(b.get_view())) {}
+  string(string &&b) : borrowed_string(std::move(b)) { b.data_ = nullptr; }
+  string &operator=(string const &) = delete;
+  string(char const *d, size_t l) : borrowed_string(d, l) {}
+  string &operator=(string &&b) {
+    if (this->data_ && this->data_!=this->empty_ptr()) {
+      free(const_cast<uint8_t *>(this->data_));
+    }
+    this->data_ = b.data_;
+    this->length = b.length;
+    b.data_ = nullptr;
+    return *this;
+  }
+  // leak the memory
+  void leak() { data_ = nullptr; }
+  // typically called by post
+  static void drop_raw(void *ptr) { free(ptr); }
+  ~string() {
+    if (this->data_ && this->data_!=this->empty_ptr()) {
+      free(const_cast<uint8_t *>(this->data_));
+    }
+  }
+  static string from_view(std::string_view v) {
+    if (!v.size()) return string((char const*)empty_ptr(), 0);
+    char* addr = (char*)malloc(v.size());
+    memcpy(addr, v.data(), v.size());
+    return string(addr, v.size());
+  }
+};
+
+template <class T> class borrowed_vector {
   T *data_;
   size_t length;
 
   static T* empty_ptr() { return (T*)alignof(T); }
 
+public:
+  borrowed_vector(borrowed_vector const &) = delete;
+  borrowed_vector(borrowed_vector &&b) : data_(b.data_), length(b.length) {}
+  borrowed_vector &operator=(borrowed_vector const &) = delete;
+  borrowed_vector &operator=(borrowed_vector &&b) {
+    data_ = b.data_;
+    length = b.length;
+    return *this;
+  }
+  vector(T *d, size_t l) : data_(d), length(l) {}
+  // Rust needs a nonzero pointer here (alignment is typical)
+  vector() : data_(empty_ptr()), length() {}
+  T const *data() const { return data_; }
+  T *data() { return data_; }
+  T &operator[](size_t n) { return data_[n]; }
+  T const &operator[](size_t n) const { return data_[n]; }
+  size_t size() const { return length; }
+  bool empty() const { return !length; }
+  std::span<T> get_view() const { return std::span<T>(data_, length); }
+  std::span<const T> get_const_view() const { return std::span<const T>(data_, length); }
+};
+
+/// A vector in linear memory, freed unconditionally using free
+///
+/// You can't detach the data memory from a vector, nor create one
+/// in a portable way from a buffer and lenght without copying.
+template <class T> class vector : public borrowed_vector {
 public:
   vector(vector const &) = delete;
   vector(vector &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
@@ -133,15 +163,6 @@ public:
     b.data_ = nullptr;
     return *this;
   }
-  vector(T *d, size_t l) : data_(d), length(l) {}
-  // Rust needs a nonzero pointer here (alignment is typical)
-  vector() : data_(empty_ptr()), length() {}
-  T const *data() const { return data_; }
-  T *data() { return data_; }
-  T &operator[](size_t n) { return data_[n]; }
-  T const &operator[](size_t n) const { return data_[n]; }
-  size_t size() const { return length; }
-  bool empty() const { return !length; }
   ~vector() {
     if (data_ && length>0) {
       for (unsigned i=0;i<length;++i) { data_[i].~T(); }
@@ -160,8 +181,6 @@ public:
   T* leak() { T*result = data_; data_ = nullptr; return result; }
   // typically called by post
   static void drop_raw(void *ptr) { if (ptr!=empty_ptr()) free(ptr); }
-  std::span<T> get_view() const { return std::span<T>(data_, length); }
-  std::span<const T> get_const_view() const { return std::span<const T>(data_, length); }
   template <class U> static vector<T> from_view(std::span<U> const& a) {
     auto result = vector<T>::allocate(a.size());
     for (uint32_t i=0;i<a.size();++i) {
