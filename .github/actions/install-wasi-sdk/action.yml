@@ -38,4 +38,8 @@ runs:
     - name: Setup `wasmtime`
       uses: bytecodealliance/actions/wasmtime/setup@v1
       with:
-        version: "44.0.0"
+        # Pinned to the rolling `dev` build (main, which will become wasmtime
+        # 47) because the component model `implements` clause used by the
+        # `implements` runtime test has landed on `main` but is not in a
+        # released wasmtime yet.
+        version: "dev"
