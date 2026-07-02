@@ -16,33 +16,6 @@
 #include <utility> // pair
 
 namespace wit {
-/// @brief Helper class to map between IDs and resources
-/// @tparam R Type of the Resource
-template <class R> class ResourceTable {
-  static std::map<int32_t, R> resources;
-
-public:
-  static R *lookup_resource(int32_t id) {
-    auto result = resources.find(id);
-    return result == resources.end() ? nullptr : &result->second;
-  }
-  static int32_t store_resource(R &&value) {
-    auto last = resources.rbegin();
-    int32_t id = last == resources.rend() ? 0 : last->first + 1;
-    resources.insert(std::pair<int32_t, R>(id, std::move(value)));
-    return id;
-  }
-  static std::optional<R> remove_resource(int32_t id) {
-    auto iter = resources.find(id);
-    std::optional<R> result;
-    if (iter != resources.end()) {
-      result = std::move(iter->second);
-      resources.erase(iter);
-    }
-    return std::move(result);
-  }
-};
-
 /// @brief Replaces void in the error position of a result
 struct Void {};
 
@@ -86,6 +59,7 @@ public:
 /// A normal C++ string makes no guarantees about where the characters
 /// are stored and how this is freed.
 class string : public borrowed_string {
+public:
   // this constructor is helpful for creating vector<string>
   string(string const &b) : string(string::from_view(b.get_view())) {}
   string(string &&b) : borrowed_string(std::move(b)) { b.data_ = nullptr; }
@@ -118,6 +92,7 @@ class string : public borrowed_string {
 };
 
 template <class T> class borrowed_vector {
+protected:
   T *data_;
   size_t length;
 
@@ -132,9 +107,9 @@ public:
     length = b.length;
     return *this;
   }
-  vector(T *d, size_t l) : data_(d), length(l) {}
+  borrowed_vector(T *d, size_t l) : data_(d), length(l) {}
   // Rust needs a nonzero pointer here (alignment is typical)
-  vector() : data_(empty_ptr()), length() {}
+  borrowed_vector() : data_(empty_ptr()), length() {}
   T const *data() const { return data_; }
   T *data() { return data_; }
   T &operator[](size_t n) { return data_[n]; }
@@ -149,38 +124,39 @@ public:
 ///
 /// You can't detach the data memory from a vector, nor create one
 /// in a portable way from a buffer and lenght without copying.
-template <class T> class vector : public borrowed_vector {
+template <class T> class vector : public borrowed_vector<T> {
 public:
   vector(vector const &) = delete;
-  vector(vector &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
+  vector(vector &&b) : borrowed_vector<T>(b.data_, b.length) { b.data_ = nullptr; }
+  vector(T *d, size_t l) : borrowed_vector<T>(d, l) {}
   vector &operator=(vector const &) = delete;
   vector &operator=(vector &&b) {
-    if (data_ && length>0) {
-      free(data_);
+    if (this->data_ && this->length>0) {
+      free(this->data_);
     }
-    data_ = b.data_;
-    length = b.length;
+    this->data_ = b.data_;
+    this->length = b.length;
     b.data_ = nullptr;
     return *this;
   }
   ~vector() {
-    if (data_ && length>0) {
-      for (unsigned i=0;i<length;++i) { data_[i].~T(); }
-      free((void*)data_);
+    if (this->data_ && this->length>0) {
+      for (unsigned i=0;i<this->length;++i) { this->data_[i].~T(); }
+      free((void*)this->data_);
     }
   }
   // WARNING: vector contains uninitialized elements
   static vector<T> allocate(size_t len) {
-    if (!len) return vector<T>(empty_ptr(), 0);
+    if (!len) return vector<T>(borrowed_vector<T>::empty_ptr(), 0);
     return vector<T>((T*)malloc(sizeof(T)*len), len);
   }
   void initialize(size_t n, T&& elem) {
-    new ((void*)(data_+n)) T(std::move(elem));
+    new ((void*)(this->data_+n)) T(std::move(elem));
   }
   // leak the memory
-  T* leak() { T*result = data_; data_ = nullptr; return result; }
+  T* leak() { T*result = this->data_; this->data_ = nullptr; return result; }
   // typically called by post
-  static void drop_raw(void *ptr) { if (ptr!=empty_ptr()) free(ptr); }
+  static void drop_raw(void *ptr) { if (ptr!=borrowed_vector<T>::empty_ptr()) free(ptr); }
   template <class U> static vector<T> from_view(std::span<U> const& a) {
     auto result = vector<T>::allocate(a.size());
     for (uint32_t i=0;i<a.size();++i) {
