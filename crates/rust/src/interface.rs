@@ -6,6 +6,7 @@ use crate::{
 };
 use anyhow::Result;
 use heck::*;
+use indexmap::IndexSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::mem;
@@ -2086,6 +2087,119 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         result
     }
 
+    /// The owning interface and its package, when `id` is owned by an interface.
+    fn type_owner(&self, id: TypeId) -> Option<(InterfaceId, &PackageName)> {
+        let TypeOwner::Interface(iface_id) = self.resolve.types[id].owner else {
+            return None;
+        };
+        let pkg_id = self.resolve.interfaces[iface_id].package?;
+        Some((iface_id, &self.resolve.packages[pkg_id].name))
+    }
+
+    /// Selector keys naming the type itself: its bare wit name and its
+    /// fully-qualified `ns:pkg/iface/type` name. Qualified keys are written exactly
+    /// as in `with`, so they carry the package `@version` when versioned.
+    fn type_identity_keys(&self, id: TypeId) -> Vec<String> {
+        let id = dealias(self.resolve, id);
+        match self.resolve.types[id].name.as_deref() {
+            Some(name) => vec![name.to_string(), full_wit_type_name(self.resolve, id)],
+            None => Vec::new(),
+        }
+    }
+
+    /// Every selector key that matches type `id`: its identity keys plus its
+    /// owning interface and package.
+    fn type_selector_keys(&self, id: TypeId) -> Vec<String> {
+        let id = dealias(self.resolve, id);
+        let mut keys = self.type_identity_keys(id);
+        if let Some((iface_id, pkg)) = self.type_owner(id) {
+            keys.push(pkg.to_string());
+            if let Some(iface) = self.resolve.id_of(iface_id) {
+                keys.push(iface);
+            }
+        }
+        keys
+    }
+
+    /// The attributes from `entries` whose selector satisfies `matches`, deduped in
+    /// configured order, paired with the distinct selectors that matched. The
+    /// matched selectors are recorded so `finish` can report selectors that matched
+    /// nothing, exactly as the `with` option reports unused remappings.
+    fn matching_attrs(
+        entries: &[(String, String)],
+        matches: impl Fn(&str) -> bool,
+    ) -> (Vec<String>, Vec<String>) {
+        let mut attrs = IndexSet::new();
+        let mut used = IndexSet::new();
+        for (sel, attr) in entries.iter().filter(|(sel, _)| matches(sel)) {
+            attrs.insert(attr.clone());
+            used.insert(sel.clone());
+        }
+        (attrs.into_iter().collect(), used.into_iter().collect())
+    }
+
+    /// Attributes configured via `additional_type_attributes` for type `id`.
+    fn additional_type_attrs(&mut self, id: TypeId) -> Vec<String> {
+        let keys = self.type_selector_keys(id);
+        let (attrs, used) =
+            Self::matching_attrs(&self.r#gen.opts.additional_type_attributes, |sel| {
+                keys.iter().any(|k| k == sel)
+            });
+        self.r#gen.used_type_attr_selectors.extend(used);
+        attrs
+    }
+
+    /// Attributes configured via `additional_member_attributes` for `member` (a
+    /// record field or enum/variant case) of type `id`, matched by `<type>.<member>`
+    /// for any type selector (bare, qualified, interface, or package) or a bare
+    /// `<member>`.
+    fn additional_member_attrs(&mut self, id: TypeId, member: &str) -> Vec<String> {
+        let type_keys = self.type_selector_keys(id);
+        let (attrs, used) =
+            Self::matching_attrs(&self.r#gen.opts.additional_member_attributes, |sel| {
+                // member names are dot-free, so the last `.` splits `<type>.<member>`
+                sel == member
+                    || sel
+                        .rsplit_once('.')
+                        .is_some_and(|(ty, m)| m == member && type_keys.iter().any(|tk| tk == ty))
+            });
+        self.r#gen.used_member_attr_selectors.extend(used);
+        attrs
+    }
+
+    /// Split injected attributes into derive paths and everything else. Derive
+    /// paths are merged into the generated `#[derive(...)]` so they dedup against
+    /// the built-in and `additional_derives` derives instead of colliding (E0119);
+    /// other attributes are emitted verbatim.
+    fn split_injected_derives(attrs: &[String]) -> (Vec<String>, Vec<String>) {
+        let mut derives = Vec::new();
+        let mut others = Vec::new();
+        for attr in attrs {
+            match attr
+                .trim()
+                .strip_prefix("#[derive(")
+                .and_then(|s| s.strip_suffix(")]"))
+            {
+                Some(inner) => derives.extend(
+                    inner
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|p| !p.is_empty())
+                        .map(String::from),
+                ),
+                None => others.push(attr.clone()),
+            }
+        }
+        (derives, others)
+    }
+
+    /// Emit each attribute on its own line, verbatim.
+    fn push_attrs(&mut self, attrs: &[String]) {
+        for attr in attrs {
+            uwriteln!(self.src, "{attr}");
+        }
+    }
+
     fn print_typedef_record(&mut self, id: TypeId, record: &Record, docs: &Docs) {
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and we have a stable order
@@ -2095,6 +2209,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .additional_derive_attributes
             .iter()
             .cloned()
+            .collect();
+        // Computed once, then emitted on every ownership mode below.
+        let (injected_derives, injected_attrs) =
+            Self::split_injected_derives(&self.additional_type_attrs(id));
+        let field_attrs: Vec<Vec<String>> = record
+            .fields
+            .iter()
+            .map(|f| self.additional_member_attrs(id, &f.name))
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
@@ -2113,16 +2235,19 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             } else if info.is_clone() {
                 derives.insert("Clone".to_string());
             }
+            derives.extend(injected_derives.iter().cloned());
             if !derives.is_empty() {
                 self.push_str("#[derive(");
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
                 self.push_str(")]\n")
             }
+            self.push_attrs(&injected_attrs);
             self.push_str(&format!("pub struct {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" {\n");
-            for field in record.fields.iter() {
+            for (field, attrs) in record.fields.iter().zip(&field_attrs) {
                 self.rustdoc(&field.docs);
+                self.push_attrs(attrs);
                 self.push_str("pub ");
                 self.push_str(&to_rust_ident(&field.name));
                 self.push_str(": ");
@@ -2182,10 +2307,12 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     {
         self.print_rust_enum(
             id,
+            // Raw wit case names; `print_rust_enum` upper-camel-cases them at the
+            // emit site so member selectors still match the wit (kebab) name.
             variant
                 .cases
                 .iter()
-                .map(|c| (c.name.to_upper_camel_case(), &c.docs, c.ty.as_ref())),
+                .map(|c| (c.name.clone(), &c.docs, c.ty.as_ref())),
             docs,
         );
     }
@@ -2207,6 +2334,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .iter()
             .cloned()
             .collect();
+        let (injected_derives, injected_attrs) =
+            Self::split_injected_derives(&self.additional_type_attrs(id));
+        let case_attrs: Vec<Vec<String>> = cases
+            .clone()
+            .into_iter()
+            .map(|(case_name, _, _)| self.additional_member_attrs(id, &case_name))
+            .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
             let mut derives = BTreeSet::new();
@@ -2223,17 +2357,20 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             } else if info.is_clone() {
                 derives.insert("Clone".to_string());
             }
+            derives.extend(injected_derives.iter().cloned());
             if !derives.is_empty() {
                 self.push_str("#[derive(");
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
                 self.push_str(")]\n")
             }
+            self.push_attrs(&injected_attrs);
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" {\n");
-            for (case_name, docs, payload) in cases.clone() {
+            for ((case_name, docs, payload), attrs) in cases.clone().into_iter().zip(&case_attrs) {
                 self.rustdoc(docs);
-                self.push_str(&case_name);
+                self.push_attrs(attrs);
+                self.push_str(&case_name.to_upper_camel_case());
                 if let Some(ty) = payload {
                     self.push_str("(");
                     let mode = self.filter_mode(ty, mode);
@@ -2250,7 +2387,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 cases
                     .clone()
                     .into_iter()
-                    .map(|(name, _docs, ty)| (name, ty)),
+                    .map(|(name, _docs, ty)| (name.to_upper_camel_case(), ty)),
             );
 
             if info.error {
@@ -2343,24 +2480,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    fn print_typedef_enum(
-        &mut self,
-        id: TypeId,
-        name: &str,
-        enum_: &Enum,
-        docs: &Docs,
-        attrs: &[String],
-        case_attr: Box<dyn Fn(&EnumCase) -> String>,
-    ) where
-        Self: Sized,
-    {
+    fn print_typedef_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let info = self.info(id);
 
         let name = to_upper_camel_case(name);
         self.rustdoc(docs);
-        for attr in attrs {
-            self.push_str(&format!("{attr}\n"));
-        }
+        let (injected_derives, injected_attrs) =
+            Self::split_injected_derives(&self.additional_type_attrs(id));
+        self.push_attrs(&injected_attrs);
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
         self.push_str(")]\n");
@@ -2379,13 +2506,15 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 .into_iter()
                 .map(|s| s.to_string()),
         );
+        derives.extend(injected_derives);
         self.push_str("#[derive(");
         self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
         self.push_str(")]\n");
         self.push_str(&format!("pub enum {name} {{\n"));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
-            self.push_str(&case_attr(case));
+            let case_attrs = self.additional_member_attrs(id, &case.name);
+            self.push_attrs(&case_attrs);
             self.push_str(&case.name.to_upper_camel_case());
             self.push_str(",\n");
         }
@@ -2967,7 +3096,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_typedef_enum(id, name, enum_, docs, &[], Box::new(|_| String::new()));
+        self.print_typedef_enum(id, name, enum_, docs);
 
         let name = to_upper_camel_case(name);
         let mut cases = String::new();

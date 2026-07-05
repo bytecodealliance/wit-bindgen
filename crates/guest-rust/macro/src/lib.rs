@@ -127,6 +127,10 @@ impl Parse for Config {
                         opts.additional_derive_ignore =
                             list.into_iter().map(|i| i.value()).collect()
                     }
+                    Opt::AdditionalTypeAttributes(list) => opts.additional_type_attributes = list,
+                    Opt::AdditionalMemberAttributes(list) => {
+                        opts.additional_member_attributes = list
+                    }
                     Opt::With(with) => opts.with.extend(with),
                     Opt::GenerateAll => {
                         opts.generate_all = true;
@@ -312,6 +316,8 @@ mod kw {
     syn::custom_keyword!(export_prefix);
     syn::custom_keyword!(additional_derives);
     syn::custom_keyword!(additional_derives_ignore);
+    syn::custom_keyword!(additional_type_attributes);
+    syn::custom_keyword!(additional_member_attributes);
     syn::custom_keyword!(with);
     syn::custom_keyword!(generate_all);
     syn::custom_keyword!(type_section_suffix);
@@ -394,6 +400,8 @@ enum Opt {
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
     AdditionalDerivesIgnore(Vec<syn::LitStr>),
+    AdditionalTypeAttributes(Vec<(String, String)>),
+    AdditionalMemberAttributes(Vec<(String, String)>),
     With(HashMap<String, WithOption>),
     GenerateAll,
     TypeSectionSuffix(syn::LitStr),
@@ -522,6 +530,26 @@ impl Parse for Opt {
             syn::bracketed!(contents in input);
             let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
             Ok(Opt::AdditionalDerivesIgnore(list.iter().cloned().collect()))
+        } else if l.peek(kw::additional_type_attributes) {
+            input.parse::<kw::additional_type_attributes>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            braced!(contents in input);
+            let fields: Punctuated<_, Token![,]> =
+                contents.parse_terminated(attr_map_field_parse, Token![,])?;
+            Ok(Opt::AdditionalTypeAttributes(
+                fields.into_iter().flatten().collect(),
+            ))
+        } else if l.peek(kw::additional_member_attributes) {
+            input.parse::<kw::additional_member_attributes>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            braced!(contents in input);
+            let fields: Punctuated<_, Token![,]> =
+                contents.parse_terminated(attr_map_field_parse, Token![,])?;
+            Ok(Opt::AdditionalMemberAttributes(
+                fields.into_iter().flatten().collect(),
+            ))
         } else if l.peek(kw::with) {
             input.parse::<kw::with>()?;
             input.parse::<Token![:]>()?;
@@ -599,6 +627,29 @@ impl Parse for Opt {
             Err(l.error())
         }
     }
+}
+
+// Parse one `"selector": ["#[attr]", ...]` entry into a (selector, attribute) pair
+// per attribute.
+fn attr_map_field_parse(input: ParseStream<'_>) -> Result<Vec<(String, String)>> {
+    let selector = input.parse::<syn::LitStr>()?;
+    input.parse::<Token![:]>()?;
+    let contents;
+    let bracket = syn::bracketed!(contents in input);
+    let attrs = Punctuated::<syn::LitStr, Token![,]>::parse_terminated(&contents)?;
+    // An empty list would otherwise flatten away silently and escape the
+    // unused-selector check in the generator.
+    if attrs.is_empty() {
+        return Err(Error::new(
+            bracket.span.join(),
+            "attribute list must not be empty",
+        ));
+    }
+    let selector = selector.value();
+    Ok(attrs
+        .into_iter()
+        .map(|a| (selector.clone(), a.value()))
+        .collect())
 }
 
 fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {
