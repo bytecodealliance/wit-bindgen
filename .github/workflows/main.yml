@@ -140,7 +140,7 @@ jobs:
   # While async is off-by-default and toolchains are percolating this is a
   # separate job to get configured slightly differently.
   async:
-    name: Test Async (allowed to fail)
+    name: Test WASIp3 Threading (allowed to fail)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -162,7 +162,7 @@ jobs:
 
     - uses: ./.github/actions/install-wasi-sdk
     - run: |
-        cargo run test --languages rust,c,go tests/runtime-async \
+        cargo run test --languages rust,c,go tests/threading \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 

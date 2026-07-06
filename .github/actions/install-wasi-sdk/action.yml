@@ -34,8 +34,8 @@ runs:
     - name: Setup `wasm-tools`
       uses: bytecodealliance/actions/wasm-tools/setup@v1
       with:
-        version: "1.247.0"
+        version: "1.252.0"
     - name: Setup `wasmtime`
       uses: bytecodealliance/actions/wasmtime/setup@v1
       with:
-        version: "44.0.0"
+        version: "46.0.1"
