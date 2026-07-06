@@ -144,7 +144,7 @@ impl CSharp {
 }
 
 impl WorldGenerator for CSharp {
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> anyhow::Result<()> {
         let name = &resolve.worlds[world].name;
         self.types.analyze(resolve);
         self.types.collect_equal_types(resolve, world, &|a| {
@@ -171,6 +171,7 @@ impl WorldGenerator for CSharp {
         });
         self.name = name.to_string();
         self.sizes.fill(resolve);
+        Ok(())
     }
 
     fn import_interface(

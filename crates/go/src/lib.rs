@@ -724,10 +724,11 @@ impl WorldGenerator for Go {
         false
     }
 
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
         _ = world;
         self.sizes.fill(resolve);
         self.imports.insert(remote_pkg("runtime"));
+        Ok(())
     }
 
     fn import_interface(

@@ -28,7 +28,7 @@ pub trait WorldGenerator {
             resolve.generate_nominal_type_ids(id);
         }
         let world = &resolve.worlds[id];
-        self.preprocess(resolve, id);
+        self.preprocess(resolve, id)?;
 
         fn unwrap_name(key: &WorldKey) -> &str {
             match key {
@@ -95,8 +95,9 @@ pub trait WorldGenerator {
         let _ = (resolve, world, files);
     }
 
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
         let _ = (resolve, world);
+        Ok(())
     }
 
     fn import_interface(

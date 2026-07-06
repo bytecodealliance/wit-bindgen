@@ -487,7 +487,7 @@ struct FileContext {
 }
 
 impl WorldGenerator for Cpp {
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> anyhow::Result<()> {
         let name = &resolve.worlds[world].name;
         self.world = name.to_string();
         self.types.analyze(resolve);
@@ -511,6 +511,7 @@ impl WorldGenerator for Cpp {
             "#,
             self.world.to_snake_case(),
         );
+        Ok(())
     }
 
     fn import_interface(

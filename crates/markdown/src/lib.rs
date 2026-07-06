@@ -37,7 +37,7 @@ impl Opts {
 }
 
 impl WorldGenerator for Markdown {
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
         self.sizes.fill(resolve);
 
         let world = &resolve.worlds[world];
@@ -109,6 +109,7 @@ impl WorldGenerator for Markdown {
             }
         }
         r#gen.push_str("\n");
+        Ok(())
     }
 
     fn import_interface(

@@ -244,7 +244,7 @@ impl MoonBit {
 /// - Inline FFI helpers and builtins are collected and written once into the
 ///   final export FFI module. Async helpers are emitted when required.
 impl WorldGenerator for MoonBit {
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
         self.pkg_resolver.resolve = resolve.clone();
         self.project_name = self
             .opts
@@ -256,6 +256,7 @@ impl WorldGenerator for MoonBit {
             }))
             .unwrap_or("generated".into());
         self.sizes.fill(resolve);
+        Ok(())
     }
 
     fn import_interface(
