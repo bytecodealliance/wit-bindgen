@@ -173,7 +173,7 @@ enum Scalar {
 }
 
 impl WorldGenerator for C {
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
         self.world = self
             .opts
             .rename_world
@@ -204,6 +204,7 @@ impl WorldGenerator for C {
                 }
             }
         }
+        Ok(())
     }
 
     fn import_interface(

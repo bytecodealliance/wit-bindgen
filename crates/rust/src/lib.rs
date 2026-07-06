@@ -1069,7 +1069,7 @@ macro_rules! __export_{world_name}_impl {{
 }
 
 impl WorldGenerator for RustWasm {
-    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
         wit_bindgen_core::generated_preamble(&mut self.src_preamble, env!("CARGO_PKG_VERSION"));
 
         // Render some generator options to assist with debugging and/or to help
@@ -1239,14 +1239,15 @@ impl WorldGenerator for RustWasm {
         self.with.generate_by_default = self.opts.generate_all;
         for (key, item) in world.imports.iter() {
             if let WorldItem::Interface { id, .. } = item {
-                self.name_interface(resolve, *id, &key, false).unwrap();
+                self.name_interface(resolve, *id, &key, false)?;
             }
         }
         for (key, item) in world.exports.iter() {
             if let WorldItem::Interface { id, .. } = item {
-                self.name_interface(resolve, *id, &key, true).unwrap();
+                self.name_interface(resolve, *id, &key, true)?;
             }
         }
+        Ok(())
     }
 
     fn import_interface(
