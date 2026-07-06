@@ -133,6 +133,12 @@ impl<O: StreamOps> AbiBuffer<O> {
         let (mut ptr, len) = self.abi_ptr_and_len();
         assert!(amt <= len);
         for _ in 0..amt {
+            // Update self.cursor incrementally for exception safety.
+            // When `self.ops.dealloc_lists` panics (which is a user-provided
+            // callback), we can make sure any item before (including the
+            // panic one) will not be dealloced again, and the remaining items
+            // can still get advanced properly.
+            self.cursor += 1;
             // SAFETY: we're managing the pointer passed to `dealloc_lists` and
             // it was initialized with a `lower`, and then the pointer
             // arithmetic should all be in-bounds.
@@ -141,7 +147,6 @@ impl<O: StreamOps> AbiBuffer<O> {
                 ptr = ptr.add(self.ops.elem_layout().size());
             }
         }
-        self.cursor += amt;
     }
 
     fn take_vec(&mut self) -> Vec<O::Payload> {
