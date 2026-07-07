@@ -104,11 +104,22 @@ jobs:
         dotnet-version: '9.x'
       if: matrix.lang == 'csharp'
 
+    # As of this writing async tests require [a patched build of
+    # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle).
+    # Install this on Linux to get coverage, but don't install it on
+    # macOS/Windows to also get coverage for test-without-a-patched-toolchain.
+    - name: Install Patched Go
+      run: |
+        curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/go-linux-amd64-bootstrap.tbz
+        tar xf go-linux-amd64-bootstrap.tbz
+        echo "$(pwd)/go-linux-amd64-bootstrap/bin" >> $GITHUB_PATH
+      if: matrix.lang == 'go' && matrix.os == 'ubuntu-latest'
+
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
         go-version: 1.25.4
-      if: matrix.lang == 'go'
+      if: matrix.lang == 'go' && matrix.os != 'ubuntu-latest'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo
@@ -130,17 +141,17 @@ jobs:
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
-    # Run all runtime tests for this language, and also enable Rust in case this
-    # language only implements either the runner or test component
+    # Run all runtime tests for this language, and also enable Rust & C in case
+    # this language only implements either the runner or test component
     - run: |
-        cargo run test --languages rust,${{ matrix.lang }} tests/runtime \
+        cargo run test --languages rust,c,${{ matrix.lang }} tests/runtime \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
-  # While async is off-by-default and toolchains are percolating this is a
+  # While threading is off-by-default and toolchains are percolating this is a
   # separate job to get configured slightly differently.
-  async:
-    name: Test Async (allowed to fail)
+  threading:
+    name: Test WASIp3 Threading (allowed to fail)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -151,18 +162,9 @@ jobs:
       run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasip2
 
-    # As of this writing, we need [a patched build of
-    # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle) to
-    # support async.
-    - name: Install Patched Go
-      run: |
-        curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/go-linux-amd64-bootstrap.tbz
-        tar xf go-linux-amd64-bootstrap.tbz
-        echo "$(pwd)/go-linux-amd64-bootstrap/bin" >> $GITHUB_PATH
-
     - uses: ./.github/actions/install-wasi-sdk
     - run: |
-        cargo run test --languages rust,c,go tests/runtime-async \
+        cargo run test --languages rust,c,go tests/threading \
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
@@ -287,7 +289,6 @@ jobs:
       - verify-publish
       - check
       - msrv
-      # - async
     if: always()
 
     steps:

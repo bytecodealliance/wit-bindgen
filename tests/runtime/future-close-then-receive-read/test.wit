@@ -1,0 +1,16 @@
+//@ async = true
+package a:b;
+
+interface the-test {
+  set: func(param: future);
+  get: func() -> future;
+}
+
+world test {
+  export the-test;
+}
+world runner {
+  import the-test;
+
+  export run: async func();
+}
