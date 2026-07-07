@@ -129,6 +129,23 @@ pub struct Opts {
     /// Generate helpers for threading builtins. Implies `--generate-async-helpers`.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub generate_threading_helpers: bool,
+
+    /// Remapping of wit import interface and type names to C include files.
+    /// These types will be included and no binding code is generated.
+    ///
+    /// Argument must be of the form `k=v` and this option can be passed
+    /// multiple times or one option can be comma separated, for example
+    /// `k1=v1,k2=v2`.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, value_delimiter = ','))]
+    pub with: Vec<(String, String)>,
+}
+
+#[cfg(feature = "clap")]
+fn parse_with(s: &str) -> Result<(String, String), String> {
+    let (k, v) = s.split_once('=').ok_or_else(|| {
+        format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+    })?;
+    Ok((k.to_string(), v.to_string()))
 }
 
 #[cfg(feature = "clap")]
@@ -215,6 +232,22 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) -> Result<()> {
         let wasm_import_module = resolve.name_world_key(name);
+
+        // Check whether this interface is provided via --with
+        if let Some((_, header)) = self.opts.with.iter().find(|e| e.0 == wasm_import_module) {
+            let header = header.clone();
+            // Add include for the external header
+            let include_str = format!("\"{header}\"");
+            if !self.h_includes.contains(&include_str) {
+                self.h_includes.push(include_str);
+            }
+            // Register type names without emitting definitions
+            let mut r#gen = self.interface(resolve, true, Some(&wasm_import_module));
+            r#gen.interface = Some((id, name));
+            r#gen.register_interface_type_names(id);
+            return Ok(());
+        }
+
         let mut r#gen = self.interface(resolve, true, Some(&wasm_import_module));
         r#gen.interface = Some((id, name));
         r#gen.define_interface_types(id);
@@ -1933,6 +1966,36 @@ pub fn gen_type_name(resolve: &Resolve, ty: TypeId) -> (CTypeNameInfo<'_>, Strin
 }
 
 impl InterfaceGenerator<'_> {
+    /// Register type names for an interface without emitting definitions.
+    /// Used by --with to make type names available for dependent interfaces.
+    fn register_interface_type_names(&mut self, id: InterfaceId) {
+        let mut live = LiveTypes::default();
+        live.add_interface(self.resolve, id);
+        for ty in live.iter() {
+            if self.r#gen.type_names.contains_key(&ty) {
+                continue;
+            }
+            let (info, encoded) = gen_type_name(&self.resolve, ty);
+            let name = match info {
+                CTypeNameInfo::Named { .. } => {
+                    format!("{}_{encoded}_t", self.owner_namespace(ty))
+                }
+                CTypeNameInfo::Anonymous { is_prim } => {
+                    if is_prim {
+                        let namespace = self.r#gen.world.to_snake_case();
+                        let name = format!("{namespace}_{encoded}_t");
+                        self.r#gen.prim_names.insert(name.clone());
+                        name
+                    } else {
+                        let namespace = self.owner_namespace(ty);
+                        format!("{namespace}_{encoded}_t")
+                    }
+                }
+            };
+            self.r#gen.type_names.insert(ty, name);
+        }
+    }
+
     fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
         live.add_interface(self.resolve, id);
