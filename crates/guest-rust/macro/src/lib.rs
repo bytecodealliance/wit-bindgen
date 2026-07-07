@@ -8,7 +8,7 @@ use syn::punctuated::Punctuated;
 use syn::{Token, braced, token};
 use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_core::WorldGenerator;
-use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
+use wit_bindgen_core::wit_parser::{PackageId, Resolve, WorldId};
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
