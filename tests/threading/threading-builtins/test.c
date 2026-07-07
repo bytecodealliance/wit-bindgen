@@ -19,13 +19,15 @@ void thread_start(void *arg) {
   test_thread_yield_cancellable();
   test_thread_suspend();
   test_thread_suspend_cancellable();
-  test_thread_yield_to_suspended(main_tid);
-  test_thread_yield_to_suspended_cancellable(main_tid);
-  test_thread_suspend_to_suspended(main_tid);
-  test_thread_suspend_to_suspended_cancellable(main_tid);
-  test_thread_suspend_to(main_tid);
-  test_thread_suspend_to_cancellable(main_tid);
-  test_thread_unsuspend(main_tid);
+  test_thread_yield_then_resume(main_tid);
+  test_thread_yield_then_resume_cancellable(main_tid);
+  test_thread_yield_then_promote(main_tid);
+  test_thread_yield_then_promote_cancellable(main_tid);
+  test_thread_suspend_then_resume(main_tid);
+  test_thread_suspend_then_resume_cancellable(main_tid);
+  test_thread_suspend_then_promote(main_tid);
+  test_thread_suspend_then_promote_cancellable(main_tid);
+  test_thread_resume_later(main_tid);
 }
 
 test_subtask_status_t exports_test_f_callback(test_event_t *event) {
@@ -36,17 +38,19 @@ test_subtask_status_t exports_test_f_callback(test_event_t *event) {
   spawned_tid = test_thread_new_indirect(thread_start, &main_tid);
 
   // Now drive the other thread to completion by switching/yielding to it
-  test_thread_yield_to_suspended(spawned_tid);   // other yields
-  test_thread_yield();                           // other yields
-  test_thread_yield();                           // other suspends
-  test_thread_yield_to_suspended(spawned_tid);   // other suspends
-  test_thread_suspend_to_suspended(spawned_tid); // other yields to me
-  test_thread_suspend();                         // other yields to me
-  test_thread_suspend();                         // other suspends to me
-  test_thread_suspend_to_suspended(spawned_tid); // other suspends to me
-  test_thread_suspend_to_suspended(spawned_tid); // other suspends to me
-  test_thread_suspend_to_suspended(spawned_tid); // other suspends to me
-  test_thread_suspend_to_suspended(
+  test_thread_yield_then_resume(spawned_tid);   // other yields
+  test_thread_yield();                          // other yields
+  test_thread_yield();                          // other suspends
+  test_thread_yield_then_resume(spawned_tid);   // other suspends
+  test_thread_suspend_then_resume(spawned_tid); // other yields to me
+  test_thread_suspend();                        // other yields to me
+  test_thread_suspend();                        // other yields to me
+  test_thread_suspend();                        // other yields to me
+  test_thread_suspend();                        // other suspends to me
+  test_thread_suspend_then_resume(spawned_tid); // other suspends to me
+  test_thread_suspend_then_resume(spawned_tid); // other suspends to me
+  test_thread_suspend_then_resume(spawned_tid); // other suspends to me
+  test_thread_suspend_then_resume(
       spawned_tid); // other unsuspends me and terminates
   exports_test_f_return();
   return TEST_CALLBACK_CODE_EXIT;

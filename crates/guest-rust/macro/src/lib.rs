@@ -8,7 +8,7 @@ use syn::punctuated::Punctuated;
 use syn::{Token, braced, token};
 use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_core::WorldGenerator;
-use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup, WorldId};
+use wit_bindgen_core::wit_parser::{PackageId, Resolve, WorldId};
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
@@ -238,7 +238,7 @@ fn parse_source(
                 }
             }
             pkgs.truncate(0);
-            pkgs.push(resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?);
+            pkgs.push(resolve.push_str("macro-input", s)?);
         }
         Some(Source::Paths(p)) => parse(p)?,
         None => parse(&[default])?,

@@ -728,123 +728,48 @@ impl C {
         let snake = self.world.to_snake_case();
         uwriteln!(
             self.src.h_async,
-            "
-void* {snake}_context_get_1(void);
-void {snake}_context_set_1(void* value);
-uint32_t {snake}_thread_yield_cancellable(void);
-uint32_t {snake}_thread_index(void);
-uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg);
-void {snake}_thread_suspend_to(uint32_t thread);
-uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread);
-void {snake}_thread_suspend_to_suspended(uint32_t thread);
-uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread);
-void {snake}_thread_unsuspend(uint32_t thread);
-void {snake}_thread_yield_to_suspended(uint32_t thread);
-uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread);
-void {snake}_thread_suspend(void);
-uint32_t {snake}_thread_suspend_cancellable(void);
-            "
-        );
-        uwriteln!(
-            self.src.c_async,
             r#"
 __attribute__((__import_module__("$root"), __import_name__("[context-get-1]")))
-extern void* __context_get_1(void);
-
-void* {snake}_context_get_1(void) {{
-    return __context_get_1();
-}}
+extern void* {snake}_context_get_1(void);
 
 __attribute__((__import_module__("$root"), __import_name__("[context-set-1]")))
-extern void __context_set_1(void*);
-
-void {snake}_context_set_1(void* value) {{
-    __context_set_1(value);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
-extern uint32_t __thread_yield_cancellable(void);
-
-uint32_t {snake}_thread_yield_cancellable(void) {{
-    return __thread_yield_cancellable();
-}}
+extern void {snake}_context_set_1(void* value);
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-index]")))
-extern uint32_t __thread_index(void);
-
-uint32_t {snake}_thread_index(void) {{
-    return __thread_index();
-}}
+extern uint32_t {snake}_thread_index(void);
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-new-indirect-v0]")))
-extern uint32_t __thread_new_indirect(uint32_t, void*);
-
-uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg) {{
-    return __thread_new_indirect((uint32_t)(uintptr_t)start_function, arg
-);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to-suspended]")))
-extern uint32_t __thread_suspend_to_suspended(uint32_t);
-
-void {snake}_thread_suspend_to_suspended(uint32_t thread) {{
-    __thread_suspend_to_suspended(thread);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to-suspended]")))
-extern uint32_t __thread_suspend_to_suspended_cancellable(uint32_t);
-
-uint32_t {snake}_thread_suspend_to_suspended_cancellable(uint32_t thread) {{
-    return __thread_suspend_to_suspended_cancellable(thread);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-to]")))
-extern uint32_t __thread_suspend_to(uint32_t);
-
-void {snake}_thread_suspend_to(uint32_t thread) {{
-    __thread_suspend_to(thread);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-to]")))
-extern uint32_t __thread_suspend_to_cancellable(uint32_t);
-
-uint32_t {snake}_thread_suspend_to_cancellable(uint32_t thread) {{
-    return __thread_suspend_to_cancellable(thread);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[thread-unsuspend]")))
-extern void __thread_unsuspend(uint32_t);
-
-void {snake}_thread_unsuspend(uint32_t thread) {{
-    __thread_unsuspend(thread);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[thread-yield-to-suspended]")))
-extern uint32_t __thread_yield_to_suspended(uint32_t);
-
-void {snake}_thread_yield_to_suspended(uint32_t thread) {{
-    __thread_yield_to_suspended(thread);
-}}
-
-__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-to-suspended]")))
-extern uint32_t __thread_yield_to_suspended_cancellable(uint32_t);
-
-uint32_t {snake}_thread_yield_to_suspended_cancellable(uint32_t thread) {{
-    return __thread_yield_to_suspended_cancellable(thread);
-}}
+extern uint32_t {snake}_thread_new_indirect(void (*start_function)(void*), void* arg);
+__attribute__((__import_module__("$root"), __import_name__("[thread-resume-later]")))
+extern void {snake}_thread_resume_later(uint32_t thread);
 
 __attribute__((__import_module__("$root"), __import_name__("[thread-suspend]")))
-extern uint32_t __thread_suspend(void);
-
-void {snake}_thread_suspend(void) {{
-    __thread_suspend();
-}}
-
+extern uint32_t {snake}_thread_suspend(void);
 __attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend]")))
-extern uint32_t __thread_suspend_cancellable(void);
-uint32_t {snake}_thread_suspend_cancellable(void) {{
-    return __thread_suspend_cancellable();
-}}
+extern uint32_t {snake}_thread_suspend_cancellable(void);
+
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield]")))
+extern uint32_t {snake}_thread_yield_cancellable(void);
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-then-resume]")))
+extern uint32_t {snake}_thread_suspend_then_resume(uint32_t thread);
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-then-resume]")))
+extern uint32_t {snake}_thread_suspend_then_resume_cancellable(uint32_t thread);
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield-then-resume]")))
+extern uint32_t {snake}_thread_yield_then_resume(uint32_t thread);
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-then-resume]")))
+extern uint32_t {snake}_thread_yield_then_resume_cancellable(uint32_t thread);
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-suspend-then-promote]")))
+extern uint32_t {snake}_thread_suspend_then_promote(uint32_t thread);
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-suspend-then-promote]")))
+extern uint32_t {snake}_thread_suspend_then_promote_cancellable(uint32_t thread);
+
+__attribute__((__import_module__("$root"), __import_name__("[thread-yield-then-promote]")))
+extern uint32_t {snake}_thread_yield_then_promote(uint32_t thread);
+__attribute__((__import_module__("$root"), __import_name__("[cancellable][thread-yield-then-promote]")))
+extern uint32_t {snake}_thread_yield_then_promote_cancellable(uint32_t thread);
             "#
         );
     }
