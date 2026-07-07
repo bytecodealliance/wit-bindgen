@@ -238,7 +238,7 @@ fn parse_source(
                 }
             }
             pkgs.truncate(0);
-            pkgs.push(resolve.push_group(UnresolvedPackageGroup::parse("macro-input", s)?)?);
+            pkgs.push(resolve.push_str("macro-input", s)?);
         }
         Some(Source::Paths(p)) => parse(p)?,
         None => parse(&[default])?,
