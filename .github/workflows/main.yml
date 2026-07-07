@@ -105,9 +105,9 @@ jobs:
       if: matrix.lang == 'csharp'
 
     # As of this writing async tests require [a patched build of
-    # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle) which
-    # is only available for Linux. Other platforms use a stock toolchain where
-    # async tests are expected to fail to build.
+    # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle).
+    # Install this on Linux to get coverage, but don't install it on
+    # macOS/Windows to also get coverage for test-without-a-patched-toolchain.
     - name: Install Patched Go
       run: |
         curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/go-linux-amd64-bootstrap.tbz
@@ -148,9 +148,9 @@ jobs:
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
-  # While async is off-by-default and toolchains are percolating this is a
+  # While threading is off-by-default and toolchains are percolating this is a
   # separate job to get configured slightly differently.
-  async:
+  threading:
     name: Test WASIp3 Threading (allowed to fail)
     runs-on: ubuntu-latest
     steps:
@@ -289,7 +289,6 @@ jobs:
       - verify-publish
       - check
       - msrv
-      # - async
     if: always()
 
     steps:
