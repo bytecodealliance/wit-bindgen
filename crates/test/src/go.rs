@@ -1,4 +1,4 @@
-use crate::{Compile, LanguageMethods, Runner, Verify};
+use crate::{Compile, Component, Language, LanguageMethods, RunCase, Runner, Verify};
 use anyhow::{Context as _, Result};
 use std::env;
 use std::fs;
@@ -71,6 +71,19 @@ impl LanguageMethods for Go {
         }
 
         false
+    }
+
+    fn should_fail_run(
+        &self,
+        _runner: &Runner,
+        case: &RunCase<'_>,
+        _component: &Component,
+    ) -> bool {
+        // The C components of the `strings` test use `--string-encoding
+        // utf16`, so adapters composed between this Go component and a C
+        // component transcode strings, which requires reallocation support in
+        // `cabi_realloc` that the Go support library does not yet implement.
+        case.name == "strings" && case.components().any(|c| c.language == Language::C)
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {

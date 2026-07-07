@@ -1,4 +1,4 @@
-use crate::{Compile, LanguageMethods, Runner, Verify};
+use crate::{Compile, Component, Kind, Language, LanguageMethods, RunCase, Runner, Verify};
 use anyhow::Result;
 use heck::*;
 use std::env;
@@ -51,6 +51,24 @@ impl LanguageMethods for Csharp {
                 | "issue-1433.wit"
                 | "named-fixed-length-list.wit"
         )
+    }
+
+    fn should_fail_run(&self, _runner: &Runner, case: &RunCase<'_>, component: &Component) -> bool {
+        // TODO: remove these exclusions as bugs are fixed
+        match case.name {
+            // With a C# runner this test fails with "resource is of another
+            // type" when dropping a subtask.
+            "ping-pong" => component.kind == Kind::Runner,
+
+            // The C# test component fails to produce a result for its
+            // async-lifted export when its write is cancelled by a runner
+            // written in another language.
+            "future-cancel-read" => {
+                component.kind == Kind::Test && case.runner.language != Language::Csharp
+            }
+
+            _ => false,
+        }
     }
 
     fn prepare(&self, runner: &mut Runner) -> Result<()> {

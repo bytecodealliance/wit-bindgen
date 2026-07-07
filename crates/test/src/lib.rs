@@ -251,6 +251,24 @@ struct Verify<'a> {
     world: &'a str,
 }
 
+/// Helper structure describing a single composed runtime test case, sent to
+/// `LanguageMethods::should_fail_run`.
+struct RunCase<'a> {
+    /// The name of the test, e.g. the directory name such as `ping-pong`.
+    name: &'a str,
+    /// The component providing the "runner" world for this case.
+    runner: &'a Component,
+    /// The components providing "test" worlds composed with `runner`.
+    tests: &'a [&'a Component],
+}
+
+impl RunCase<'_> {
+    /// Returns all components involved in this case.
+    fn components(&self) -> impl Iterator<Item = &Component> {
+        [self.runner].into_iter().chain(self.tests.iter().copied())
+    }
+}
+
 /// Helper structure to package up runtime state associated with executing tests.
 struct Runner {
     opts: Opts,
@@ -767,6 +785,16 @@ impl Runner {
                             component.path.file_name().unwrap().to_str().unwrap()
                         ));
                     }
+                    let should_fail = {
+                        let tests = test_components.iter().map(|(c, _)| c).collect::<Vec<_>>();
+                        let case = RunCase {
+                            name: &case_name,
+                            runner: &runner,
+                            tests: &tests,
+                        };
+                        case.components()
+                            .any(|c| c.language.obj().should_fail_run(self, &case, c))
+                    };
                     let case_name = case_name.to_string();
                     let runner = runner.clone();
                     let runner_path = runner_path.to_path_buf();
@@ -777,6 +805,7 @@ impl Runner {
                             .with_context(|| format!("failed to run `{}`", case.name));
                         me.render_error(
                             StepResult::new(result)
+                                .should_fail(should_fail)
                                 .metadata("runner", runner.path.display())
                                 .metadata("compiled runner", runner_path.display()),
                         )
@@ -1305,6 +1334,18 @@ trait LanguageMethods {
         config: &config::WitConfig,
     ) -> bool {
         let _ = (runner, path, config);
+        false
+    }
+
+    /// Returns whether this language expects the composed runtime test `case`
+    /// to fail to execute, where `component` is this language's component
+    /// within the case.
+    ///
+    /// This is invoked once per component in a case, so `component` may be
+    /// either the runner or one of the test components; the case is expected
+    /// to fail if any component's language says so.
+    fn should_fail_run(&self, runner: &Runner, case: &RunCase<'_>, component: &Component) -> bool {
+        let _ = (runner, case, component);
         false
     }
 
