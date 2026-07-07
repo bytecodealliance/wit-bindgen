@@ -39,12 +39,17 @@ impl LanguageMethods for Go {
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        // Async is only supported with a patched build of Go (see `prepare`
-        // below), so expect failure when that's not the toolchain in use.
-        config.error_context
-            || (name == "async-trait-function.wit" && !runner.go_async_supported())
-            || name == "named-fixed-length-list.wit"
-            || name == "issue-1598.wit"
+        if config.error_context {
+            return true;
+        }
+        if name == "named-fixed-length-list.wit" {
+            return true;
+        }
+        if !runner.go_async_supported() {
+            return name == "async-trait-function.wit" || name == "issue-1598.wit";
+        }
+
+        false
     }
 
     fn should_fail_compile(
