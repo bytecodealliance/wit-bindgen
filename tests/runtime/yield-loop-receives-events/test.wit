@@ -1,3 +1,4 @@
+//@ async = true
 //@ dependencies = ['middle', 'leaf']
 
 package test:common;

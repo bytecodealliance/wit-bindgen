@@ -56,6 +56,7 @@ impl LanguageMethods for Rust {
 
     fn should_fail_verify(
         &self,
+        _runner: &Runner,
         name: &str,
         _config: &crate::config::WitConfig,
         _args: &[String],

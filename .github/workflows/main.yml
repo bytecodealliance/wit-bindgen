@@ -104,11 +104,22 @@ jobs:
         dotnet-version: '9.x'
       if: matrix.lang == 'csharp'
 
+    # As of this writing async tests require [a patched build of
+    # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle) which
+    # is only available for Linux. Other platforms use a stock toolchain where
+    # async tests are expected to fail to build.
+    - name: Install Patched Go
+      run: |
+        curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/go-linux-amd64-bootstrap.tbz
+        tar xf go-linux-amd64-bootstrap.tbz
+        echo "$(pwd)/go-linux-amd64-bootstrap/bin" >> $GITHUB_PATH
+      if: matrix.lang == 'go' && matrix.os == 'ubuntu-latest'
+
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
         go-version: 1.25.4
-      if: matrix.lang == 'go'
+      if: matrix.lang == 'go' && matrix.os != 'ubuntu-latest'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo
@@ -150,15 +161,6 @@ jobs:
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasip2
-
-    # As of this writing, we need [a patched build of
-    # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle) to
-    # support async.
-    - name: Install Patched Go
-      run: |
-        curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/go-linux-amd64-bootstrap.tbz
-        tar xf go-linux-amd64-bootstrap.tbz
-        echo "$(pwd)/go-linux-amd64-bootstrap/bin" >> $GITHUB_PATH
 
     - uses: ./.github/actions/install-wasi-sdk
     - run: |

@@ -14,6 +14,7 @@ impl LanguageMethods for Wat {
 
     fn should_fail_verify(
         &self,
+        _runner: &Runner,
         _name: &str,
         _config: &crate::config::WitConfig,
         _args: &[String],

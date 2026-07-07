@@ -1,3 +1,4 @@
+//@ async = true
 package a:b;
 
 interface the-test {

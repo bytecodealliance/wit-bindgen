@@ -41,6 +41,7 @@ impl LanguageMethods for Cpp {
 
     fn should_fail_verify(
         &self,
+        _runner: &Runner,
         name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],

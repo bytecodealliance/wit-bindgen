@@ -7,6 +7,22 @@ use std::process::Command;
 
 pub struct Go;
 
+/// Go-specific state, stored in `Runner`, detected during `prepare`.
+pub struct State {
+    /// Whether the Go toolchain in use supports the `runtime.wasiOnIdle` hook
+    /// required for component model async support.
+    async_supported: bool,
+}
+
+impl Runner {
+    fn go_async_supported(&self) -> bool {
+        self.go_state
+            .as_ref()
+            .map(|s| s.async_supported)
+            .unwrap_or(false)
+    }
+}
+
 impl LanguageMethods for Go {
     fn display(&self) -> &str {
         "go"
@@ -18,19 +34,38 @@ impl LanguageMethods for Go {
 
     fn should_fail_verify(
         &self,
+        runner: &Runner,
         name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        // TODO: We _do_ support async, but only with a build of Go that has
-        // [this
-        // patch](https://github.com/dicej/go/commit/40fc123d5bce6448fc4e4601fd33bad4250b36a5).
-        // Once we upstream something equivalent, we can remove the ` || name ==
-        // "async-trait-function.wit"` here.
+        // Async is only supported with a patched build of Go (see `prepare`
+        // below), so expect failure when that's not the toolchain in use.
         config.error_context
-            || name == "async-trait-function.wit"
+            || (name == "async-trait-function.wit" && !runner.go_async_supported())
             || name == "named-fixed-length-list.wit"
             || name == "issue-1598.wit"
+    }
+
+    fn should_fail_compile(
+        &self,
+        runner: &Runner,
+        path: &Path,
+        config: &crate::config::WitConfig,
+    ) -> bool {
+        // This test, even though it's part of async, compiles on any
+        // toolchain.
+        if path.ends_with("incomplete-writes/leaf.go") {
+            return false;
+        }
+
+        // Bindings for async tests rely on `runtime.wasiOnIdle` (see `prepare`
+        // below) and fail to link without a toolchain that provides it.
+        if !runner.go_async_supported() {
+            return config.async_;
+        }
+
+        false
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
@@ -56,7 +91,45 @@ impl LanguageMethods for Go {
                 .arg("build")
                 .arg("-buildmode=c-shared")
                 .arg("-ldflags=-checklinkname=0"),
-        )
+        )?;
+
+        // Component model async support requires a `runtime.wasiOnIdle` hook
+        // which, as of the time of this writing, is only available in a
+        // patched build of Go. Detect whether the toolchain in use has
+        // this hook by building a program that links against it, and if not
+        // then async tests are expected to fail to build.
+        println!("Testing if `go` supports `runtime.wasiOnIdle`...");
+        let probe_dir = dir.join("wasi-on-idle-probe");
+        super::write_if_different(
+            &probe_dir.join("main.go"),
+            r#"package main
+
+import _ "unsafe"
+
+//go:linkname wasiOnIdle runtime.wasiOnIdle
+func wasiOnIdle(callback func() bool)
+func init() { defer wasiOnIdle(func() bool { return false }) }
+func main() {}
+"#,
+        )?;
+        super::write_if_different(&probe_dir.join("go.mod"), "module probe\n\ngo 1.25")?;
+        let async_supported = runner
+            .run_command(
+                Command::new("go")
+                    .current_dir(&probe_dir)
+                    .env("GOOS", "wasip1")
+                    .env("GOARCH", "wasm")
+                    .arg("build")
+                    .arg("-o")
+                    .arg("probe.wasm")
+                    .arg("-buildmode=c-shared")
+                    .arg("-ldflags=-checklinkname=0"),
+            )
+            .is_ok();
+        println!("`runtime.wasiOnIdle` supported: {async_supported}");
+        runner.go_state = Some(State { async_supported });
+
+        Ok(())
     }
 
     fn compile(&self, runner: &Runner, compile: &Compile<'_>) -> Result<()> {
