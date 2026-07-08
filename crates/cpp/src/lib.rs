@@ -35,11 +35,18 @@ pub const POINTER_SIZE_EXPRESSION: &str = "sizeof(void*)";
 type CppType = String;
 
 #[derive(Clone, Copy, Debug)]
+enum SubFlavor {
+    Owned,
+    Borrowed,
+}
+
+#[derive(Clone, Copy, Debug)]
 enum Flavor {
     Argument(AbiVariant),
     Result(AbiVariant),
     InStruct,
     BorrowedArgument,
+    CanonicalAbi(SubFlavor),
 }
 
 #[derive(Default)]
@@ -2625,30 +2632,48 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let body = self.blocks.pop().unwrap();
                 let val = format!("_vec{tmp}");
-                let ptr = format!("_ptr{tmp}");
+                let vres = format!("_res{tmp}");
+                let vptr = format!("_vptr{tmp}");
                 let len = format!("_len{tmp}");
                 let size = self.r#gen.sizes.size(element);
-                self.push_str(&format!("auto&& {} = {};\n", val, operands[0]));
-                self.push_str(&format!(
-                    "auto {} = ({})({}.data());\n",
-                    ptr,
-                    self.r#gen.r#gen.opts.ptr_type(),
-                    val
-                ));
+                self.push_str(&format!("auto&& {val} = {};\n", operands[0]));
                 self.push_str(&format!("auto {len} = (size_t)({val}.size());\n"));
+                let subvar = match self.variant {
+                    AbiVariant::GuestImport => SubFlavor::Borrowed,
+                    AbiVariant::GuestExport => todo!(),
+                    AbiVariant::GuestImportAsync => todo!(),
+                    AbiVariant::GuestExportAsync => todo!(),
+                    AbiVariant::GuestExportAsyncStackful => todo!(),
+                };
+                let tpe =
+                    self.r#gen
+                        .type_name(element, &self.namespace, Flavor::CanonicalAbi(subvar));
+                self.push_str(&format!(
+                    "auto {vres} = wit::vector<{tpe}>::allocate({len});\n"
+                ));
+                self.push_str(&format!(
+                    "auto {vptr} = ({})({vres}.data());\n",
+                    self.r#gen.r#gen.opts.ptr_type()
+                ));
                 self.push_str(&format!("for (size_t i = 0; i < {len}; ++i) {{\n"));
                 self.push_str(&format!(
-                    "auto _base = {ptr} + i * {size};\n",
+                    "auto _base = {vptr} + i * {size};\n",
                     size = size.format(POINTER_SIZE_EXPRESSION)
                 ));
                 self.push_str(&format!("auto&& _iter_elem = {val}[i];\n"));
                 self.push_str(&format!("{}\n", body.0));
                 self.push_str("}\n");
                 if realloc.is_none() {
-                    results.push(ptr);
+                    results.push(vptr);
                 } else {
-                    uwriteln!(self.src, "{}.leak();\n", operands[0]);
-                    results.push(ptr);
+                    // free the vector storage, but don't destroy elements
+                    uwriteln!(
+                        self.src,
+                        "wit::vector<{tpe}>::drop_raw({}.leak());\n",
+                        operands[0]
+                    );
+                    uwriteln!(self.src, "{vres}.leak();\n");
+                    results.push(vptr);
                 }
                 results.push(len);
             }
