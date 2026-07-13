@@ -65,7 +65,7 @@ pub fn errno_result() -> Result[Unit, MyErrno] {
   }
 }
 
-pub fn write_utf8_char(buf : @buffer.T, value : Char) -> Unit {
+pub fn write_utf8_char(buf : @buffer.Buffer, value : Char) -> Unit {
   let code = value.to_uint()
   match code {
     _..<0x80 => {
