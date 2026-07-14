@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/my/test_/i/stub.mbt'
+//@ path = 'gen/interface/my/test/i/stub.mbt'
 
 pub async fn read_stream(x : @ffi.StreamReader[Unit]) -> Unit noraise {
       let task = @ffi.current_task()
@@ -12,4 +12,3 @@ pub async fn read_stream(x : @ffi.StreamReader[Unit]) -> Unit noraise {
             let _ = x.read(buffer, 2) catch { _ => raise @ffi.Cancelled::Cancelled }
       })
 }
-

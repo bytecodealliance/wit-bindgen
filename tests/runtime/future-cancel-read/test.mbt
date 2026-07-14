@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/my/test_/i/stub.mbt'
+//@ path = 'gen/interface/my/test/i/stub.mbt'
 
 ///|
 pub async fn cancel_before_read(
@@ -35,4 +35,3 @@ pub async fn start_read_then_cancel(
     fn() { signal.read() catch { _ => raise @ffi.Cancelled::Cancelled } },
   )
 }
-
