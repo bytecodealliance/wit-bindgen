@@ -108,6 +108,16 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
     let mut cmd = Command::new(compiler);
 
     let output = compile.output.with_extension("core.wasm");
+
+    std::fs::write(
+        compile.artifacts_dir.join("libc.d"),
+        include_bytes!("../d-test-support/libc.d"),
+    )?;
+    std::fs::write(
+        compile.artifacts_dir.join("walloc.d"),
+        include_bytes!("../d-test-support/walloc.d"),
+    )?;
+
     cmd.arg(&compile.component.path)
         .arg("-betterC")
         .arg("-mtriple=wasm32-unknown-unknown")
@@ -118,10 +128,11 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
         .arg("--de") // deperecations are errors
         .arg("-w") // warnings are errors
         .arg("-L--no-entry")
-        .arg("--d-version=WitBindings_DummyLibc") // to provide bump allocator and `abort`
         .arg("--checkaction=halt") // to trap instead of using libc __assert
         .arg("-of")
-        .arg(&output);
+        .arg(&output)
+        .arg(compile.artifacts_dir.join("libc.d"))
+        .arg(compile.artifacts_dir.join("walloc.d"));
 
     runner.run_command(&mut cmd)?;
 

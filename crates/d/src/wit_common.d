@@ -334,77 +334,18 @@ T witClone(T : U[L], U, size_t L)(in T val) {
 
 package:
 
-extern(C) {
-version (WitBindings_DummyLibc) {
-@nogc nothrow {
-    extern __gshared ubyte __heap_base;
-    private __gshared void* heapTail = &__heap_base;
-
-    // basic bump allocator
-    // based on `malloc0` sans the ability to free
-    void* malloc(size_t size) {
-        import ldc.intrinsics : llvm_wasm_memory_grow, llvm_wasm_memory_size;
-        size = (size + 7) & ~7; // align up to 8 bytes
-
-        void* allocStart = heapTail;
-        void* allocEnd = allocStart+size;
-
-        // Pages in Wasm are 64KiB (65536)
-        size_t memSizePages = llvm_wasm_memory_size(0);
-        size_t memSizeBytes = memSizePages << 16;
-
-        if (cast(size_t)allocEnd > memSizeBytes) {
-            if (llvm_wasm_memory_grow(0, (cast(size_t)allocEnd >> 16)-memSizePages + 1) == -1) abort();
-        }
-
-        void* ret = allocStart;
-        heapTail = allocEnd;
-        return ret;
-    }
-
-    void* realloc(void* ptr, size_t newSize) {
-        // can't actual realloc; only handles use as conditional malloc/free
-        if (ptr) abort();
-
-        if (newSize == 0) return null;
-
-        return malloc(newSize);
-    }
-
-    // no ability to free
-    void free(void* ptr) {}
-
-    noreturn abort() {
-        import ldc.intrinsics : llvm_trap;
-        llvm_trap();
-        while(true) {}
-    }
-
-    private int memcmp(const void* ptr1, const void* ptr2, size_t size)
-    {
-        auto data1 = cast(const(ubyte)*)ptr1;
-        auto data2 = cast(const(ubyte)*)ptr2;
-
-        foreach (i; 0..size) {
-            auto b1 = data1[i];
-            auto b2 = data2[i];
-            if (b1 != b2) return b1-b2;
-        }
-
-        return 0;
-    }
-}
-} else {
-@nogc nothrow {
+extern(C) @nogc nothrow {
     void*    malloc(size_t size);
     void*    realloc(void* ptr, size_t newSize);
     void     free(void* ptr);
     noreturn abort();
 }
-}
-}
 
-// from numem.casting
+// from https://github.com/Inochi2D/numem/blob/main/source/numem/casting.d
+// Copyright © 2023-2025, Kitsunebi Games
+// Copyright © 2023-2025, Inochi2D Project
+// License:   $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
+// Authors:   Luna Nielsen
 pragma(inline, true)
 auto ref T reinterpretCast(T, U)(auto ref U from) @trusted if (T.sizeof == U.sizeof) {
     union tmp { U from; T to; }
