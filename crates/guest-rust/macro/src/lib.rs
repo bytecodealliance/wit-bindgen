@@ -237,7 +237,7 @@ fn parse_source(
                     }
                 }
             }
-            pkgs.truncate(0);
+            pkgs.clear();
             pkgs.push(resolve.push_str("macro-input", s)?);
         }
         Some(Source::Paths(p)) => parse(p)?,
