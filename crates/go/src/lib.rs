@@ -221,7 +221,8 @@ struct Go {
     interface_names: HashMap<InterfaceId, WorldKey>,
     interfaces: BTreeMap<String, InterfaceData>,
     export_interfaces: BTreeMap<String, InterfaceData>,
-    types: HashSet<TypeId>,
+    // Add String to the types to allow for implements of the same type in different interfaces to be generated.
+    types: HashSet<(String, TypeId)>,
     resources: HashMap<TypeId, Direction>,
     futures_and_streams: HashMap<(TypeId, bool), Option<WorldKey>>,
 }
@@ -742,11 +743,11 @@ impl WorldGenerator for Go {
             self.interface_names.insert(id, name.clone());
         }
 
+        let package = self.interface_name(resolve, Some(name));
         let mut data = {
             let mut generator = InterfaceGenerator::new(self, resolve, Some((id, name)), true);
             for (name, ty) in resolve.interfaces[id].types.iter() {
-                if !generator.generator.types.contains(ty) {
-                    generator.generator.types.insert(*ty);
+                if generator.generator.types.insert((package.clone(), *ty)) {
                     generator.define_type(name, *ty);
                 }
             }
@@ -756,10 +757,7 @@ impl WorldGenerator for Go {
         for (_, func) in &resolve.interfaces[id].functions {
             data.extend(self.import(resolve, func, Some(name)));
         }
-        self.interfaces
-            .entry(self.interface_name(resolve, Some(name)))
-            .or_default()
-            .extend(data);
+        self.interfaces.entry(package).or_default().extend(data);
 
         Ok(())
     }
@@ -792,26 +790,25 @@ impl WorldGenerator for Go {
             self.interface_names.insert(id, name.clone());
         }
 
+        let package = self.interface_name(resolve, Some(name));
         for (type_name, ty) in &resolve.interfaces[id].types {
             let exported = matches!(resolve.types[*ty].kind, TypeDefKind::Resource)
                 || self.has_exported_resource(resolve, Type::Id(*ty));
 
             let mut generator = InterfaceGenerator::new(self, resolve, Some((id, name)), false);
 
-            if exported || !generator.generator.types.contains(ty) {
-                generator.generator.types.insert(*ty);
+            if generator.generator.types.insert((package.clone(), *ty)) || exported {
                 generator.define_type(type_name, *ty);
             }
 
             let data = generator.into();
 
-            let name = self.interface_name(resolve, Some(name));
             if exported {
                 &mut self.export_interfaces
             } else {
                 &mut self.interfaces
             }
-            .entry(name)
+            .entry(package.clone())
             .or_default()
             .extend(data);
         }
@@ -845,18 +842,15 @@ impl WorldGenerator for Go {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
+        let package = self.interface_name(resolve, None);
         let mut generator = InterfaceGenerator::new(self, resolve, None, true);
         for (name, ty) in types {
-            if !generator.generator.types.contains(ty) {
-                generator.generator.types.insert(*ty);
+            if generator.generator.types.insert((package.clone(), *ty)) {
                 generator.define_type(name, *ty);
             }
         }
         let data = generator.into();
-        self.interfaces
-            .entry(self.interface_name(resolve, None))
-            .or_default()
-            .extend(data);
+        self.interfaces.entry(package).or_default().extend(data);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {

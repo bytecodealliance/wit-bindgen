@@ -1,0 +1,28 @@
+package foo:foo;
+
+interface store {
+  variant error {
+    no-such-store,
+    access-denied,
+    other(string),
+  }
+
+  record key-response {
+    keys: list<string>,
+    cursor: option<u64>,
+  }
+
+  resource bucket {
+    open: static func(identifier: string) -> result<bucket, error>;
+    get: func(key: string) -> result<option<list<u8>>, error>;
+    list-keys: func(cursor: option<u64>) -> result<key-response, error>;
+  }
+}
+
+world the-world {
+  // Import the same type under separate names to test implements.
+  import primary: store;
+  import secondary: store;
+  // Ensure non-named imports still works.
+  import store;
+}
