@@ -1,20 +1,26 @@
 //@ [lang] 
 //@ path = 'gen/interface/my/test/i/stub.mbt'
 
-pub async fn read_stream(x : @ffi.StreamReader[Byte]) -> Unit raise {
-      let task = @ffi.current_task()
-      let buffer = FixedArray::make(10, Byte::default());
+pub async fn read_stream(
+  x : @async-core.Stream[Byte],
+  _background_group : @async-core.TaskGroup[Unit],
+) -> Unit raise {
+      let chunk0 = x.read(1).unwrap()
+      assert_eq(chunk0.length(), 1)
+      assert_eq(chunk0[0], b'\x00')
 
-      task.wait(fn(){
-            let _ = x.read(buffer, 1) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
-      task.wait(fn(){
-            let _ = x.read(buffer, 2, offset=1) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
-      task.wait(fn(){
-            let _ = x.read(buffer, 1, offset=3) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
-      task.wait(fn(){
-            let _ = x.read(buffer, 1, offset=4) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
+      let chunk1 = x.read(2).unwrap()
+      assert_eq(chunk1.length(), 2)
+      assert_eq(chunk1[0], b'\x01')
+      assert_eq(chunk1[1], b'\x02')
+
+      let chunk2 = x.read(1).unwrap()
+      assert_eq(chunk2.length(), 1)
+      assert_eq(chunk2[0], b'\x03')
+
+      let chunk3 = x.read(1).unwrap()
+      assert_eq(chunk3.length(), 1)
+      assert_eq(chunk3[0], b'\x04')
+
+      x.drop()
 }

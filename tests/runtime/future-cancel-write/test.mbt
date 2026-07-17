@@ -2,16 +2,16 @@
 //@ path = 'gen/interface/my/test/i/stub.mbt'
 
 ///|
-pub fn take_then_drop(x : @ffi.FutureReader[String]) -> Unit {
-  let _ = x.drop()
+pub fn take_then_drop(x : @async-core.Future[String]) -> Unit {
+  x.drop_sync()
 }
 
 ///|
 pub async fn read_and_drop(
-  x : @ffi.FutureReader[String],
-) -> Unit noraise {
-  let task = @ffi.current_task()
-  let _ = task.spawn(fn() {
-    let _ = x.read() catch { _ => raise @ffi.Cancelled::Cancelled }
+  x : @async-core.Future[String],
+  background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+  background_group.spawn_bg(async fn() {
+    let _ = x.get() catch { _ => raise @async-core.Cancelled::Cancelled }
   })
 }

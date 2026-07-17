@@ -3,19 +3,16 @@
 
 ///|
 pub async fn read_future(
-  x : @ffi.FutureReader[Unit],
-) -> Unit noraise {
-  let task = @ffi.current_task()
-  task.spawn(fn() {
-    let _ = x.read() catch { _ => raise @ffi.Cancelled::Cancelled }
-
-  })
+  x : @async-core.Future[Unit],
+  _background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+  let _ = x.get() catch { _ => () }
 }
 
 ///|
 pub async fn drop_future(
-  x : @ffi.FutureReader[Unit],
-) -> Unit noraise {
-  let task = @ffi.current_task()
-  let _ = x.drop()
+  x : @async-core.Future[Unit],
+  _background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+  x.drop()
 }

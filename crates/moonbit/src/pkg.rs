@@ -9,7 +9,7 @@ use wit_bindgen_core::{
     },
 };
 
-pub(crate) const FFI_DIR: &str = "ffi";
+pub(crate) const ASYNC_CORE_DIR: &str = "async-core";
 
 #[derive(Default)]
 pub(crate) struct Imports {
@@ -247,9 +247,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Future(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_CORE_DIR);
                         format!(
-                            "{}FutureReader[{}]",
+                            "{}Future[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -258,9 +258,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Stream(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_CORE_DIR);
                         format!(
-                            "{}StreamReader[{}]",
+                            "{}Stream[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))

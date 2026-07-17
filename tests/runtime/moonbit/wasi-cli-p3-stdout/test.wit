@@ -1,0 +1,17 @@
+package my:test;
+
+interface i {
+  write-stdout: async func() -> result;
+}
+
+world test {
+  import wasi:cli/stdout@0.3.0;
+
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

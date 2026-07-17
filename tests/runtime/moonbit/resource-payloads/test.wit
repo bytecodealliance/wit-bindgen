@@ -1,0 +1,75 @@
+//@ dependencies = ['test', 'leaf']
+
+package my:test;
+
+interface leaf-interface {
+  resource leaf-thing {
+    constructor(s: string);
+    get: func() -> string;
+  }
+  leaf-drop-count: func() -> u32;
+  leaf-live-count: func() -> u32;
+
+  resource fields {
+    constructor(s: string);
+    get: func() -> string;
+  }
+
+  resource body {
+    constructor(contents: stream<u8>, trailers: option<future<fields>>);
+    collect: async func() -> tuple<string, option<string>>;
+  }
+
+  resource response {
+    constructor(body: body);
+    collect: async func() -> tuple<string, option<string>>;
+  }
+
+  fields-live-count: func() -> u32;
+  body-live-count: func() -> u32;
+  response-live-count: func() -> u32;
+}
+
+interface test-interface {
+  use leaf-interface.{leaf-thing, response};
+
+  settle: async func();
+  short-reads-leaf: async func(s: stream<leaf-thing>) -> stream<leaf-thing>;
+  dropped-reader-leaf: async func(f1: future<leaf-thing>, f2: future<leaf-thing>) -> tuple<future<leaf-thing>, future<leaf-thing>>;
+  make-leaf-stream: async func() -> stream<leaf-thing>;
+  make-local-leaf-stream: async func() -> stream<leaf-thing>;
+  make-response: async func() -> response;
+  make-response-post-work: async func() -> response;
+  post-response-count: func() -> u32;
+  make-response-background: async func() -> response;
+  background-count: func() -> u32;
+  delayed-leaf-future: async func() -> future<leaf-thing>;
+  local-future-drop-cleanup: async func() -> u32;
+  local-future-drop-resource-cleanup: async func() -> u32;
+  local-lazy-future-drop-resource-cleanup: async func() -> u32;
+  local-stream-drop-resource-cleanup: async func() -> u32;
+  local-lazy-stream-drop-resource-cleanup: async func() -> u32;
+  local-lazy-stream-partial-drop-resource-cleanup: async func() -> u32;
+  local-stream-cancelled-write-resource-cleanup: async func() -> u32;
+  cancel-future-read: async func(f: future<leaf-thing>) -> bool;
+  cancel-stream-read: async func(s: stream<leaf-thing>) -> bool;
+  relay-nested-leaf: async func(value: future<future<stream<leaf-thing>>>) -> future<future<stream<leaf-thing>>>;
+  relay-leaf-futures: async func(value: stream<future<leaf-thing>>) -> stream<future<leaf-thing>>;
+  local-stream-rendezvous: async func() -> bool;
+  local-stream-bounded-backpressure: async func() -> bool;
+  local-stream-cancelled-waiters: async func() -> bool;
+  local-stream-produce-read: async func() -> bool;
+}
+
+world leaf {
+  export leaf-interface;
+}
+
+world test {
+  export test-interface;
+}
+
+world runner {
+  import test-interface;
+  export run: async func();
+}

@@ -1,0 +1,66 @@
+//@ async = true
+//@ dependencies = ['test', 'gate']
+
+package test:async-import-cancel;
+
+interface gate-control {
+  mark-started: func();
+  started: func() -> bool;
+  release: func();
+  released: func() -> bool;
+}
+
+interface pending {
+  resource leaf {
+    constructor();
+  }
+
+  record returned-payload {
+    label: string,
+    leaf: leaf,
+    leaves: list<leaf>,
+    ready: future<leaf>,
+  }
+
+  record owned-input {
+    direct: leaf,
+    future-value: future<leaf>,
+    stream-value: stream<leaf>,
+  }
+
+  pending: async func(value: future<leaf>);
+  pending-started: func() -> bool;
+  pending-stream: async func(value: stream<leaf>);
+  pending-stream-started: func() -> bool;
+  open-future: func() -> future<leaf>;
+  open-future-reader-dropped: async func() -> bool;
+  open-race-future: func() -> future<leaf>;
+  complete-race-future: async func();
+  open-stream: func() -> stream<leaf>;
+  open-stream-reader-dropped: async func() -> bool;
+  open-race-stream: func() -> stream<leaf>;
+  complete-race-stream: async func();
+  drop-future-stream: async func(value: stream<future<leaf>>);
+  take-after-start: async func(value: owned-input);
+  take-after-start-started: func() -> bool;
+  return-after-cancel: async func(value: leaf) -> returned-payload;
+  settle: async func();
+  backpressure-set: func(value: bool);
+  leaf-live-count: func() -> u32;
+  leaf-drop-count: func() -> u32;
+}
+
+world test {
+  import gate-control;
+  export pending;
+}
+
+world gate {
+  export gate-control;
+}
+
+world runner {
+  import pending;
+  import gate-control;
+  export run: async func();
+}

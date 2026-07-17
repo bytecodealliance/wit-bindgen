@@ -1,0 +1,25 @@
+//@ async = true
+package test:moonbit-concurrent-export-isolation;
+
+interface operations {
+  check-context-isolation: async func() -> bool;
+  wait-for-gate: async func(gate: future);
+  hold-stream: async func(gate: future) -> stream<u8>;
+  complete-now: async func() -> u32;
+  begin-cross-task-future-read: async func(value: future);
+  cross-task-future-read-state: func() -> u8;
+  drop-cross-task-future-read: async func();
+  begin-cross-task-stream-read: async func(value: stream<u8>);
+  cross-task-stream-read-state: func() -> u8;
+  drop-cross-task-stream-read: async func();
+}
+
+world test {
+  export operations;
+}
+
+world runner {
+  import operations;
+
+  export run: async func();
+}

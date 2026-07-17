@@ -1,0 +1,15 @@
+//@ async = true
+package test:moonbit-local-async-primitives;
+
+interface operations {
+  exercise: async func() -> bool;
+}
+
+world test {
+  export operations;
+}
+
+world runner {
+  import operations;
+  export run: async func();
+}
