@@ -739,9 +739,7 @@ impl WorldGenerator for Go {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
-        if let WorldKey::Name(_) = name {
-            self.interface_names.insert(id, name.clone());
-        }
+        self.interface_names.insert(id, name.clone());
 
         let package = self.interface_name(resolve, Some(name));
         let mut data = {
@@ -786,9 +784,7 @@ impl WorldGenerator for Go {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
-        if let WorldKey::Name(_) = name {
-            self.interface_names.insert(id, name.clone());
-        }
+        self.interface_names.insert(id, name.clone());
 
         let package = self.interface_name(resolve, Some(name));
         for (type_name, ty) in &resolve.interfaces[id].types {
