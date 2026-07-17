@@ -24,6 +24,7 @@ struct DSig {
 #[derive(Default)]
 struct D {
     root_pkg: String,
+    common_module: String,
 
     used_interfaces: HashSet<(WorldKey, InterfaceId)>,
     export_stubs: Vec<String>,
@@ -60,20 +61,27 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(skip))]
     out_dir: Option<PathBuf>,
 
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     /// Whether stubs/declarations for exports should be emitted
     /// Only for testing purposes.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     emit_export_stubs: bool,
 
-    /// Add the specified suffix to the name of the custome section containing
+    /// Add the specified suffix to the name of the custom section containing
     /// the component type.
     #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub type_section_suffix: Option<String>,
 
-    /// Add the specified suffix to the name of the custome section containing
-    /// the component type.
+    /// Choose root package other than `wit` to nest everything under.
     #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub root_package: Option<String>,
+
+    /// Whether the generated bindings should be self-contained
+    ///
+    /// Instead of relying on DRuntime (and wasi-libc) to define
+    /// the common types, and `cabi_realloc`, `wit.common` is
+    /// emitted alongside the bindings.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub self_contained: bool,
 }
 
 impl Opts {
@@ -368,6 +376,11 @@ impl WorldGenerator for D {
 
     fn preprocess(&mut self, resolve: &Resolve, world_id: WorldId) {
         self.root_pkg = self.opts.root_package.as_deref().unwrap_or("wit").into();
+        self.common_module = if self.opts.self_contained {
+            format!("{}.common", self.root_pkg)
+        } else {
+            "core.sys.wasi.wit_common".into()
+        };
 
         self.world_fqn = get_world_fqn(&self.root_pkg, world_id, resolve);
         self.world_id = Some(world_id);
@@ -797,7 +810,7 @@ impl WorldGenerator for D {
         ));
 
         world_src.push_str(&format!("module {};\n\n", self.world_fqn));
-        world_src.push_str(&format!("import {}.common;\n\n", self.root_pkg));
+        world_src.push_str(&format!("import {};\n\n", self.common_module));
         world_src.push_str(
             &self
                 .interface_imports
@@ -917,9 +930,11 @@ impl WorldGenerator for D {
 
         files.push(world_filepath.to_str().unwrap(), world_src.as_bytes());
 
-        let mut wit_common_file = format!("module {}.common;\n\n", self.root_pkg).into_bytes();
-        wit_common_file.extend_from_slice(include_bytes!("wit_common.d").as_slice());
-        files.push("wit/common.d", &wit_common_file);
+        if self.opts.self_contained {
+            let mut wit_common_file = format!("module {};\n\n", self.common_module).into_bytes();
+            wit_common_file.extend_from_slice(include_bytes!("wit_common.d").as_slice());
+            files.push("wit/common.d", &wit_common_file);
+        }
         Ok(())
     }
 }
@@ -1088,7 +1103,7 @@ impl<'a> DInterfaceGenerator<'a> {
         self.src.push_str(&format!("module {};\n\n", self.fqn));
 
         self.src
-            .push_str(&format!("import {}.common;\n\n", self.r#gen.root_pkg));
+            .push_str(&format!("import {};\n\n", self.r#gen.common_module));
         if self.direction.is_some()
             && let Some(WorldKey::Interface(_)) = self.name
         {
@@ -1639,7 +1654,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             ));
         }
 
-        self.src.push_str("\nvoid witFree() {\n");
+        self.src.push_str("\nvoid witFree() @nogc nothrow {\n");
         for field in &record.fields {
             let lower_name = field.name.to_lower_camel_case();
             let escaped_name = escape_d_identifier(&lower_name);
@@ -1651,8 +1666,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         self.src.push_str("}\n");
 
         if self.can_have_wit_clone(Type::Id(id)) {
-            self.src
-                .push_str(&format!("\n{escaped_name} witClone() const {{\n"));
+            self.src.push_str(&format!(
+                "\n{escaped_name} witClone() const @nogc nothrow {{\n"
+            ));
             self.src
                 .push_str(&format!("{escaped_name} clone = void;\n"));
             for field in &record.fields {
@@ -2108,7 +2124,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             }
         }
 
-        self.src.push_str("\nvoid witFree() {\n");
+        self.src.push_str("\nvoid witFree() @nogc nothrow {\n");
         if self.needs_wit_free(Type::Id(id)) {
             self.src.push_str("switch (_tag) with (Tag) {\n");
             for case in &variant.cases {
@@ -2127,8 +2143,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         self.src.push_str("}\n");
 
         if self.can_have_wit_clone(Type::Id(id)) {
-            self.src
-                .push_str(&format!("\n{escaped_name} witClone() const {{\n"));
+            self.src.push_str(&format!(
+                "\n{escaped_name} witClone() const @nogc nothrow {{\n"
+            ));
             self.src.push_str("final switch (_tag) {\n");
             for case in &variant.cases {
                 let lower_case_name = case.name.to_lower_camel_case();
@@ -2587,9 +2604,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 self.push_str(&format!(
                     "auto {list_src} = {};
-                    auto {list} = {}.common.malloc({list_src}.length * ({size_str}));
-                    scope(exit) {{ {1}.common.free({list}); }}\n",
-                    operands[0], self.r#gen.r#gen.root_pkg
+                    auto {list} = {}.malloc({list_src}.length * ({size_str}));
+                    scope(exit) {{ {1}.free({list}); }}\n",
+                    operands[0], self.r#gen.r#gen.common_module
                 ));
 
                 self.push_str(&format!(
@@ -2656,8 +2673,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("auto {list_src} = {};\n", operands[0]));
                 self.push_str(&format!("auto {list_len} = {};\n", operands[1]));
                 self.push_str(&format!(
-                    "auto {list} = {}.common.mallocSlice!({elem_type_name})({list_len});\n",
-                    self.r#gen.r#gen.root_pkg
+                    "auto {list} = {}.mallocSlice!({elem_type_name})({list_len});\n",
+                    self.r#gen.r#gen.common_module
                 ));
 
                 self.push_str(&format!(
