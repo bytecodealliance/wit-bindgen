@@ -82,6 +82,11 @@ pub struct Opts {
     /// emitted alongside the bindings.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub self_contained: bool,
+
+    /// A series of D versions that all the generated bindings
+    /// will be gated behind.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "VERSION"))]
+    pub required_d_versions: Vec<String>,
 }
 
 impl Opts {
@@ -1102,8 +1107,12 @@ impl<'a> DInterfaceGenerator<'a> {
 
         self.src.push_str(&format!("module {};\n\n", self.fqn));
 
+        for version in &self.r#gen.opts.required_d_versions {
+            self.src.push_str(&format!("version({}):\n", version));
+        }
+
         self.src
-            .push_str(&format!("import {};\n\n", self.r#gen.common_module));
+            .push_str(&format!("\nimport {};\n\n", self.r#gen.common_module));
         if self.direction.is_some()
             && let Some(WorldKey::Interface(_)) = self.name
         {
