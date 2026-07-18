@@ -551,8 +551,7 @@ impl WorldGenerator for Cpp {
                 let binding = Some(name);
                 let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
                 r#gen.interface = Some(id);
-                let namespace =
-                    namespace(resolve, &TypeOwner::Interface(id), false, &*r#gen.r#gen);
+                let namespace = namespace(resolve, &TypeOwner::Interface(id), false, &*r#gen.r#gen);
                 let docs = resolve.interfaces[id].docs.contents.as_deref();
                 r#gen
                     .r#gen
