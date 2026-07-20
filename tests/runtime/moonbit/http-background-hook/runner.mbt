@@ -4,9 +4,9 @@
 //@ pkg_config = """{ "warn-list": "-44", "import": [{ "path": "example/background-hook/async-core", "alias": "async-core" }, { "path": "example/background-hook/interface/wasi/http/handler", "alias": "handler" }, { "path": "example/background-hook/interface/wasi/http/types", "alias": "types" }] }"""
 
 ///|
-pub async fn run(_background_group : @async-core.TaskGroup[Unit]) -> Unit {
+async fn run_hook(payload : Bytes, expected_error : String?) -> Unit {
   let request_body = @async-core.Stream::produce(async fn(sink) {
-    guard sink.write_all_bytes(b"build=release"[:]) else {
+    guard sink.write_all_bytes(payload[:]) else {
       abort("request body closed early")
     }
     sink.close()
@@ -31,19 +31,44 @@ pub async fn run(_background_group : @async-core.TaskGroup[Unit]) -> Unit {
   let (response_body, response_trailers) = response.consume_body(
     @async-core.Future::ready(Ok(())),
   )
-  guard response_body.read(1) is None else { panic() }
+  let expected_response = b"accepted"
+  let received = Ref(0)
+  for ;; {
+    match response_body.read(4) {
+      Some(chunk) =>
+        for byte in chunk {
+          guard received.val < expected_response.length() else { panic() }
+          guard byte == expected_response[received.val] else { panic() }
+          received.val += 1
+        }
+      None => break
+    }
+  }
+  guard received.val == expected_response.length() else { panic() }
   response_body.drop()
   match response_trailers.get() {
-    Ok(None) => ()
-    Ok(Some(fields)) => {
-      fields.drop()
-      panic()
-    }
-    Err(_) => panic()
+    Ok(Some(fields)) => fields.drop()
+    Ok(None) | Err(_) => panic()
   }
 
-  match request_transmitted.get() {
-    Ok(_) => ()
-    Err(_) => panic()
+  match expected_error {
+    None =>
+      match request_transmitted.get() {
+        Ok(_) => ()
+        Err(_) => panic()
+      }
+    Some(expected) =>
+      match request_transmitted.get() {
+        Err(@types.ErrorCode::InternalError(Some(message))) => {
+          guard message == expected else { panic() }
+        }
+        _ => panic()
+      }
   }
+}
+
+///|
+pub async fn run(_background_group : @async-core.TaskGroup[Unit]) -> Unit {
+  run_hook(b"build=release", None)
+  run_hook(b"build=debug", Some("unexpected hook payload"))
 }

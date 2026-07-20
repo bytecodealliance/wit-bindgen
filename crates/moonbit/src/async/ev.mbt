@@ -666,16 +666,6 @@ pub async fn suspend_for_future_write_terminal(idx : Int, val : Int) -> Bool? {
 ///|
 #internal(wit_bindgen, "generated binding code only")
 #doc(hidden)
-pub async fn suspend_for_future_write(idx : Int, val : Int) -> Bool {
-  match suspend_for_future_write_terminal(idx, val) {
-    Some(transferred) => transferred
-    None => raise FutureWriteCancelled
-  }
-}
-
-///|
-#internal(wit_bindgen, "generated binding code only")
-#doc(hidden)
 pub async fn suspend_for_stream_read(idx : Int, val : Int) -> (Int, Bool) {
   let event = if val == -1 {
     waitable_event(idx, None)
@@ -718,7 +708,6 @@ pub async fn suspend_for_stream_write(idx : Int, val : Int) -> (Int, Bool) {
 pub suberror OpCancelled {
   SubTaskCancelled(before_started~ : Bool)
   StreamReadCancelled
-  FutureWriteCancelled
 }
 
 ///|

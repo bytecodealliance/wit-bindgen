@@ -14,13 +14,11 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
-        LiftLowerAbi, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic, Result_,
-        SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant, WasmExport, WasmExportKind,
+        LiftLowerAbi, LiveTypes, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic,
+        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant, WasmExport, WasmExportKind,
         WasmImport, WorldId, WorldKey,
     },
 };
-
-use wit_bindgen_core::wit_parser::WorldItem;
 
 use crate::async_support::{AsyncFunctionState, AsyncSupport};
 use crate::pkg::{Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent};
@@ -2955,44 +2953,14 @@ fn flags_repr(flags: &Flags) -> Int {
 }
 
 fn type_contains_future_or_stream(resolve: &Resolve, ty: &Type) -> bool {
-    let Type::Id(id) = ty else {
-        return false;
-    };
-
-    match &resolve.types[*id].kind {
-        TypeDefKind::Future(_) | TypeDefKind::Stream(_) => true,
-        TypeDefKind::Record(record) => record
-            .fields
-            .iter()
-            .any(|field| type_contains_future_or_stream(resolve, &field.ty)),
-        TypeDefKind::Tuple(tuple) => tuple
-            .types
-            .iter()
-            .any(|ty| type_contains_future_or_stream(resolve, ty)),
-        TypeDefKind::Variant(variant) => variant
-            .cases
-            .iter()
-            .filter_map(|case| case.ty.as_ref())
-            .any(|ty| type_contains_future_or_stream(resolve, ty)),
-        TypeDefKind::Option(ty)
-        | TypeDefKind::List(ty)
-        | TypeDefKind::FixedLengthList(ty, _)
-        | TypeDefKind::Type(ty) => type_contains_future_or_stream(resolve, ty),
-        TypeDefKind::Map(key, value) => {
-            type_contains_future_or_stream(resolve, key)
-                || type_contains_future_or_stream(resolve, value)
-        }
-        TypeDefKind::Result(result) => result
-            .ok
-            .iter()
-            .chain(result.err.iter())
-            .any(|ty| type_contains_future_or_stream(resolve, ty)),
-        TypeDefKind::Resource
-        | TypeDefKind::Handle(_)
-        | TypeDefKind::Flags(_)
-        | TypeDefKind::Enum(_) => false,
-        TypeDefKind::Unknown => unreachable!(),
-    }
+    let mut live = LiveTypes::default();
+    live.add_type(resolve, ty);
+    live.iter().any(|id| {
+        matches!(
+            resolve.types[id].kind,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_)
+        )
+    })
 }
 
 fn type_contains_endpoint_fixed_length_list_combination(
@@ -3085,85 +3053,22 @@ fn world_contains_endpoint_fixed_length_list_combination(
     resolve: &Resolve,
     world: WorldId,
 ) -> bool {
-    let item_contains_endpoint = |item: &WorldItem| match item {
-        WorldItem::Function(func) => {
-            func.params.iter().any(|param| {
-                type_contains_endpoint_fixed_length_list_combination(
-                    resolve, &param.ty, false, false,
-                )
-            }) || func.result.as_ref().is_some_and(|ty| {
-                type_contains_endpoint_fixed_length_list_combination(resolve, ty, false, false)
-            })
-        }
-        WorldItem::Interface { id, .. } => {
-            let interface = &resolve.interfaces[*id];
-            interface.types.values().any(|id| {
-                type_contains_endpoint_fixed_length_list_combination(
-                    resolve,
-                    &Type::Id(*id),
-                    false,
-                    false,
-                )
-            }) || interface.functions.values().any(|func| {
-                func.params.iter().any(|param| {
-                    type_contains_endpoint_fixed_length_list_combination(
-                        resolve, &param.ty, false, false,
-                    )
-                }) || func.result.as_ref().is_some_and(|ty| {
-                    type_contains_endpoint_fixed_length_list_combination(resolve, ty, false, false)
-                })
-            })
-        }
-        WorldItem::Type { id, .. } => type_contains_endpoint_fixed_length_list_combination(
-            resolve,
-            &Type::Id(*id),
-            false,
-            false,
-        ),
-    };
-    let world = &resolve.worlds[world];
-    world
-        .imports
-        .values()
-        .chain(world.exports.values())
-        .any(item_contains_endpoint)
+    let mut live = LiveTypes::default();
+    live.add_world(resolve, world);
+    live.iter().any(|id| {
+        type_contains_endpoint_fixed_length_list_combination(resolve, &Type::Id(id), false, false)
+    })
 }
 
 fn world_contains_future_or_stream(resolve: &Resolve, world: WorldId) -> bool {
-    let item_contains_endpoint = |item: &WorldItem| match item {
-        WorldItem::Function(func) => {
-            func.params
-                .iter()
-                .any(|param| type_contains_future_or_stream(resolve, &param.ty))
-                || func
-                    .result
-                    .as_ref()
-                    .is_some_and(|ty| type_contains_future_or_stream(resolve, ty))
-        }
-        WorldItem::Interface { id, .. } => {
-            let interface = &resolve.interfaces[*id];
-            interface
-                .types
-                .values()
-                .any(|id| type_contains_future_or_stream(resolve, &Type::Id(*id)))
-                || interface.functions.values().any(|func| {
-                    func.params
-                        .iter()
-                        .any(|param| type_contains_future_or_stream(resolve, &param.ty))
-                        || func
-                            .result
-                            .as_ref()
-                            .is_some_and(|ty| type_contains_future_or_stream(resolve, ty))
-                })
-        }
-        WorldItem::Type { id, .. } => type_contains_future_or_stream(resolve, &Type::Id(*id)),
-    };
-    let world = &resolve.worlds[world];
-    world
-        .imports
-        .values()
-        .chain(world.exports.values())
-        .any(item_contains_endpoint)
+    let mut live = LiveTypes::default();
+    live.add_world(resolve, world);
+    live.iter().any(|id| {
+        matches!(
+            resolve.types[id].kind,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_)
+        )
+    })
 }
 
 fn indent(code: &str) -> Source {
@@ -3609,7 +3514,7 @@ mod tests {
             "#doc(hidden)\npub fn has_component_task_scope",
             "#doc(hidden)\npub async fn suspend_for_subtask",
             "#doc(hidden)\npub async fn suspend_for_future_read",
-            "#doc(hidden)\npub async fn suspend_for_future_write",
+            "#doc(hidden)\npub async fn suspend_for_future_write_terminal",
             "#doc(hidden)\npub async fn suspend_for_stream_read",
             "#doc(hidden)\npub async fn suspend_for_stream_write",
         ] {

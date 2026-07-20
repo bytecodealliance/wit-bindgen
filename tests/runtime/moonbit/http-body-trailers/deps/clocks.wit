@@ -1,7 +1,0 @@
-package wasi:clocks@0.3.0;
-
-@since(version = 0.3.0)
-interface types {
-  @since(version = 0.3.0)
-  type duration = u64;
-}

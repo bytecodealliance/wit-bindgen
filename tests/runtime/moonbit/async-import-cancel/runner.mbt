@@ -4,6 +4,19 @@
 //@ pkg_config = """{ "import": [{ "path": "test/async-import-cancel/async-core", "alias": "async-core" }, { "path": "test/async-import-cancel/interface/test/async-import-cancel/pending", "alias": "pending" }, { "path": "test/async-import-cancel/interface/test/async-import-cancel/gate-control", "alias": "gate-control" }] }"""
 
 ///|
+async fn settle_leaf_counts(expected_drops : UInt) -> Unit {
+  for _ in 0..<32 {
+    if @pending.leaf_live_count() == 0U &&
+      @pending.leaf_drop_count() == expected_drops {
+      break
+    }
+    @pending.settle()
+  }
+  guard @pending.leaf_live_count() == 0U else { panic() }
+  guard @pending.leaf_drop_count() == expected_drops else { panic() }
+}
+
+///|
 pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   guard @pending.leaf_live_count() == 0U else { panic() }
   guard @pending.leaf_drop_count() == 0U else { panic() }
@@ -30,14 +43,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   @pending.settle()
   guard !@pending.pending_started() else { panic() }
 
-  for _ in 0..<32 {
-    if @pending.leaf_live_count() == 0U && @pending.leaf_drop_count() == 1U {
-      break
-    }
-    @pending.settle()
-  }
-  guard @pending.leaf_live_count() == 0U else { panic() }
-  guard @pending.leaf_drop_count() == 1U else { panic() }
+  settle_leaf_counts(1U)
 
   @pending.backpressure_set(true)
   let stream_leaf = @pending.Leaf::leaf()
@@ -71,14 +77,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   guard !@pending.pending_stream_started() else { panic() }
   guard !stream_producer_ran.val else { panic() }
 
-  for _ in 0..<32 {
-    if @pending.leaf_live_count() == 0U && @pending.leaf_drop_count() == 2U {
-      break
-    }
-    @pending.settle()
-  }
-  guard @pending.leaf_live_count() == 0U else { panic() }
-  guard @pending.leaf_drop_count() == 2U else { panic() }
+  settle_leaf_counts(2U)
 
   let returned_leaf = @pending.Leaf::leaf()
   let (return_started, return_started_sink) = @async-core.Stream::new(
@@ -98,14 +97,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   returned_task.cancel()
   @gate-control.release()
 
-  for _ in 0..<32 {
-    if @pending.leaf_live_count() == 0U && @pending.leaf_drop_count() == 5U {
-      break
-    }
-    @pending.settle()
-  }
-  guard @pending.leaf_live_count() == 0U else { panic() }
-  guard @pending.leaf_drop_count() == 5U else { panic() }
+  settle_leaf_counts(5U)
 
   let cleanup_leaf = fn(value : @pending.Leaf) { value.drop() }
   let stream_values : FixedArray[@async-core.Future[@pending.Leaf]] = [
@@ -120,14 +112,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
     sink.close()
   })
   @pending.drop_future_stream(cleanup_stream)
-  for _ in 0..<32 {
-    if @pending.leaf_live_count() == 0U && @pending.leaf_drop_count() == 8U {
-      break
-    }
-    @pending.settle()
-  }
-  guard @pending.leaf_live_count() == 0U else { panic() }
-  guard @pending.leaf_drop_count() == 8U else { panic() }
+  settle_leaf_counts(8U)
 
   let after_start_future = @async-core.Future::ready_with_cleanup(
     @pending.Leaf::leaf(),
@@ -158,14 +143,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   after_start_task.wait() catch {
     _ => ()
   }
-  for _ in 0..<32 {
-    if @pending.leaf_live_count() == 0U && @pending.leaf_drop_count() == 11U {
-      break
-    }
-    @pending.settle()
-  }
-  guard @pending.leaf_live_count() == 0U else { panic() }
-  guard @pending.leaf_drop_count() == 11U else { panic() }
+  settle_leaf_counts(11U)
 
   let race_future = @pending.open_race_future()
   let (race_read_started, race_read_started_sink) = @async-core.Stream::new(
@@ -185,14 +163,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   @pending.complete_race_future()
   race_read.cancel()
   guard race_read.wait() else { panic() }
-  for _ in 0..<32 {
-    if @pending.leaf_live_count() == 0U && @pending.leaf_drop_count() == 12U {
-      break
-    }
-    @pending.settle()
-  }
-  guard @pending.leaf_live_count() == 0U else { panic() }
-  guard @pending.leaf_drop_count() == 12U else { panic() }
+  settle_leaf_counts(12U)
 
   let race_stream = @pending.open_race_stream()
   let (race_stream_started, race_stream_started_sink) = @async-core.Stream::new(
@@ -214,14 +185,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   @pending.complete_race_stream()
   race_stream_read.cancel()
   guard race_stream_read.wait() else { panic() }
-  for _ in 0..<32 {
-    if @pending.leaf_live_count() == 0U && @pending.leaf_drop_count() == 13U {
-      break
-    }
-    @pending.settle()
-  }
-  guard @pending.leaf_live_count() == 0U else { panic() }
-  guard @pending.leaf_drop_count() == 13U else { panic() }
+  settle_leaf_counts(13U)
 
   let pending_future = @pending.open_future()
   let (future_read_started, future_read_started_sink) = @async-core.Stream::new(

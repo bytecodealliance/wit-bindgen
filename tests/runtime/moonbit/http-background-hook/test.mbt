@@ -37,10 +37,24 @@ pub async fn handle(
   }
   let payload = payload.to_bytes()
 
+  let (body_done, body_done_promise) = @async-core.Future::new()
+  let response_body = @async-core.Stream::produce(async fn(sink) {
+    guard sink.write_all_bytes(b"accepted"[:]) else {
+      abort("response body closed early")
+    }
+    sink.close()
+    let _ = body_done_promise.complete(())
+  })
+  let (transmitted_done, transmitted_done_promise) = @async-core.Future::new()
+  let response_trailers = @async-core.Future::from(async fn() {
+    body_done.get()
+    transmitted_done.get()
+    Ok(Some(@types.Fields::fields()))
+  })
   let (response, response_transmitted) = @types.Response::new(
     @types.Fields::fields(),
-    None,
-    @async-core.Future::ready(Ok(None)),
+    Some(response_body),
+    response_trailers,
   )
   guard response.set_status_code(202U) is Ok(_) else {
     let error = @types.ErrorCode::InternalError(
@@ -53,7 +67,9 @@ pub async fn handle(
 
   background_group.spawn_bg(async fn() {
     let result = (async fn() -> Result[Unit, @types.ErrorCode] {
-      match response_transmitted.get() {
+      let transmission_result = response_transmitted.get()
+      let _ = transmitted_done_promise.complete(())
+      match transmission_result {
         Err(error) => return Err(error)
         Ok(_) => ()
       }
