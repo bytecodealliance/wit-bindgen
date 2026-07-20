@@ -745,7 +745,11 @@ impl WorldGenerator for Go {
         let mut data = {
             let mut generator = InterfaceGenerator::new(self, resolve, Some((id, name)), true);
             for (name, ty) in resolve.interfaces[id].types.iter() {
-                if generator.generator.types.insert((go_package_name.clone(), *ty)) {
+                if generator
+                    .generator
+                    .types
+                    .insert((go_package_name.clone(), *ty))
+                {
                     generator.define_type(name, *ty);
                 }
             }
@@ -755,7 +759,10 @@ impl WorldGenerator for Go {
         for (_, func) in &resolve.interfaces[id].functions {
             data.extend(self.import(resolve, func, Some(name)));
         }
-        self.interfaces.entry(go_package_name).or_default().extend(data);
+        self.interfaces
+            .entry(go_package_name)
+            .or_default()
+            .extend(data);
 
         Ok(())
     }
@@ -793,7 +800,12 @@ impl WorldGenerator for Go {
 
             let mut generator = InterfaceGenerator::new(self, resolve, Some((id, name)), false);
 
-            if generator.generator.types.insert((go_package_name.clone(), *ty)) || exported {
+            if generator
+                .generator
+                .types
+                .insert((go_package_name.clone(), *ty))
+                || exported
+            {
                 generator.define_type(type_name, *ty);
             }
 
