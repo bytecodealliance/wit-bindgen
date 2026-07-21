@@ -47,8 +47,14 @@ impl Guest for Component {
             if WRITE_STARTED.load(Ordering::SeqCst) {
                 std::task::Poll::Ready(())
             } else {
-                *WRITE_STARTED_WAKER.lock().unwrap() = Some(cx.waker().clone());
-                std::task::Poll::Pending
+                let mut waker = WRITE_STARTED_WAKER.lock().unwrap();
+                *waker = Some(cx.waker().clone());
+                if WRITE_STARTED.load(Ordering::SeqCst) {
+                    waker.take();
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
             }
         })
         .await
