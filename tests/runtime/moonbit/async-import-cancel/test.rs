@@ -41,6 +41,10 @@ impl Guest for Component {
         let _ = value.await;
     }
 
+    async fn consume_future_string(value: FutureReader<String>) -> bool {
+        value.await == "hello"
+    }
+
     fn pending_started() -> bool {
         PENDING_STARTED.load(Ordering::SeqCst)
     }

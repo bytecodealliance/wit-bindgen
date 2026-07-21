@@ -1458,9 +1458,14 @@ fn wasm{symbol_name}FutureRejectPrepared(handle : Int) -> Bool {{
         defer wasmImport{symbol_name}DropWritable(writer)
         {ffi}protect_from_cancel(
             () => {{
-                let value = producer.future.get()
+                producer.future.reject((value : {result}) => {{
+                    let ptr = wasm{symbol_name}Malloc(1)
+                    wasm{symbol_name}Lower(value, ptr)
+                    wasm{symbol_name}Reject(ptr, 0, 1)
+                    {free_outer}
+                }})
                 let ptr = wasm{symbol_name}Malloc(1)
-                wasm{symbol_name}Lower(value, ptr)
+                defer {{ {free_outer} }}
                 let terminal : Ref[Bool?] = {{ val: None }}
                 while terminal.val is None {{
                     terminal.val = {ffi}suspend_for_future_write_terminal(
@@ -1470,15 +1475,12 @@ fn wasm{symbol_name}FutureRejectPrepared(handle : Int) -> Bool {{
                 }}
                 guard terminal.val is Some(transferred)
                 if transferred {{
-                    wasm{symbol_name}Commit(ptr, 0, 1)
-                }} else {{
-                    wasm{symbol_name}Reject(ptr, 0, 1)
+                    abort("rejected component future unexpectedly transferred a value")
                 }}
-                {free_outer}
             }},
             resume_on_cancel=true,
         ) catch {{
-            _ => abort("rejected component future producer ended without a value")
+            _ => abort("failed to reject component future producer")
         }}
     }})
     true
@@ -2271,7 +2273,7 @@ fn wasm{symbol_name}Reject(
         package: &str,
         async_state: &mut AsyncFunctionState,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Box::new([]))
+        let mut f = FunctionBindgen::new(self, Box::new([address.to_string(), value.to_string()]))
             .with_type_context(package)
             .with_async_state(mem::take(async_state))
             .without_block_cleanup();

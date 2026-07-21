@@ -20,14 +20,20 @@ async fn settle_leaf_counts(expected_drops : UInt) -> Unit {
 pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   guard @pending.leaf_live_count() == 0U else { panic() }
   guard @pending.leaf_drop_count() == 0U else { panic() }
+  guard @pending.consume_future_string(@async-core.Future::ready("hello")) else {
+    panic()
+  }
 
   @pending.backpressure_set(true)
   let leaf = @pending.Leaf::leaf()
-  let future = @async-core.Future::ready_with_cleanup(leaf, fn(
-    value : @pending.Leaf,
-  ) {
-    value.drop()
-  })
+  let future_producer_ran = Ref(false)
+  let future = @async-core.Future::from(
+    async fn() {
+      future_producer_ran.val = true
+      leaf
+    },
+    on_unstarted_drop=fn() { leaf.drop() },
+  )
   let (lowered, lowered_sink) = @async-core.Stream::new(capacity=1)
   let task = background_group.spawn(async fn() -> Unit {
     let signal : FixedArray[Unit] = [()]
@@ -42,6 +48,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   task.cancel()
   @pending.settle()
   guard !@pending.pending_started() else { panic() }
+  guard !future_producer_ran.val else { panic() }
 
   settle_leaf_counts(1U)
 
@@ -100,9 +107,11 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   settle_leaf_counts(5U)
 
   let cleanup_leaf = fn(value : @pending.Leaf) { value.drop() }
+  let (promised_future, promised_writer) = @async-core.Future::new()
+  guard promised_writer.complete(@pending.Leaf::leaf()) else { panic() }
   let stream_values : FixedArray[@async-core.Future[@pending.Leaf]] = [
-    @async-core.Future::ready_with_cleanup(@pending.Leaf::leaf(), cleanup_leaf),
-    @async-core.Future::ready_with_cleanup(@pending.Leaf::leaf(), cleanup_leaf),
+    @async-core.Future::ready(@pending.Leaf::leaf()),
+    promised_future,
     @async-core.Future::ready_with_cleanup(@pending.Leaf::leaf(), cleanup_leaf),
   ]
   let cleanup_stream = @async-core.Stream::produce(async fn(sink) {

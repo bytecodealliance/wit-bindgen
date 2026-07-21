@@ -172,7 +172,10 @@ async fn[X] promised_future_get(cell : Ref[PromiseCell[X]]) -> X {
 }
 
 ///|
-fn[X] promised_future_drop(cell : Ref[PromiseCell[X]]) -> Unit {
+fn[X] promised_future_drop(
+  cell : Ref[PromiseCell[X]],
+  fallback_cleanup : ((X) -> Unit)?,
+) -> Unit {
   if cell.val.reading {
     match cell.val.state {
       Pending => {
@@ -191,7 +194,11 @@ fn[X] promised_future_drop(cell : Ref[PromiseCell[X]]) -> Unit {
       cell.val.state = Consumed
       match cell.val.cleanup {
         Some(cleanup) => cleanup(value)
-        None => ()
+        None =>
+          match fallback_cleanup {
+            Some(cleanup) => cleanup(value)
+            None => ()
+          }
       }
     }
     Failed(_) | Closed => cell.val.state = Consumed

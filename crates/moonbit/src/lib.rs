@@ -3300,6 +3300,26 @@ mod tests {
     }
 
     #[test]
+    fn endpoint_payload_lowering_reserves_destination_pointer() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                consume: async func(value: future<string>);
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+
+        let ffi = file(&files, "interface/a/b/api/ffi.mbt");
+        assert!(ffi.contains("let ptr0 = mbt_ffi_str2ptr(value)"), "{ffi}");
+        assert!(ffi.contains("mbt_ffi_store32((ptr) + 0, ptr0)"), "{ffi}");
+    }
+
+    #[test]
     fn type_only_endpoints_emit_async_runtime() {
         let files = generate(
             r#"
@@ -3621,6 +3641,8 @@ mod tests {
         assert!(!ffi.contains("wait_until"));
         assert!(ffi.contains("RelayFuture5FutureLowerCommitted"));
         assert!(ffi.contains("RelayFuture4FutureRejectPrepared"));
+        assert!(ffi.contains("producer.future.reject((value :"));
+        assert!(ffi.contains("rejected component future unexpectedly transferred a value"));
         assert!(ffi.contains("RelayStream3StreamRejectPrepared"));
         assert!(!ffi.contains("RelayFuture5FutureRejectPrepared"));
 

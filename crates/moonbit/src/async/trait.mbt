@@ -179,7 +179,10 @@ priv struct LocalFutureState[X] {
 }
 
 ///|
-fn[X] local_future_close(state : Ref[LocalFutureState[X]]) -> Unit {
+fn[X] local_future_close(
+  state : Ref[LocalFutureState[X]],
+  fallback_cleanup : ((X) -> Unit)?,
+) -> Unit {
   if state.val.closed {
     return
   }
@@ -188,7 +191,11 @@ fn[X] local_future_close(state : Ref[LocalFutureState[X]]) -> Unit {
       state.val.value = None
       match state.val.cleanup {
         Some(cleanup) => cleanup(value)
-        None => ()
+        None =>
+          match fallback_cleanup {
+            Some(cleanup) => cleanup(value)
+            None => ()
+          }
       }
     }
     None => ()
@@ -610,7 +617,7 @@ pub async fn[X] Future::get(self : Future[X]) -> X {
 pub async fn[X] Future::drop(self : Future[X]) -> Unit noraise {
   match self.inner {
     Source(source) => (source.close)() catch { _ => () }
-    Local(state) => local_future_close(state)
+    Local(state) => local_future_close(state, None)
     Pending(state) => {
       let cleanup = state.val.on_unstarted_drop
       state.val.producer = None
@@ -620,7 +627,7 @@ pub async fn[X] Future::drop(self : Future[X]) -> Unit noraise {
         None => ()
       }
     }
-    Promised(cell) => promised_future_drop(cell)
+    Promised(cell) => promised_future_drop(cell, None)
   }
 }
 
@@ -629,7 +636,7 @@ pub async fn[X] Future::drop(self : Future[X]) -> Unit noraise {
 pub fn[X] Future::drop_sync(self : Future[X]) -> Unit {
   match self.inner {
     Source(source) => (source.close_sync)()
-    Local(state) => local_future_close(state)
+    Local(state) => local_future_close(state, None)
     Pending(state) => {
       let cleanup = state.val.on_unstarted_drop
       state.val.producer = None
@@ -639,7 +646,33 @@ pub fn[X] Future::drop_sync(self : Future[X]) -> Unit {
         None => ()
       }
     }
-    Promised(cell) => promised_future_drop(cell)
+    Promised(cell) => promised_future_drop(cell, None)
+  }
+}
+
+///|
+/// Rejects a future that was prepared for a component-model transfer but was
+/// never transferred. A locally available value uses its registered cleanup,
+/// falling back to the generated canonical-ABI cleanup. An unstarted producer
+/// is discarded without running it.
+#internal(wit_bindgen, "generated binding code only")
+pub async fn[X] Future::reject(
+  self : Future[X],
+  cleanup : (X) -> Unit,
+) -> Unit noraise {
+  match self.inner {
+    Source(source) => (source.close)() catch { _ => () }
+    Local(state) => local_future_close(state, Some(cleanup))
+    Pending(state) => {
+      let cleanup = state.val.on_unstarted_drop
+      state.val.producer = None
+      state.val.on_unstarted_drop = None
+      match cleanup {
+        Some(cleanup) => cleanup()
+        None => ()
+      }
+    }
+    Promised(cell) => promised_future_drop(cell, Some(cleanup))
   }
 }
 

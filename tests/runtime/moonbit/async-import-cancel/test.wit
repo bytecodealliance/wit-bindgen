@@ -29,6 +29,7 @@ interface pending {
   }
 
   pending: async func(value: future<leaf>);
+  consume-future-string: async func(value: future<string>) -> bool;
   pending-started: func() -> bool;
   pending-stream: async func(value: stream<leaf>);
   pending-stream-started: func() -> bool;
