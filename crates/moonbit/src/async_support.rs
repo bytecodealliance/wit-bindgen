@@ -1234,6 +1234,7 @@ impl<'a> InterfaceGenerator<'a> {
             .unwrap_or(0);
         let read_chunk_owns_buffer = result_type.is_some_and(|ty| self.is_list_canonical(ty));
         let staging_window = if payload_sites.is_empty() { 64 } else { 1 };
+        let max_read_count = 64;
 
         let EndpointPayloadFragments {
             lift,
@@ -1898,7 +1899,13 @@ async fn Wasm{symbol_name}StreamSource::read(
     if self.reading {{
         raise {ffi}EndpointBusy::Read
     }}
-    let ptr = wasm{symbol_name}Malloc(count)
+    // `Stream.read` promises at most `count`; bound one canonical allocation.
+    let read_count = if count < {max_read_count} {{
+        count
+    }} else {{
+        {max_read_count}
+    }}
+    let ptr = wasm{symbol_name}Malloc(read_count)
     let mut owns_buffer = false
     defer {{
         if !owns_buffer {{
@@ -1912,7 +1919,7 @@ async fn Wasm{symbol_name}StreamSource::read(
     self.read_cleanup_done = false
     let (progress, end) = {ffi}suspend_for_stream_read(
         self.handle,
-        wasmImport{symbol_name}Read(self.handle, ptr, count),
+        wasmImport{symbol_name}Read(self.handle, ptr, read_count),
     ) catch {{
         err => {{
             if self.read_discarding {{

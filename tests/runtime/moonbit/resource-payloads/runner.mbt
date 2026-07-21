@@ -57,14 +57,22 @@ async fn assert_no_live_resources() -> Unit {
 fn nested_leaf_stream(
   prefix : String,
 ) -> @async-core.Stream[@leaf-interface.LeafThing] {
-  @async-core.Stream::produce(async fn(sink) {
-    let values : FixedArray[@leaf-interface.LeafThing] = [
-      @leaf-interface.LeafThing::leaf_thing(prefix + "-a"),
-      @leaf-interface.LeafThing::leaf_thing(prefix + "-b"),
-    ]
-    let _ = sink.write_all(values[:])
-    sink.close()
-  })
+  let values : FixedArray[@leaf-interface.LeafThing] = [
+    @leaf-interface.LeafThing::leaf_thing(prefix + "-a"),
+    @leaf-interface.LeafThing::leaf_thing(prefix + "-b"),
+  ]
+  @async-core.Stream::produce(
+    async fn(sink) {
+      let _ = sink.write_all(values[:])
+      sink.close()
+    },
+    cleanup=fn(value) { value.drop() },
+    on_unstarted_drop=fn() {
+      for value in values {
+        value.drop()
+      }
+    },
+  )
 }
 
 ///|

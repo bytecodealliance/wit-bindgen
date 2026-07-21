@@ -3632,6 +3632,7 @@ mod tests {
         );
         assert!(!ffi.contains("defer close_writer()"));
         assert!(ffi.contains("read_cleanup : @async-core.CondVar"));
+        assert!(ffi.contains("let read_count = if count < 64"));
         assert!(ffi.contains("self.read_cleanup.broadcast()"));
         assert!(ffi.contains("@async-core.cancel_future_read("));
         assert!(ffi.contains("@async-core.cancel_stream_read("));

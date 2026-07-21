@@ -163,6 +163,9 @@ background_group : @async-core.TaskGroup[Unit]
 The generated adapter publishes component task return when the implementation
 returns its result, then allows this group to finish hook-style work. The work
 remains structurally owned in MoonBit but cannot alter the published result.
+If the implementation raises before publishing task return, the adapter traps:
+WIT does not encode arbitrary MoonBit errors, and generic component
+`error-context` integration is outside this MVP.
 
 ## Boundary Conversion
 
@@ -355,6 +358,9 @@ Known limits:
 - explicitly captured resources require `on_unstarted_drop` before lazy
   production; lazy streams of managed values also require per-element cleanup
   after production starts;
+- MoonBit cannot enforce linear ownership, so synchronous drop during an
+  aliased in-flight read is best effort; the active read retains responsibility
+  for eventual cleanup;
 - generated glue and user implementations still share a MoonBit package, so
   `#internal` is documentation control rather than an access boundary.
 

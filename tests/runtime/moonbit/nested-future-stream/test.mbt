@@ -18,10 +18,7 @@ pub async fn relay(
   value : @async-core.Future[@async-core.Future[@async-core.Stream[Byte]]],
   _background_group : @async-core.TaskGroup[Unit],
 ) -> @async-core.Future[@async-core.Future[@async-core.Stream[Byte]]] {
-  @async-core.Future::from(async fn() {
-    let inner = value.get()
-    @async-core.Future::from(async fn() { inner.get() })
-  })
+  value
 }
 
 ///|

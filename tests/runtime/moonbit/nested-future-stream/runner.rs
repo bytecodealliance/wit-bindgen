@@ -129,7 +129,11 @@ async fn rejects_nested_endpoints() {
     drop(output);
 
     outer_writer.write(inner_reader).await.unwrap();
-    inner_writer.write(stream_reader).await.unwrap();
+    if let Err(error) = inner_writer.write(stream_reader).await {
+        // A relay may stop at this rejected nested endpoint instead of
+        // consuming the returned stream. Release the returned reader here.
+        drop(error.value);
+    }
     let (result, remaining) = stream_writer.write(vec![9]).await;
     match result {
         StreamResult::Dropped => assert_eq!(remaining.remaining(), 1),

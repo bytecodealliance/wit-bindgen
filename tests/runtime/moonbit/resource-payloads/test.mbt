@@ -467,10 +467,7 @@ pub async fn relay_nested_leaf(
 ) -> @async-core.Future[
   @async-core.Future[@async-core.Stream[@leaf-interface.LeafThing]],
 ] {
-  @async-core.Future::from(async fn() {
-    let inner = value.get()
-    @async-core.Future::from(async fn() { inner.get() })
-  })
+  value
 }
 
 ///|
