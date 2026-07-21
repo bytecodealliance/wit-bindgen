@@ -1,7 +1,7 @@
 //@ wasmtime-flags = '-Wcomponent-model-async'
 //@ [lang]
 //@ path = 'gen/world/runner/stub.mbt'
-//@ pkg_config = """{ "warn-list": "-44", "import": [{ "path": "test/moonbit-concurrent-export-isolation/async-core", "alias": "async-core" }, { "path": "test/moonbit-concurrent-export-isolation/interface/test/moonbit-concurrent-export-isolation/operations", "alias": "operations" }] }"""
+//@ pkg_config = """{ "warn-list": "-44", "supported-targets": "+wasm", "import": [{ "path": "test/moonbit-concurrent-export-isolation/async-core", "alias": "async-core" }, { "path": "test/moonbit-concurrent-export-isolation/interface/test/moonbit-concurrent-export-isolation/operations", "alias": "operations" }] }"""
 
 ///|
 pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {

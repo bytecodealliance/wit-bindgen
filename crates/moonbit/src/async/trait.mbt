@@ -14,6 +14,7 @@ let sink_write_window_size : Int = 64
 /// The write callback must either raise before consuming any value or return
 /// the number consumed. It must not raise after partial consumption because
 /// `ArrayView` cannot carry an ownership offset through an exception.
+/// The close callback must be idempotent.
 #internal(wit_bindgen, "generated binding code only")
 pub fn[X] Sink::from_callbacks(
   write : async (ArrayView[X]) -> Int,
@@ -162,6 +163,10 @@ pub async fn Sink::write_all_bytes(self : Sink[Byte], data : BytesView) -> Bool 
 }
 
 ///|
+/// Closes the writable end of the stream.
+///
+/// Closing is idempotent. A peer waiting for values observes the end of the
+/// stream after any values already accepted by the sink have been read.
 pub async fn[X] Sink::close(self : Sink[X]) -> Unit {
   (self.close)()
 }
@@ -540,7 +545,7 @@ pub fn[X] Future::ready_with_cleanup(
   let state : Ref[LocalFutureState[X]] = {
     val: { value: Some(value), closed: false, cleanup: Some(cleanup) },
   }
-  Future::{ inner: Local(state) }
+  { inner: Local(state) }
 }
 
 ///|
@@ -548,7 +553,7 @@ pub fn[X] Future::ready(value : X) -> Future[X] {
   let state : Ref[LocalFutureState[X]] = {
     val: { value: Some(value), closed: false, cleanup: None },
   }
-  Future::{ inner: Local(state) }
+  { inner: Local(state) }
 }
 
 ///|
@@ -561,9 +566,7 @@ pub fn[X] Future::from(
   producer : async () -> X,
   on_unstarted_drop? : () -> Unit,
 ) -> Future[X] {
-  Future::{
-    inner: Pending({ val: { producer: Some(producer), on_unstarted_drop } }),
-  }
+  { inner: Pending({ val: { producer: Some(producer), on_unstarted_drop } }) }
 }
 
 ///|
@@ -573,10 +576,14 @@ pub fn[X] Future::from_source(
   close : async () -> Unit,
   close_sync : () -> Unit,
 ) -> Future[X] {
-  Future::{ inner: Source({ get, close, close_sync }) }
+  { inner: Source({ get, close, close_sync }) }
 }
 
 ///|
+/// Waits for and consumes the future's single value.
+///
+/// A `Future` is a one-shot value. Calling `get` again, or calling it after the
+/// readable end has been dropped, fails instead of replaying the value.
 pub async fn[X] Future::get(self : Future[X]) -> X {
   match self.inner {
     Source(source) => (source.get)()
@@ -595,6 +602,11 @@ pub async fn[X] Future::get(self : Future[X]) -> X {
 }
 
 ///|
+/// Releases the readable end without consuming its value.
+///
+/// If the value is already locally available, its registered cleanup callback
+/// runs. An unstarted lazy producer is discarded and runs
+/// `on_unstarted_drop`, when provided.
 pub async fn[X] Future::drop(self : Future[X]) -> Unit noraise {
   match self.inner {
     Source(source) => (source.close)() catch { _ => () }
@@ -669,22 +681,22 @@ fn[X] new_stream_pipe(
   {
     val: {
       capacity,
-      chunks: @deque.Deque([]),
+      chunks: Deque([]),
       buffered: 0,
       writer_closed: false,
       reader_dropped: false,
       cleanup,
       head: None,
       head_pos: 0,
-      readers: @deque.Deque([]),
-      writers: @deque.Deque([]),
+      readers: Deque([]),
+      writers: Deque([]),
     },
   }
 }
 
 ///|
 fn[X] stream_pipe_sink(pipe : Ref[StreamPipe[X]]) -> Sink[X] {
-  Sink::{
+  {
     write: (data : ArrayView[X]) => stream_pipe_write(pipe, data),
     close: () => stream_pipe_close_writer(pipe),
     is_open: () => !pipe.val.writer_closed && !pipe.val.reader_dropped,
@@ -714,9 +726,7 @@ fn spawn_stream_producer(task : async () -> Unit) -> Unit {
   let current = current_coroutine()
   match current.spawner {
     Some(spawner) => spawner(task)
-    None => {
-      let _ = spawn(task)
-    }
+    None => ignore(spawn(task))
   }
 }
 
@@ -785,7 +795,7 @@ pub fn[X] Stream::produce(
   cleanup? : (X) -> Unit,
   on_unstarted_drop? : () -> Unit,
 ) -> Stream[X] {
-  Stream::{
+  {
     inner: Outgoing({
       val: { producer: Some(producer), cleanup, on_unstarted_drop, pipe: None },
     }),
@@ -799,10 +809,16 @@ pub fn[X] Stream::from_source(
   close : async () -> Unit,
   close_sync : () -> Unit,
 ) -> Stream[X] {
-  Stream::{ inner: Source({ read, close, close_sync }) }
+  { inner: Source({ read, close, close_sync }) }
 }
 
 ///|
+/// Reads at most `count` values from the stream.
+///
+/// `Some(values)` contains the next owned chunk and may be empty when the peer
+/// reports no progress. `None` means the writable end has closed and no
+/// buffered values remain. A non-positive count returns an empty chunk without
+/// waiting.
 pub async fn[X] Stream::read(self : Stream[X], count : Int) -> FixedArray[X]? {
   match self.inner {
     Source(source) => (source.read)(count)
@@ -813,6 +829,10 @@ pub async fn[X] Stream::read(self : Stream[X], count : Int) -> FixedArray[X]? {
 }
 
 ///|
+/// Releases the readable end and discards unread values.
+///
+/// Registered cleanup callbacks run for locally buffered values. An unstarted
+/// lazy producer is discarded and runs `on_unstarted_drop`, when provided.
 pub async fn[X] Stream::drop(self : Stream[X]) -> Unit noraise {
   match self.inner {
     Source(source) => (source.close)() catch { _ => () }

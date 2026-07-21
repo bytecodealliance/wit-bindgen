@@ -57,13 +57,13 @@ priv enum EventCode {
 ///|
 fn EventCode::from(int : Int) -> EventCode {
   match int {
-    0 => EventCode::None
-    1 => EventCode::SubTask
-    2 => EventCode::StreamRead
-    3 => EventCode::StreamWrite
-    4 => EventCode::FutureRead
-    5 => EventCode::FutureWrite
-    6 => EventCode::TaskCancelled
+    0 => None
+    1 => SubTask
+    2 => StreamRead
+    3 => StreamWrite
+    4 => FutureRead
+    5 => FutureWrite
+    6 => TaskCancelled
     _ => panic()
   }
 }

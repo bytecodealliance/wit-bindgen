@@ -1,6 +1,6 @@
 //@ [lang]
 //@ path = 'gen/interface/test/moonbit-stream-write-cancel/controller/stub.mbt'
-//@ pkg_config = """{ "import": [{ "path": "test/moonbit-stream-write-cancel/async-core", "alias": "async-core" }, { "path": "test/moonbit-stream-write-cancel/interface/test/moonbit-stream-write-cancel/holder", "alias": "holder" }] }"""
+//@ pkg_config = """{ "supported-targets": "+wasm", "import": [{ "path": "test/moonbit-stream-write-cancel/async-core", "alias": "async-core" }, { "path": "test/moonbit-stream-write-cancel/interface/test/moonbit-stream-write-cancel/holder", "alias": "holder" }] }"""
 
 ///|
 let never : (@async-core.Future[Unit], @async-core.Promise[Unit]) =

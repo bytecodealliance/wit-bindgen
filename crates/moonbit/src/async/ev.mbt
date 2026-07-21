@@ -354,7 +354,7 @@ fn arm_task_wakeup(waitable_set : WaitableSet) -> Unit {
   guard result == -1
   let subscribers = subscribers_for(waitable_set)
   guard subscribers.get(wakeup.reader) is None
-  subscribers.set(wakeup.reader, { event: None, coro: @set.Set([]) })
+  subscribers.set(wakeup.reader, { event: None, coro: Set([]) })
   waitable_join(wakeup.reader, waitable_set.0)
   wakeup.reading = true
   wakeup.signaled = false
@@ -447,7 +447,7 @@ async fn waitable_event(waitable_id : Int, immediate : Events?) -> Events {
       let subscriber = if subscribers.get(waitable_id) is Some(subscriber) {
         subscriber
       } else {
-        let subscriber = { event: None, coro: @set.Set([]) }
+        let subscriber = { event: None, coro: Set([]) }
         subscribers.set(waitable_id, subscriber)
         subscriber
       }

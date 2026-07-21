@@ -1,6 +1,6 @@
 //@ [lang]
 //@ path = 'gen/interface/my/test/leaf-interface/stub.mbt'
-//@ pkg_config = """{ "warn-list": "-44", "import": [{ "path": "my/test/async-core", "alias": "async-core" }, { "path": "moonbitlang/core/encoding/utf8", "alias": "utf8" }] }"""
+//@ pkg_config = """{ "warn-list": "-44", "supported-targets": "+wasm", "import": [{ "path": "my/test/async-core", "alias": "async-core" }, { "path": "moonbitlang/core/encoding/utf8", "alias": "utf8" }] }"""
 
 ///|
 priv struct BodyState {

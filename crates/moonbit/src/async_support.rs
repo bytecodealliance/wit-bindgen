@@ -34,6 +34,13 @@ impl PayloadFor {
             PayloadFor::Stream => "stream",
         }
     }
+
+    fn type_name(self) -> &'static str {
+        match self {
+            PayloadFor::Future => "Future",
+            PayloadFor::Stream => "Stream",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -108,6 +115,17 @@ struct AsyncEndpointIntrinsics {
     cancel_write: AsyncIntrinsicName,
     drop_readable: AsyncIntrinsicName,
     drop_writable: AsyncIntrinsicName,
+}
+
+struct EndpointPayloadFragments {
+    lift: String,
+    lift_result: String,
+    lower: String,
+    malloc: String,
+    lift_list: String,
+    commit: String,
+    reject: String,
+    free_outer: String,
 }
 
 #[derive(Clone, Debug)]
@@ -355,6 +373,10 @@ impl AsyncEndpointNames {
 }
 
 impl AsyncSupport {
+    pub(crate) fn is_required(&self) -> bool {
+        self.runtime_required || !self.endpoints.is_empty()
+    }
+
     pub(crate) fn import_plan(
         &mut self,
         async_filter: &mut AsyncFilterSet,
@@ -401,7 +423,7 @@ impl AsyncSupport {
     }
 
     pub(crate) fn emit_runtime_files(&self, files: &mut Files, version: &str) {
-        if !self.runtime_required && self.endpoints.is_empty() {
+        if !self.is_required() {
             return;
         }
 
@@ -710,7 +732,7 @@ impl<'a> InterfaceGenerator<'a> {
             r#"
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
-                return {ffi}with_waitableset(async fn() {{
+                {ffi}with_waitableset(async fn() {{
                     {ffi}with_task_group(async fn({background_group}) {{
                         {cleanup_list}
                         {body}
@@ -909,7 +931,7 @@ impl<'a> InterfaceGenerator<'a> {
             self.ffi,
             r#"
             #doc(hidden)
-            pub fn {export_func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
+            pub fn {export_func_name}(event_raw : Int, waitable : Int, code : Int) -> Int {{
                 {ffi}cb(event_raw, waitable, code)
             }}
             "#
@@ -923,7 +945,7 @@ impl<'a> InterfaceGenerator<'a> {
         let export = format!(
             r#"
             #doc(hidden)
-            pub fn {export_func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
+            pub fn {export_func_name}(event_raw : Int, waitable : Int, code : Int) -> Int {{
                 {package}{export_func_name}(event_raw, waitable, code)
             }}
             "#,
@@ -949,6 +971,10 @@ impl<'a> InterfaceGenerator<'a> {
         let mut lower_results = Vec::new();
         let mut async_state = endpoint_plan.state();
         let mut needs_cleanup_list = false;
+        let mut local_names = Ns::default();
+        for (name, _) in &mbt_sig.params {
+            local_names.tmp(name);
+        }
         self.ffi_imports.insert(ffi::FREE);
         let ffi = self
             .world_gen
@@ -956,19 +982,20 @@ impl<'a> InterfaceGenerator<'a> {
             .qualify_package(self.name, ASYNC_CORE_DIR);
 
         if sig.indirect_params {
+            let lower_ptr = local_names.tmp("lower_ptr");
             match &func.params[..] {
                 [] => {}
                 [Param { name, ty, .. }] => {
-                    body.push_str(&self.malloc_memory("_lower_ptr", "1", ty, self.name));
-                    body.push_str("\ndefer mbt_ffi_free(_lower_ptr)\n");
+                    body.push_str(&self.malloc_memory(&lower_ptr, "1", ty));
+                    body.push_str(&format!("\ndefer mbt_ffi_free({lower_ptr})\n"));
                     body.push_str(&self.lower_to_memory(
-                        "_lower_ptr",
+                        &lower_ptr,
                         &name.to_moonbit_ident(),
                         ty,
                         self.name,
                         &mut async_state,
                     ));
-                    lower_params.push("_lower_ptr".into());
+                    lower_params.push(lower_ptr);
                 }
                 multiple_params => {
                     let params = multiple_params.iter().map(|Param { ty, .. }| ty);
@@ -977,8 +1004,8 @@ impl<'a> InterfaceGenerator<'a> {
                     self.ffi_imports.insert(ffi::MALLOC);
                     body.push_str(&format!(
                         r#"
-                        let _lower_ptr : Int = mbt_ffi_malloc({})
-                        defer mbt_ffi_free(_lower_ptr)
+                        let {lower_ptr} : Int = mbt_ffi_malloc({})
+                        defer mbt_ffi_free({lower_ptr})
                         "#,
                         elem_info.size.size_wasm32(),
                     ));
@@ -989,7 +1016,7 @@ impl<'a> InterfaceGenerator<'a> {
                             .map(|Param { name, .. }| name.to_moonbit_ident()),
                     ) {
                         let result = self.lower_to_memory(
-                            &format!("_lower_ptr + {}", offset.size_wasm32()),
+                            &format!("{lower_ptr} + {}", offset.size_wasm32()),
                             &name,
                             ty,
                             self.name,
@@ -998,7 +1025,7 @@ impl<'a> InterfaceGenerator<'a> {
                         body.push_str(&result);
                     }
 
-                    lower_params.push("_lower_ptr".into());
+                    lower_params.push(lower_ptr);
                 }
             }
         } else {
@@ -1022,9 +1049,8 @@ impl<'a> InterfaceGenerator<'a> {
             let mut stable_params = Vec::with_capacity(lower_params.len());
             let bindings = lower_params
                 .iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    let name = format!("_lower_arg{index}");
+                .map(|value| {
+                    let name = local_names.tmp("lower_arg");
                     stable_params.push(name.clone());
                     format!("let {name} = {value}")
                 })
@@ -1093,12 +1119,13 @@ impl<'a> InterfaceGenerator<'a> {
         );
         let func_name = func.name.to_upper_camel_case();
 
-        let call_import = |params: &Vec<String>, drop_returned_result: &str| {
+        let subtask_code = local_names.tmp("subtask_code");
+        let call_import = |params: &[String], drop_returned_result: &str| {
             format!(
                 r#"
-                let _subtask_code = wasmImport{func_name}({})
+                let {subtask_code} = wasmImport{func_name}({})
                 {ffi}suspend_for_subtask(
-                    _subtask_code,
+                    {subtask_code},
                     {settle_arguments},
                     fn() {{
                         {drop_returned_result}
@@ -1111,11 +1138,12 @@ impl<'a> InterfaceGenerator<'a> {
         };
         match &func.result {
             Some(ty) => {
-                lower_params.push("_result_ptr".into());
+                let result_ptr = local_names.tmp("result_ptr");
+                lower_params.push(result_ptr.clone());
                 let (drop_returned_result, drop_result_state) = self
                     .deallocate_lists_and_own_with_state(
                         std::slice::from_ref(ty),
-                        &["_result_ptr".into()],
+                        std::slice::from_ref(&result_ptr),
                         true,
                         self.name,
                         endpoint_plan.endpoint_sites.clone(),
@@ -1130,18 +1158,18 @@ impl<'a> InterfaceGenerator<'a> {
                 }
                 let call_import = call_import(&lower_params, &drop_returned_result);
                 let (lift, lift_result) =
-                    &self.lift_from_memory("_result_ptr", ty, self.name, &mut async_state);
+                    &self.lift_from_memory(&result_ptr, ty, self.name, &mut async_state);
                 body.push_str(&format!(
                     r#"
                     {}
                     {}
-                    defer mbt_ffi_free(_result_ptr)
+                    defer mbt_ffi_free({result_ptr})
                     {call_import}
                     {lift}
                     {lift_result}
                     "#,
                     lower_results.join("\n"),
-                    &self.malloc_memory("_result_ptr", "1", ty, self.name)
+                    &self.malloc_memory(&result_ptr, "1", ty)
                 ));
             }
             None => {
@@ -1180,7 +1208,7 @@ impl<'a> InterfaceGenerator<'a> {
         let symbol_name = &site.symbol_name;
         let payload_len_arg = match site.kind {
             PayloadFor::Future => "",
-            PayloadFor::Stream => " ,length : Int",
+            PayloadFor::Stream => ", length : Int",
         };
         let new_module = &site.intrinsics.new.module;
         let new_field = &site.intrinsics.new.field;
@@ -1204,75 +1232,81 @@ impl<'a> InterfaceGenerator<'a> {
         let elem_size = result_type
             .map(|ty| self.world_gen.sizes.size(ty).size_wasm32())
             .unwrap_or(0);
-        let read_chunk_owns_buffer =
-            result_type.is_some_and(|ty| self.is_list_canonical(self.resolve, ty));
+        let read_chunk_owns_buffer = result_type.is_some_and(|ty| self.is_list_canonical(ty));
         let staging_window = if payload_sites.is_empty() { 64 } else { 1 };
 
-        let (lift, lift_result, lower, malloc, lift_list, commit, reject, free_outer) =
-            if let Some(result_type) = result_type {
-                let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
-                let (lift, lift_result) =
-                    self.lift_from_memory("ptr", result_type, &helper_package, &mut payload_state);
-                let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
-                let lower = self.lower_to_memory(
-                    "ptr",
-                    "value",
-                    result_type,
-                    &helper_package,
-                    &mut payload_state,
-                );
-                let (commit, _) = self.commit_lists_and_endpoints_with_state(
-                    std::slice::from_ref(result_type),
-                    &[String::from("elem_ptr")],
-                    true,
-                    &helper_package,
-                    payload_sites.clone(),
-                );
-                let reject = self.deallocate_lists_and_own(
-                    std::slice::from_ref(result_type),
-                    &[String::from("elem_ptr")],
-                    true,
-                    &helper_package,
-                    payload_sites.clone(),
-                );
-                let lift_list = self.list_lift_from_memory(
-                    "ptr",
-                    "length",
-                    &format!("wasm{symbol_name}Lift"),
-                    result_type,
-                    &helper_package,
-                );
-                let malloc = self.malloc_memory("ptr", "length", result_type, &helper_package);
-                self.ffi_imports.insert(ffi::FREE);
-                (
-                    lift,
-                    lift_result,
-                    lower,
-                    malloc,
-                    lift_list,
-                    commit,
-                    reject,
-                    "mbt_ffi_free(ptr)".to_string(),
-                )
-            } else {
-                (
-                    "let _ = ptr".into(),
-                    "".into(),
-                    "let _ = (ptr, value)".into(),
-                    "let ptr = 0".into(),
-                    "FixedArray::make(length, Unit::default())".into(),
-                    String::new(),
-                    String::new(),
-                    "let _ = ptr".into(),
-                )
-            };
+        let EndpointPayloadFragments {
+            lift,
+            lift_result,
+            lower,
+            malloc,
+            lift_list,
+            commit,
+            reject,
+            free_outer,
+        } = if let Some(result_type) = result_type {
+            let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
+            let (lift, lift_result) =
+                self.lift_from_memory("ptr", result_type, &helper_package, &mut payload_state);
+            let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
+            let lower = self.lower_to_memory(
+                "ptr",
+                "value",
+                result_type,
+                &helper_package,
+                &mut payload_state,
+            );
+            let (commit, _) = self.commit_lists_and_endpoints_with_state(
+                std::slice::from_ref(result_type),
+                &[String::from("elem_ptr")],
+                true,
+                &helper_package,
+                payload_sites.clone(),
+            );
+            let reject = self.deallocate_lists_and_own(
+                std::slice::from_ref(result_type),
+                &[String::from("elem_ptr")],
+                true,
+                &helper_package,
+                payload_sites.clone(),
+            );
+            let lift_list = self.list_lift_from_memory(
+                "ptr",
+                "length",
+                &format!("wasm{symbol_name}Lift"),
+                result_type,
+            );
+            let malloc = self.malloc_memory("ptr", "length", result_type);
+            self.ffi_imports.insert(ffi::FREE);
+            EndpointPayloadFragments {
+                lift,
+                lift_result,
+                lower,
+                malloc,
+                lift_list,
+                commit,
+                reject,
+                free_outer: "mbt_ffi_free(ptr)".to_string(),
+            }
+        } else {
+            EndpointPayloadFragments {
+                lift: "ignore(ptr)".into(),
+                lift_result: String::new(),
+                lower: "ignore((ptr, value))".into(),
+                malloc: "let ptr = 0".into(),
+                lift_list: "FixedArray::make(length, Unit::default())".into(),
+                commit: String::new(),
+                reject: String::new(),
+                free_outer: "ignore(ptr)".into(),
+            }
+        };
 
         let commit = if commit.trim().is_empty() {
-            "let _ = (ptr, start, length)".to_string()
+            "ignore((ptr, start, length))".to_string()
         } else {
             format!(
                 r#"
-                for i = start; i < start + length; i = i + 1 {{
+                for i in start..<(start + length) {{
                     let elem_ptr = ptr + i * {elem_size}
                     {commit}
                 }}
@@ -1280,11 +1314,11 @@ impl<'a> InterfaceGenerator<'a> {
             )
         };
         let reject = if reject.trim().is_empty() {
-            "let _ = (ptr, start, length)".to_string()
+            "ignore((ptr, start, length))".to_string()
         } else {
             format!(
                 r#"
-                for i = start; i < start + length; i = i + 1 {{
+                for i in start..<(start + length) {{
                     let elem_ptr = ptr + i * {elem_size}
                     {reject}
                 }}
@@ -1297,7 +1331,7 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
-            fn wasm{symbol_name}Lift(ptr: Int) -> {result} {{
+            fn wasm{symbol_name}Lift(ptr : Int) -> {result} {{
                 {lift}
                 {lift_result}
             }}
@@ -1310,7 +1344,7 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
-            fn wasm{symbol_name}Lower(value: {result}, ptr: Int) -> Unit {{
+            fn wasm{symbol_name}Lower(value : {result}, ptr : Int) -> Unit {{
                 {lower}
             }}
             "#
@@ -1322,8 +1356,8 @@ impl<'a> InterfaceGenerator<'a> {
                 format!(
                     r#"
                     fn wasm{symbol_name}ListLift(
-                        ptr: Int,
-                        length: Int,
+                        ptr : Int,
+                        length : Int,
                     ) -> FixedArray[{result}] {{
                         {lift_list}
                     }}
@@ -1382,9 +1416,9 @@ impl<'a> InterfaceGenerator<'a> {
                 format!(
                     r#"
                     fn wasm{symbol_name}Commit(
-                        ptr: Int,
-                        start: Int,
-                        length: Int,
+                        ptr : Int,
+                        start : Int,
+                        length : Int,
                     ) -> Unit {{
                         {commit}
                     }}
@@ -1413,7 +1447,7 @@ impl<'a> InterfaceGenerator<'a> {
                     .then(|| {
                         format!(
                             r#"
-fn wasm{symbol_name}FutureRejectPrepared(handle: Int) -> Bool {{
+fn wasm{symbol_name}FutureRejectPrepared(handle : Int) -> Bool {{
     guard wasm{symbol_name}FutureProducers.get(handle) is Some(producer) else {{
         return false
     }}
@@ -1601,7 +1635,7 @@ async fn Wasm{symbol_name}FutureSource::read(
     value
 }}
 
-fn wasm{symbol_name}FutureLift(handle: Int) -> {ffi}Future[{result}] {{
+fn wasm{symbol_name}FutureLift(handle : Int) -> {ffi}Future[{result}] {{
     let source = Wasm{symbol_name}FutureSource::{{
         handle,
         closed: false,
@@ -1610,7 +1644,7 @@ fn wasm{symbol_name}FutureLift(handle: Int) -> {ffi}Future[{result}] {{
         read_buffer: 0,
         read_discarding: false,
         read_cleanup_done: false,
-        read_cleanup: {ffi}CondVar(),
+        read_cleanup: CondVar(),
     }}
     {ffi}Future::from_source(
         () => source.read(),
@@ -1627,7 +1661,7 @@ fn wasm{symbol_name}FutureLift(handle: Int) -> {ffi}Future[{result}] {{
                     .then(|| {
                         format!(
                             r#"
-fn wasm{symbol_name}FutureLowerCommitted(future: {ffi}Future[{result}]) -> Int {{
+fn wasm{symbol_name}FutureLowerCommitted(future : {ffi}Future[{result}]) -> Int {{
     let reader = wasm{symbol_name}FutureLower(future)
     wasm{symbol_name}FutureCommit(reader)
     reader
@@ -1648,7 +1682,7 @@ let wasm{symbol_name}FutureProducers : Map[Int, Wasm{symbol_name}FutureProducer]
 
 {reject_prepared_func}
 
-fn wasm{symbol_name}FutureCommit(handle: Int) -> Unit {{
+fn wasm{symbol_name}FutureCommit(handle : Int) -> Unit {{
     guard wasm{symbol_name}FutureProducers.get(handle) is Some(producer) else {{
         return
     }}
@@ -1686,7 +1720,7 @@ fn wasm{symbol_name}FutureCommit(handle: Int) -> Unit {{
     }})
 }}
 
-fn wasm{symbol_name}FutureLower(future: {ffi}Future[{result}]) -> Int {{
+fn wasm{symbol_name}FutureLower(future : {ffi}Future[{result}]) -> Int {{
     if !{ffi}has_component_task_scope() {{
         abort("component future producer requires an async task scope")
     }}
@@ -1722,7 +1756,7 @@ fn wasm{symbol_name}FutureLower(future: {ffi}Future[{result}]) -> Int {{
                     .then(|| {
                         format!(
                             r#"
-fn wasm{symbol_name}StreamRejectPrepared(handle: Int) -> Bool {{
+fn wasm{symbol_name}StreamRejectPrepared(handle : Int) -> Bool {{
     guard wasm{symbol_name}StreamProducers.get(handle) is Some(prepared) else {{
         return false
     }}
@@ -1917,7 +1951,7 @@ async fn Wasm{symbol_name}StreamSource::read(
     Some(values)
 }}
 
-fn wasm{symbol_name}StreamLift(handle: Int) -> {ffi}Stream[{result}] {{
+fn wasm{symbol_name}StreamLift(handle : Int) -> {ffi}Stream[{result}] {{
     let source = Wasm{symbol_name}StreamSource::{{
         handle,
         closed: false,
@@ -1926,7 +1960,7 @@ fn wasm{symbol_name}StreamLift(handle: Int) -> {ffi}Stream[{result}] {{
         read_buffer: 0,
         read_discarding: false,
         read_cleanup_done: false,
-        read_cleanup: {ffi}CondVar(),
+        read_cleanup: CondVar(),
     }}
     {ffi}Stream::from_source(
         (count) => source.read(count),
@@ -1943,7 +1977,7 @@ fn wasm{symbol_name}StreamLift(handle: Int) -> {ffi}Stream[{result}] {{
                     .then(|| {
                         format!(
                             r#"
-fn wasm{symbol_name}StreamLowerCommitted(stream: {ffi}Stream[{result}]) -> Int {{
+fn wasm{symbol_name}StreamLowerCommitted(stream : {ffi}Stream[{result}]) -> Int {{
     let reader = wasm{symbol_name}StreamLower(stream)
     wasm{symbol_name}StreamCommit(reader)
     reader
@@ -1964,7 +1998,7 @@ let wasm{symbol_name}StreamProducers : Map[Int, Wasm{symbol_name}StreamProducer]
 
 {reject_prepared_func}
 
-fn wasm{symbol_name}StreamCommit(handle: Int) -> Unit {{
+fn wasm{symbol_name}StreamCommit(handle : Int) -> Unit {{
     guard wasm{symbol_name}StreamProducers.get(handle) is Some(prepared) else {{
         return
     }}
@@ -2008,11 +2042,11 @@ fn wasm{symbol_name}StreamCommit(handle: Int) -> Unit {{
                     {staging_window}
                 }}
                 let ptr = wasm{symbol_name}Malloc(data_len)
-                for i = 0; i < data_len; i = i + 1 {{
+                for i in 0..<data_len {{
                     let value : {result} = data[i]
                     wasm{symbol_name}Lower(value, ptr + i * {elem_size})
                 }}
-                let settle_staging = fn(transferred: Int) -> Unit {{
+                let settle_staging = fn(transferred : Int) -> Unit {{
                     wasm{symbol_name}Commit(ptr, 0, transferred)
                     if transferred < data_len {{
                         wasm{symbol_name}Reject(
@@ -2106,7 +2140,7 @@ fn wasm{symbol_name}StreamCommit(handle: Int) -> Unit {{
     }})
 }}
 
-fn wasm{symbol_name}StreamLower(stream: {ffi}Stream[{result}]) -> Int {{
+fn wasm{symbol_name}StreamLower(stream : {ffi}Stream[{result}]) -> Int {{
     if !{ffi}has_component_task_scope() {{
         abort("component stream producer requires an async task scope")
     }}
@@ -2134,7 +2168,7 @@ fn wasm{symbol_name}StreamLower(stream: {ffi}Stream[{result}]) -> Int {{
 {drop_readable_intrinsic}
 {lower_intrinsics}
 
-fn wasm{symbol_name}Malloc(length: Int) -> Int {{
+fn wasm{symbol_name}Malloc(length : Int) -> Int {{
     {malloc}
     ptr
 }}
@@ -2142,9 +2176,9 @@ fn wasm{symbol_name}Malloc(length: Int) -> Int {{
 {commit_func}
 
 fn wasm{symbol_name}Reject(
-    ptr: Int,
-    start: Int,
-    length: Int,
+    ptr : Int,
+    start : Int,
+    length : Int,
 ) -> Unit {{
     {reject}
 }}
@@ -2252,14 +2286,13 @@ fn wasm{symbol_name}Reject(
         f.src
     }
 
-    fn malloc_memory(&mut self, address: &str, length: &str, ty: &Type, package: &str) -> String {
+    fn malloc_memory(&mut self, address: &str, length: &str, ty: &Type) -> String {
         let size = self.world_gen.sizes.size(ty).size_wasm32();
-        let _ = package;
         self.ffi_imports.insert(ffi::MALLOC);
-        format!("let {address} = mbt_ffi_malloc({size} * {length});")
+        format!("let {address} = mbt_ffi_malloc({size} * {length})")
     }
 
-    fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
+    fn is_list_canonical(&self, element: &Type) -> bool {
         matches!(
             element,
             Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64
@@ -2272,10 +2305,8 @@ fn wasm{symbol_name}Reject(
         length: &str,
         lift_func: &str,
         ty: &Type,
-        package: &str,
     ) -> String {
-        let _ = package;
-        if self.is_list_canonical(self.resolve, ty) {
+        if self.is_list_canonical(ty) {
             if ty == &Type::U8 {
                 self.ffi_imports.insert(ffi::PTR2BYTES);
                 return format!("mbt_ffi_ptr2bytes({address}, {length})");
@@ -2299,7 +2330,7 @@ fn wasm{symbol_name}Reject(
             FixedArray::makei(
                 {length},
                 (index) => {{ 
-                    let ptr = ({address}) + (index * {size});
+                    let ptr = ({address}) + (index * {size})
                     {lift_func}(ptr)
                 }}
             )
@@ -2447,8 +2478,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         };
     }
 
-    pub(super) fn emit_future_lift(
+    fn emit_endpoint_lift(
         &mut self,
+        kind: PayloadFor,
         ty: TypeId,
         operands: &[String],
         results: &mut Vec<String>,
@@ -2457,23 +2489,25 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let op = &operands[0];
         let site = self
             .async_state
-            .next_site(PayloadFor::Future, ty, EndpointOperation::Lift);
-        let lift_name = format!("wasm{}FutureLift", site.symbol_name);
+            .next_site(kind, ty, EndpointOperation::Lift);
+        let type_name = kind.type_name();
+        let lift_name = format!("wasm{}{type_name}Lift", site.symbol_name);
 
         if self.commit_endpoints {
-            let commit_name = format!("wasm{}FutureCommit", site.symbol_name);
-            uwriteln!(self.src, r#"{commit_name}({op});"#);
+            let commit_name = format!("wasm{}{type_name}Commit", site.symbol_name);
+            uwriteln!(self.src, r#"{commit_name}({op})"#);
             results.push("()".into());
             return;
         }
 
-        uwriteln!(self.src, r#"let {result} = {lift_name}({op});"#,);
+        uwriteln!(self.src, r#"let {result} = {lift_name}({op})"#,);
 
         results.push(result);
     }
 
-    pub(super) fn emit_future_lower(
+    fn emit_endpoint_lower(
         &mut self,
+        kind: PayloadFor,
         ty: TypeId,
         operands: &[String],
         results: &mut Vec<String>,
@@ -2487,17 +2521,30 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         } else {
             EndpointOperation::Lower
         };
-        let site = self
-            .async_state
-            .next_site(PayloadFor::Future, ty, operation);
-        let suffix = if committed {
-            "FutureLowerCommitted"
-        } else {
-            "FutureLower"
-        };
-        let lower_name = format!("wasm{}{suffix}", site.symbol_name);
+        let site = self.async_state.next_site(kind, ty, operation);
+        let type_name = kind.type_name();
+        let suffix = if committed { "LowerCommitted" } else { "Lower" };
+        let lower_name = format!("wasm{}{type_name}{suffix}", site.symbol_name);
         let op = &operands[0];
         results.push(format!("{lower_name}({op})"));
+    }
+
+    pub(super) fn emit_future_lift(
+        &mut self,
+        ty: TypeId,
+        operands: &[String],
+        results: &mut Vec<String>,
+    ) {
+        self.emit_endpoint_lift(PayloadFor::Future, ty, operands, results);
+    }
+
+    pub(super) fn emit_future_lower(
+        &mut self,
+        ty: TypeId,
+        operands: &[String],
+        results: &mut Vec<String>,
+    ) {
+        self.emit_endpoint_lower(PayloadFor::Future, ty, operands, results);
     }
 
     pub(super) fn capture_task_return(&mut self, params: &[WasmType], operands: &[String]) {
@@ -2541,26 +2588,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         operands: &[String],
         results: &mut Vec<String>,
     ) {
-        let committed = matches!(
-            self.async_state.task_return,
-            AsyncTaskReturnState::Generating { .. }
-        );
-        let operation = if committed {
-            EndpointOperation::LowerCommitted
-        } else {
-            EndpointOperation::Lower
-        };
-        let site = self
-            .async_state
-            .next_site(PayloadFor::Stream, ty, operation);
-        let suffix = if committed {
-            "StreamLowerCommitted"
-        } else {
-            "StreamLower"
-        };
-        let lower_name = format!("wasm{}{suffix}", site.symbol_name);
-        let op = &operands[0];
-        results.push(format!("{lower_name}({op})"));
+        self.emit_endpoint_lower(PayloadFor::Stream, ty, operands, results);
     }
 
     pub(super) fn emit_stream_lift(
@@ -2569,23 +2597,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         operands: &[String],
         results: &mut Vec<String>,
     ) {
-        let result = self.locals.tmp("result");
-        let op = &operands[0];
-        let site = self
-            .async_state
-            .next_site(PayloadFor::Stream, ty, EndpointOperation::Lift);
-        let lift_name = format!("wasm{}StreamLift", site.symbol_name);
-
-        if self.commit_endpoints {
-            let commit_name = format!("wasm{}StreamCommit", site.symbol_name);
-            uwriteln!(self.src, r#"{commit_name}({op});"#);
-            results.push("()".into());
-            return;
-        }
-
-        uwriteln!(self.src, r#"let {result} = {lift_name}({op});"#,);
-
-        results.push(result);
+        self.emit_endpoint_lift(PayloadFor::Stream, ty, operands, results);
     }
 }
 

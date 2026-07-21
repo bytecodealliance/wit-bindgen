@@ -21,7 +21,9 @@ use wit_bindgen_core::{
 };
 
 use crate::async_support::{AsyncFunctionState, AsyncSupport};
-use crate::pkg::{Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent};
+use crate::pkg::{
+    ASYNC_CORE_DIR, Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent,
+};
 
 mod async_support;
 mod ffi;
@@ -176,6 +178,11 @@ impl MoonBit {
             uwrite!(moon_pkg, "{}", deps.join(",\n"));
             moon_pkg.deindent(1);
             moon_pkg.push_str("\n]");
+        }
+        let imports_async_core =
+            imports.is_some_and(|imports| imports.packages.contains_key(ASYNC_CORE_DIR));
+        if imports_async_core || (link && self.async_support.is_required()) {
+            moon_pkg.push_str(",\n\"supported-targets\": \"+wasm\"");
         }
         // Link target
         if link {
@@ -3236,6 +3243,8 @@ mod tests {
                 .iter()
                 .all(|(name, _)| !name.starts_with("async-core/async_"))
         );
+        let package = file(&files, "gen/moon.pkg.json");
+        assert!(!package.contains("supported-targets"), "{package}");
     }
 
     #[test]
@@ -3307,6 +3316,16 @@ mod tests {
 
         let source = file(&files, "interface/a/b/types/top.mbt");
         assert!(source.contains("@async-core.Future[UInt]"), "{source}");
+        let package = file(&files, "interface/a/b/types/moon.pkg.json");
+        assert!(
+            package.contains("\"supported-targets\": \"+wasm\""),
+            "{package}"
+        );
+        let link_package = file(&files, "gen/moon.pkg.json");
+        assert!(
+            link_package.contains("\"supported-targets\": \"+wasm\""),
+            "{link_package}"
+        );
         file(&files, "async-core/moon.pkg.json");
         file(&files, "async-core/async_trait.mbt");
     }
@@ -3644,7 +3663,10 @@ mod tests {
         let import = file(&imports, "interface/test/moonbit-nested/nested/top.mbt");
         assert!(import.contains("if before_started"));
         assert!(import.contains(".drop_sync()"));
-        assert!(import.contains("defer mbt_ffi_free(_result_ptr)"));
+        assert!(import.contains("defer mbt_ffi_free(result_ptr)"));
+        for misleading_name in ["_lower_ptr", "_lower_arg", "_subtask_code", "_result_ptr"] {
+            assert!(!import.contains(misleading_name), "{import}");
+        }
         assert_eq!(import.matches("FutureLower(value)").count(), 1, "{import}");
         assert_eq!(import.matches("StreamLower(value)").count(), 1, "{import}");
         assert!(!import.contains("cleanup_list"));
@@ -3733,9 +3755,9 @@ mod tests {
             "{import}"
         );
         assert!(
-            import.contains("mbt_ffi_free(mbt_ffi_load32((_result_ptr) + 0))")
-                && import.contains("mbt_ffi_free(mbt_ffi_load32((_result_ptr) + 8))")
-                && import.contains("defer mbt_ffi_free(_result_ptr)"),
+            import.contains("mbt_ffi_free(mbt_ffi_load32((result_ptr) + 0))")
+                && import.contains("mbt_ffi_free(mbt_ffi_load32((result_ptr) + 8))")
+                && import.contains("defer mbt_ffi_free(result_ptr)"),
             "cancelled returned result must free its strings, lists, and result area: {import}"
         );
     }
