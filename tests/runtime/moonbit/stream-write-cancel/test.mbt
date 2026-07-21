@@ -25,17 +25,28 @@ let producer_done : (@async-core.Future[Unit], @async-core.Promise[Unit]) =
 
 ///|
 pub async fn run_until_cancelled(
-  _background_group : @async-core.TaskGroup[Unit]
+  background_group : @async-core.TaskGroup[Unit]
 ) -> Unit {
+  let writer_started : (@async-core.Future[Unit], @async-core.Promise[Unit]) =
+    @async-core.Future::new()
   let stream = @async-core.Stream::produce(async fn(sink) {
-    defer {
-      cancellation_seen.val = true
-      ignore(cancellation_done.1.complete(()))
-    }
-    @holder.mark_write_started()
-    let data : FixedArray[@holder.Leaf] = [@holder.Leaf::leaf()]
-    let _ = sink.write_all(data[:])
-  })
+    // Return while a child owns a partially accepted write, forcing generated
+    // finalization to wait for the child's canonical buffer cleanup.
+    background_group.spawn_bg(async fn() {
+      defer {
+        cancellation_seen.val = true
+        ignore(cancellation_done.1.complete(()))
+      }
+      @holder.mark_write_started()
+      ignore(writer_started.1.complete(()))
+      let data : FixedArray[@holder.Leaf] = [
+        @holder.Leaf::leaf(),
+        @holder.Leaf::leaf(),
+      ]
+      let _ = sink.write_all(data[:])
+    })
+    writer_started.0.get()
+  }, cleanup=fn(value) { value.drop() })
   @holder.hold(stream)
   never.0.get()
 }

@@ -13,6 +13,7 @@ interface holder {
   write-started: func() -> bool;
   wait-write-started: async func();
   writable-dropped: async func() -> bool;
+  read-one-and-keep: async func() -> bool;
   read-one-and-drop: async func() -> bool;
   leaf-live-count: func() -> u32;
   leaf-drop-count: func() -> u32;

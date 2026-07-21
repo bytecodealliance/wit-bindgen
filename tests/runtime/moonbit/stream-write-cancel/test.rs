@@ -44,7 +44,9 @@ impl Guest for Component {
         let (mut writer, reader) = wit_stream::new::<holder::Leaf>();
         holder::hold(reader).await;
         holder::mark_write_started();
-        let _ = writer.write_one(holder::Leaf::new()).await;
+        let _ = writer
+            .write(vec![holder::Leaf::new(), holder::Leaf::new()])
+            .await;
         std::future::pending::<()>().await;
     }
 

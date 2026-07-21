@@ -3585,8 +3585,13 @@ mod tests {
         assert!(ffi.contains("suspend_for_future_write_terminal"));
         assert!(ffi.contains("let data_len = if data.length() < 1"));
         assert!(ffi.contains("let writer_lock = @async-core.Mutex()"));
+        assert!(ffi.contains("let close_writer_serialized = async fn()"));
         assert!(ffi.contains("writer_lock.acquire()"));
         assert!(ffi.contains("defer writer_lock.release()"));
+        assert!(
+            ffi.contains("() => close_writer_serialized(),\n            resume_on_cancel=true,")
+        );
+        assert!(!ffi.contains("defer close_writer()"));
         assert!(ffi.contains("read_cleanup : @async-core.CondVar"));
         assert!(ffi.contains("self.read_cleanup.broadcast()"));
         assert!(ffi.contains("@async-core.cancel_future_read("));

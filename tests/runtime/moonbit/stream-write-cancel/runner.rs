@@ -24,13 +24,14 @@ impl Guest for Component {
             .is_pending());
         holder::wait_write_started().await;
         assert!(holder::write_started());
+        assert!(holder::read_one_and_keep().await);
 
         drop(task);
         wait_cancellation_observed().await;
         assert!(cancellation_observed());
         assert!(holder::writable_dropped().await);
         assert_eq!(holder::leaf_live_count(), 0);
-        assert_eq!(holder::leaf_drop_count(), 1);
+        assert_eq!(holder::leaf_drop_count(), 2);
 
         start_peer_drop().await;
         assert!(holder::read_one_and_drop().await);
@@ -38,6 +39,6 @@ impl Guest for Component {
         assert!(second_write_started());
         assert!(producer_finished());
         assert_eq!(holder::leaf_live_count(), 0);
-        assert_eq!(holder::leaf_drop_count(), 5);
+        assert_eq!(holder::leaf_drop_count(), 6);
     }
 }

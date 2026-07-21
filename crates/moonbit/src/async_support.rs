@@ -1984,7 +1984,11 @@ fn wasm{symbol_name}StreamCommit(handle: Int) -> Unit {{
                 wasmImport{symbol_name}DropWritable(writer)
             }}
         }}
-        defer close_writer()
+        let close_writer_serialized = async fn() -> Unit {{
+            writer_lock.acquire()
+            defer writer_lock.release()
+            close_writer()
+        }}
         let cleanup_value = fn(value : {result}) -> Unit {{
             let ptr = wasm{symbol_name}Malloc(1)
             wasm{symbol_name}Lower(value, ptr)
@@ -2054,11 +2058,7 @@ fn wasm{symbol_name}StreamCommit(handle: Int) -> Unit {{
                 // consumed the rest of this staging window.
                 data_len
             }},
-            () => {{
-                writer_lock.acquire()
-                defer writer_lock.release()
-                close_writer()
-            }},
+            () => close_writer_serialized(),
             () => !writer_closed.val,
             Some(cleanup_value),
         )
@@ -2096,6 +2096,13 @@ fn wasm{symbol_name}StreamCommit(handle: Int) -> Unit {{
                     }}
                 }}
         }}
+        // A retained Sink may still own an in-flight canonical write after its
+        // producer returns. Do not drop the writable endpoint until that write
+        // has reached a terminal event and released its staging buffer.
+        {ffi}protect_from_cancel(
+            () => close_writer_serialized(),
+            resume_on_cancel=true,
+        )
     }})
 }}
 

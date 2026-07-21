@@ -60,6 +60,13 @@ impl Guest for Component {
         result == StreamResult::Dropped && values.is_empty()
     }
 
+    async fn read_one_and_keep() -> bool {
+        let mut stream = HELD_STREAM.with(|stream| stream.borrow_mut().take().unwrap());
+        let (result, values) = stream.read(Vec::with_capacity(1)).await;
+        HELD_STREAM.with(|held| assert!(held.borrow_mut().replace(stream).is_none()));
+        result == StreamResult::Complete(1) && values.len() == 1
+    }
+
     async fn read_one_and_drop() -> bool {
         let mut stream = HELD_STREAM.with(|stream| stream.borrow_mut().take().unwrap());
         let (result, values) = stream.read(Vec::with_capacity(1)).await;
