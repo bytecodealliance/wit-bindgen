@@ -47,13 +47,13 @@ syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 macro-string = "0.2.0"
 
-wat = "1.253.0"
-wasmparser = "0.253.0"
-wasm-encoder = "0.253.0"
-wasm-metadata = { version = "0.253.0", default-features = false }
-wit-parser = "0.253.0"
-wit-component = "0.253.0"
-wasm-compose = "0.253.0"
+wat = "1.254.0"
+wasmparser = "0.254.0"
+wasm-encoder = "0.254.0"
+wasm-metadata = { version = "0.254.0", default-features = false }
+wit-parser = "0.254.0"
+wit-component = "0.254.0"
+wasm-compose = "0.254.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.59.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.59.0' }
