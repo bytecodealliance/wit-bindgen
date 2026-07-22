@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use heck::{ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::{
     Ns, dealias,
     wit_parser::{
@@ -9,7 +9,7 @@ use wit_bindgen_core::{
     },
 };
 
-pub(crate) const FFI_DIR: &str = "ffi";
+pub(crate) const ASYNC_CORE_DIR: &str = "async-core";
 
 #[derive(Default)]
 pub(crate) struct Imports {
@@ -39,9 +39,7 @@ impl PkgResolver {
             if let Some(alias) = imports.packages.get(name) {
                 format!("@{alias}.")
             } else {
-                let alias = imports
-                    .ns
-                    .tmp(&name.split(".").last().unwrap().to_lower_camel_case());
+                let alias = imports.ns.tmp(name.split(".").last().unwrap());
                 imports
                     .packages
                     .entry(name.to_string())
@@ -249,9 +247,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Future(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_CORE_DIR);
                         format!(
-                            "{}FutureReader[{}]",
+                            "{}Future[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -260,9 +258,9 @@ impl PkgResolver {
                     }
 
                     TypeDefKind::Stream(ty) => {
-                        let qualifier = self.qualify_package(this, FFI_DIR);
+                        let qualifier = self.qualify_package(this, ASYNC_CORE_DIR);
                         format!(
-                            "{}StreamReader[{}]",
+                            "{}Stream[{}]",
                             qualifier,
                             ty.as_ref()
                                 .map(|t| self.type_name(this, t))
@@ -352,7 +350,7 @@ impl PkgResolver {
     }
 
     pub(crate) fn world_name(resolve: &Resolve, world: WorldId) -> String {
-        format!("world.{}", resolve.worlds[world].name.to_lower_camel_case())
+        format!("world.{}", resolve.worlds[world].name)
     }
 
     pub(crate) fn interface_name(resolve: &Resolve, name: &WorldKey) -> String {
@@ -367,21 +365,58 @@ impl PkgResolver {
         let name = match name {
             WorldKey::Name(name) => name,
             WorldKey::Interface(id) => resolve.interfaces[*id].name.as_ref().unwrap(),
-        }
-        .to_lower_camel_case();
+        };
 
         format!(
             "interface.{}{name}",
             if let Some(name) = &pkg {
-                format!(
-                    "{}.{}.",
-                    name.namespace.to_moonbit_ident(),
-                    name.name.to_moonbit_ident()
-                )
+                format!("{}.{}.", name.namespace, name.name)
             } else {
                 String::new()
             }
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn package_names_and_aliases_preserve_kebab_case() {
+        let mut resolve = Resolve::default();
+        let package = resolve
+            .push_str(
+                "test.wit",
+                r#"
+                package my:test;
+
+                interface leaf-interface {}
+
+                world http-proxy {
+                    import leaf-interface;
+                }
+                "#,
+            )
+            .unwrap();
+        let world = resolve
+            .select_world(&[package], Some("http-proxy"))
+            .unwrap();
+        let (key, _) = resolve.worlds[world].imports.iter().next().unwrap();
+
+        let interface = PkgResolver::interface_name(&resolve, key);
+        assert_eq!(interface, "interface.my.test.leaf-interface");
+        assert_eq!(PkgResolver::world_name(&resolve, world), "world.http-proxy");
+
+        let mut packages = PkgResolver::default();
+        assert_eq!(
+            packages.qualify_package("world.http-proxy", &interface),
+            "@leaf-interface."
+        );
+        assert_eq!(
+            packages.package_import["world.http-proxy"].packages[&interface],
+            "leaf-interface"
+        );
     }
 }
 

@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/test_/options/toTest/stub.mbt'
+//@ path = 'gen/interface/test/options/to-test/stub.mbt'
 
 ///|
 pub fn option_none_param(a : String?) -> Unit {

@@ -1,0 +1,45 @@
+//@ async = true
+//@ dependencies = ['test', 'holder-service']
+
+package test:moonbit-stream-write-cancel;
+
+interface holder {
+  resource leaf {
+    constructor();
+  }
+
+  hold: async func(value: stream<leaf>);
+  mark-write-started: func();
+  write-started: func() -> bool;
+  wait-write-started: async func();
+  writable-dropped: async func() -> bool;
+  read-one-and-keep: async func() -> bool;
+  read-one-and-drop: async func() -> bool;
+  leaf-live-count: func() -> u32;
+  leaf-drop-count: func() -> u32;
+}
+
+interface controller {
+  run-until-cancelled: async func();
+  cancellation-observed: func() -> bool;
+  wait-cancellation-observed: async func();
+  start-peer-drop: async func();
+  second-write-started: func() -> bool;
+  producer-finished: func() -> bool;
+  wait-producer-finished: async func();
+}
+
+world test {
+  import holder;
+  export controller;
+}
+
+world holder-service {
+  export holder;
+}
+
+world runner {
+  import controller;
+  import holder;
+  export run: async func();
+}

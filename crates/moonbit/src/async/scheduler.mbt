@@ -16,42 +16,76 @@
 priv struct Scheduler {
   mut coro_id : Int
   mut curr_coro : Coroutine?
+  tasks : Map[WaitableSet, TaskSchedule]
+}
+
+///|
+priv struct TaskSchedule {
   mut blocking : Int
   run_later : @deque.Deque[Coroutine]
 }
 
 ///|
-let scheduler : Scheduler = {
-  coro_id: 0,
-  curr_coro: None,
-  blocking: 0,
-  run_later: @deque.new(),
-}
+let scheduler : Scheduler = { coro_id: 0, curr_coro: None, tasks: Map([]) }
 
 ///|
-pub fn current_coroutine() -> Coroutine {
+fn current_coroutine() -> Coroutine {
   scheduler.curr_coro.unwrap()
 }
 
 ///|
-pub fn has_immediately_ready_task() -> Bool {
-  !scheduler.run_later.is_empty()
+fn task_schedule(waitable_set : WaitableSet) -> TaskSchedule {
+  match scheduler.tasks.get(waitable_set) {
+    Some(schedule) => schedule
+    None => {
+      let schedule = { blocking: 0, run_later: Deque([]) }
+      scheduler.tasks.set(waitable_set, schedule)
+      schedule
+    }
+  }
 }
 
 ///|
-pub fn no_more_work() -> Bool {
-  scheduler.blocking == 0 && scheduler.run_later.is_empty()
+fn enqueue(coro : Coroutine) -> Unit {
+  task_schedule(coro.waitable_set).run_later.push_back(coro)
 }
 
 ///|
-pub fn reschedule() -> Unit {
-  while scheduler.run_later.pop_front() is Some(coro) {
+fn has_immediately_ready_task(waitable_set : WaitableSet) -> Bool {
+  match scheduler.tasks.get(waitable_set) {
+    Some(schedule) => !schedule.run_later.is_empty()
+    None => false
+  }
+}
+
+///|
+fn no_more_work(waitable_set : WaitableSet) -> Bool {
+  match scheduler.tasks.get(waitable_set) {
+    Some(schedule) => schedule.blocking == 0 && schedule.run_later.is_empty()
+    None => true
+  }
+}
+
+///|
+fn forget_schedule(waitable_set : WaitableSet) -> Unit {
+  scheduler.tasks.remove(waitable_set)
+}
+
+///|
+/// Run one fair scheduling round for a component task. Coroutines woken or
+/// spawned during this round are left for the next round so the component
+/// event loop gets a chance to poll completed waitables.
+fn reschedule(waitable_set : WaitableSet) -> Unit {
+  guard scheduler.tasks.get(waitable_set) is Some(schedule) else { return }
+  let count = schedule.run_later.length()
+  for _ in 0..<count {
+    guard schedule.run_later.pop_front() is Some(coro) else { break }
     coro.ready = false
     guard coro.state is Suspend(ok_cont~, err_cont~) else {  }
     coro.state = Running
     let last_coro = scheduler.curr_coro
     scheduler.curr_coro = Some(coro)
-    if coro.cancelled && not(coro.shielded) {
+    if coro.cancelled && !coro.shielded {
       err_cont(Cancelled::Cancelled)
     } else {
       ok_cont(())

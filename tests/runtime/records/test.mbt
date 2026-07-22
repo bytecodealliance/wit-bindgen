@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/test_/records/toTest/stub.mbt'
+//@ path = 'gen/interface/test/records/to-test/stub.mbt'
 
 ///|
 pub fn multiple_results() -> (Byte, UInt) {

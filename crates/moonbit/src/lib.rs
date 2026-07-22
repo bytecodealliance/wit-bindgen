@@ -1,6 +1,6 @@
 use anyhow::Result;
 use core::panic;
-use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
+use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
@@ -14,14 +14,16 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
-        LiftLowerAbi, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic, Result_,
-        SizeAlign, Tuple, Type, TypeId, Variant, WasmExport, WasmExportKind, WasmImport, WorldId,
-        WorldKey,
+        LiftLowerAbi, LiveTypes, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic,
+        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant, WasmExport, WasmExportKind,
+        WasmImport, WorldId, WorldKey,
     },
 };
 
-use crate::async_support::AsyncSupport;
-use crate::pkg::{Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent};
+use crate::async_support::{AsyncFunctionState, AsyncSupport};
+use crate::pkg::{
+    ASYNC_CORE_DIR, Imports, MoonbitSignature, PkgResolver, ToMoonBitIdent, ToMoonBitTypeIdent,
+};
 
 mod async_support;
 mod ffi;
@@ -39,10 +41,6 @@ mod pkg;
 // We use AsyncCallback ABI for async functions
 
 // TODO: Export will share the type signatures with the import by using a newtype alias
-pub(crate) const FFI_DIR: &str = "ffi";
-
-pub(crate) const FFI: &str = include_str!("./ffi/ffi.mbt");
-
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Default, Debug, Clone)]
@@ -115,11 +113,6 @@ impl InterfaceFragment {
     }
 }
 
-enum PayloadFor {
-    Future,
-    Stream,
-}
-
 #[derive(Default)]
 pub struct MoonBit {
     opts: Opts,
@@ -186,6 +179,11 @@ impl MoonBit {
             moon_pkg.deindent(1);
             moon_pkg.push_str("\n]");
         }
+        let imports_async_core =
+            imports.is_some_and(|imports| imports.packages.contains_key(ASYNC_CORE_DIR));
+        if imports_async_core || (link && self.async_support.is_required()) {
+            moon_pkg.push_str(",\n\"supported-targets\": \"+wasm\"");
+        }
         // Link target
         if link {
             let memory_name = self.pkg_resolver.resolve.wasm_export_name(
@@ -245,6 +243,15 @@ impl MoonBit {
 ///   final export FFI module. Async helpers are emitted when required.
 impl WorldGenerator for MoonBit {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
+        if world_contains_endpoint_fixed_length_list_combination(resolve, world) {
+            anyhow::bail!(
+                "MoonBit async bindings do not yet support combining future or stream types with fixed-length lists"
+            );
+        }
+        if world_contains_future_or_stream(resolve, world) {
+            self.async_support.require_runtime();
+        }
+
         self.pkg_resolver.resolve = resolve.clone();
         self.project_name = self
             .opts
@@ -518,7 +525,7 @@ impl WorldGenerator for MoonBit {
 
     fn finish(&mut self, _resolve: &Resolve, _id: WorldId, files: &mut Files) -> Result<()> {
         // If async is used, export async utils
-        self.async_support.emit_utils(files, VERSION);
+        self.async_support.emit_runtime_files(files, VERSION);
 
         // Export project files
         if !self.opts.ignore_stub && !self.opts.ignore_module_file {
@@ -590,100 +597,82 @@ impl InterfaceGenerator<'_> {
     }
 
     fn import(&mut self, func: &Function) {
-        // Determine if the function is async
-        let async_ = self
-            .world_gen
-            .opts
-            .async_
-            .is_async(self.resolve, self.interface, func, false);
-        if async_ {
-            self.world_gen.async_support.mark_async();
-        }
-
-        let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
-        let mut bindgen = FunctionBindgen::new(
-            self,
-            func.params
-                .iter()
-                .map(|Param { name, .. }| name.to_moonbit_ident())
-                .collect(),
-        );
-
-        abi::call(
-            bindgen.interface_gen.resolve,
-            AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
+        let async_plan = self.world_gen.async_support.import_plan(
+            &mut self.world_gen.opts.async_,
+            self.resolve,
+            self.interface,
             func,
-            &mut bindgen,
-            false,
         );
+        let variant = async_plan.abi_variant();
+        let endpoint_plan = self.import_async_function_plan(self.interface, func);
+        let wasm_sig = self.resolve.wasm_signature(variant, func);
+        let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
+        let (src, needs_cleanup_list, endpoint_state) = if async_plan.is_async() {
+            let body = self.generate_async_import_body(&endpoint_plan, func, &mbt_sig, &wasm_sig);
+            (body.src, body.needs_cleanup_list, body.state)
+        } else {
+            let mut bindgen = FunctionBindgen::new(
+                self,
+                func.params
+                    .iter()
+                    .map(|Param { name, .. }| name.to_moonbit_ident())
+                    .collect(),
+            )
+            .with_async_state(endpoint_plan.state());
+            if endpoint_plan.has_endpoints() {
+                bindgen = bindgen.with_sync_import_commit(
+                    func.params.iter().map(|Param { ty, .. }| *ty).collect(),
+                );
+            }
 
-        let mut src = bindgen.src.clone();
+            abi::call(
+                bindgen.interface_gen.resolve,
+                AbiVariant::GuestImport,
+                LiftLower::LowerArgsLiftResults,
+                func,
+                &mut bindgen,
+                false,
+            );
+            (bindgen.src, bindgen.needs_cleanup_list, bindgen.async_state)
+        };
 
-        let cleanup_list = if bindgen.needs_cleanup_list {
+        let cleanup_list = if needs_cleanup_list {
             "let cleanup_list : Array[Int] = []"
         } else {
             ""
         };
 
-        let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-        let sig = self.sig_string(&mbt_sig, async_);
-
-        // Generate the core wasm abi
-        let wasm_sig = self.resolve.wasm_signature(
-            if async_ {
-                AbiVariant::GuestImportAsync
-            } else {
-                AbiVariant::GuestImport
-            },
-            func,
-        );
         let (import_module, import_name) = self.resolve.wasm_import_name(
-            ManglingAndAbi::Legacy(if async_ {
-                LiftLowerAbi::AsyncCallback
-            } else {
-                LiftLowerAbi::Sync
-            }),
+            async_plan.mangling_and_abi(),
             WasmImport::Func {
                 interface: self.interface,
                 func,
             },
         );
-        {
-            let result_type = match &wasm_sig.results[..] {
-                [] => "".into(),
-                [result] => format!("-> {}", wasm_type(*result)),
-                _ => unimplemented!("multi-value results are not supported yet"),
-            };
+        let result_type = match &wasm_sig.results[..] {
+            [] => "".into(),
+            [result] => format!("-> {}", wasm_type(*result)),
+            _ => unimplemented!("multi-value results are not supported yet"),
+        };
+        let params = wasm_sig
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, param)| format!("p{i} : {}", wasm_type(*param)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
+        uwriteln!(
+            self.ffi,
+            r#"
+            fn {ffi_import_name}({params}) {result_type} = "{import_module}" "{import_name}"
+            "#
+        );
 
-            let params = wasm_sig
-                .params
-                .iter()
-                .enumerate()
-                .map(|(i, param)| format!("p{i} : {}", wasm_type(*param)))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            uwriteln!(
-                self.ffi,
-                r#"
-                fn {ffi_import_name}({params}) {result_type} = "{import_module}" "{import_name}"
-                "#
-            );
-        }
-
-        // Generate the MoonBit wrapper
-        if async_ {
-            let interface_name = match self.interface {
-                Some(key) => self.resolve.name_world_key(key),
-                None => "$root".into(),
-            };
-            self.generation_futures_and_streams_import("", func, &interface_name);
-            src = self.generate_async_import_function(func, mbt_sig, &wasm_sig);
-        }
+        self.emit_future_stream_helpers(&endpoint_plan, &endpoint_state);
 
         print_docs(&mut self.src, &func.docs);
-
+        let sig = self.sig_string(func, &mbt_sig, async_plan.signature_is_async());
         uwrite!(
             self.src,
             r#"
@@ -696,43 +685,31 @@ impl InterfaceGenerator<'_> {
     }
 
     fn export(&mut self, func: &Function) {
-        // Determine if is async
-        let async_ = self
-            .world_gen
-            .opts
-            .async_
-            .is_async(self.resolve, self.interface, func, false);
-        if async_ {
-            self.world_gen.async_support.mark_async();
-        }
-
-        // Generate declarations for user implementations.
-        {
-            let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-            let func_sig = self.sig_string(&mbt_sig, async_);
-
-            print_docs(&mut self.src, &func.docs);
-            uwrite!(
-                self.src,
-                r#"
-                declare {func_sig}
-                "#
-            );
-        }
-
-        // Generate the caller function
-        let variant = if async_ {
-            AbiVariant::GuestExportAsync
-        } else {
-            AbiVariant::GuestExport
-        };
-
+        let async_plan = self.world_gen.async_support.export_plan(
+            &mut self.world_gen.opts.async_,
+            self.resolve,
+            self.interface,
+            func,
+        );
+        let variant = async_plan.abi_variant();
         let sig = self.resolve.wasm_signature(variant, func);
+        let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
+        let func_sig = self.sig_string(func, &mbt_sig, async_plan.signature_is_async());
 
+        print_docs(&mut self.src, &func.docs);
+        uwrite!(
+            self.src,
+            r#"
+            declare {func_sig}
+            "#
+        );
+
+        let endpoint_plan = self.export_async_function_plan(self.interface, func);
         let mut bindgen = FunctionBindgen::new(
             self,
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
-        );
+        )
+        .with_async_state(endpoint_plan.state());
 
         abi::call(
             bindgen.interface_gen.resolve,
@@ -740,15 +717,15 @@ impl InterfaceGenerator<'_> {
             LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
-            async_,
+            async_plan.is_async(),
         );
 
-        // TODO: adapt async cleanup
-        assert!(!bindgen.needs_cleanup_list);
-
-        // Async functions deferred task return
-        let deferred_task_return = bindgen.deferred_task_return.clone();
-
+        let cleanup_list = if bindgen.needs_cleanup_list {
+            "let cleanup_list : Array[Int] = []"
+        } else {
+            ""
+        };
+        let async_state = bindgen.async_state.clone();
         let src = bindgen.src;
 
         let result_type = match &sig.results[..] {
@@ -775,36 +752,36 @@ impl InterfaceGenerator<'_> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        // Async functions return type
-        let interface_name = match self.interface {
-            Some(key) => Some(self.resolve.name_world_key(key)),
-            None => None,
-        };
-
-        let module_name = interface_name.as_deref().unwrap_or("$root");
-        self.r#generation_futures_and_streams_import("[export]", func, module_name);
-
-        uwrite!(
-            self.ffi,
-            r#"
-            #doc(hidden)
-            pub fn {func_name}({params}) -> {result_type} {{
-                {src}
-            }}
-            "#,
-        );
         let export_name = self.resolve.wasm_export_name(
-            ManglingAndAbi::Legacy(if async_ {
-                LiftLowerAbi::AsyncCallback
-            } else {
-                LiftLowerAbi::Sync
-            }),
+            async_plan.mangling_and_abi(),
             WasmExport::Func {
                 interface: self.interface,
                 func,
                 kind: WasmExportKind::Normal,
             },
         );
+        self.emit_future_stream_helpers(&endpoint_plan, &async_state);
+
+        if !self.emit_async_export_wrapper(
+            &async_plan,
+            func,
+            &func_name,
+            &params,
+            result_type,
+            cleanup_list,
+            &src,
+        ) {
+            uwrite!(
+                self.ffi,
+                r#"
+                #doc(hidden)
+                pub fn {func_name}({params}) -> {result_type} {{
+                    {cleanup_list}
+                    {src}
+                }}
+                "#,
+            );
+        }
 
         let export = format!(
             r#"
@@ -826,104 +803,14 @@ impl InterfaceGenerator<'_> {
             .export
             .insert(export_name, (func_name, export));
 
-        // If async, we also need a callback function and a task_return intrinsic
-        if async_ {
-            let export_func_name = self
-                .world_gen
-                .export_ns
-                .tmp(&format!("wasmExportAsync{camel_name}"));
-            let DeferredTaskReturn::Emitted {
-                body: task_return_body,
-                params: task_return_params,
-                return_param,
-            } = deferred_task_return
-            else {
-                unreachable!()
-            };
-            let export_name = self.resolve.wasm_export_name(
-                ManglingAndAbi::Legacy(LiftLowerAbi::AsyncCallback),
-                WasmExport::Func {
-                    interface: self.interface,
-                    func,
-                    kind: WasmExportKind::Callback,
-                },
-            );
-
-            let task_return_param_tys = task_return_params
-                .iter()
-                .enumerate()
-                .map(|(idx, (ty, _expr))| format!("p{}: {}", idx, wasm_type(*ty)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let task_return_param_exprs = task_return_params
-                .iter()
-                .map(|(_ty, expr)| expr.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            let return_ty = match &func.result {
-                Some(result) => self
-                    .world_gen
-                    .pkg_resolver
-                    .type_name(self.name, result)
-                    .to_string(),
-                None => "Unit".into(),
-            };
-            let return_expr = match return_ty.as_str() {
-                "Unit" => "".into(),
-                _ => format!("{return_param}: {return_ty}",),
-            };
-            let snake_func_name = func.name.to_moonbit_ident().to_string();
-            let ffi = self
-                .world_gen
-                .pkg_resolver
-                .qualify_package(self.name, FFI_DIR);
-
-            let (task_return_module, task_return_name) = self.resolve.wasm_import_name(
-                ManglingAndAbi::Legacy(LiftLowerAbi::AsyncCallback),
-                WasmImport::Func {
-                    interface: self.interface,
-                    func,
-                },
-            );
-
-            uwriteln!(
-                self.src,
-                r#"
-                fn {export_func_name}TaskReturn({task_return_param_tys}) = "{task_return_module}" "{task_return_name}"
-                
-                pub fn {snake_func_name}_task_return({return_expr}) -> Unit {{ 
-                    {task_return_body}
-                    {export_func_name}TaskReturn({task_return_param_exprs})
-                }}
-                "#
-            );
-
-            uwriteln!(
-                self.ffi,
-                r#"
-                pub fn {export_func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
-                    {ffi}callback(event_raw, waitable, code)
-                }}
-                "#
-            );
-            let export = format!(
-                r#"
-                pub fn {export_func_name}(event_raw: Int, waitable: Int, code: Int) -> Int {{
-                    {}{snake_func_name}_callback(event_raw, waitable, code)
-                }}
-                "#,
-                self.world_gen
-                    .pkg_resolver
-                    .qualify_package(self.world_gen.opts.gen_dir.as_str(), self.name),
-            );
-
-            self.world_gen
-                .export
-                .insert(export_name, (export_func_name.clone(), export));
-        }
-
-        // If post return is needed, generate it
-        if abi::guest_export_needs_post_return(self.resolve, func) {
+        if !self.emit_async_export_callback(
+            &async_plan,
+            self.interface,
+            func,
+            &camel_name,
+            async_state,
+        ) && abi::guest_export_needs_post_return(self.resolve, func)
+        {
             let params = sig
                 .results
                 .iter()
@@ -987,8 +874,8 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn sig_string(&mut self, sig: &MoonbitSignature, async_: bool) -> String {
-        let params = sig
+    fn sig_string(&mut self, func: &Function, sig: &MoonbitSignature, async_: bool) -> String {
+        let mut params = sig
             .params
             .iter()
             .map(|(name, ty)| {
@@ -996,6 +883,8 @@ impl InterfaceGenerator<'_> {
                 format!("{name} : {ty}")
             })
             .collect::<Vec<_>>();
+
+        self.add_async_export_stub_parameter(func, async_, &mut params);
 
         let params = params.join(", ");
         let result_type = match &sig.result_type {
@@ -1034,25 +923,34 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("; ");
 
+        let contains_endpoint = record
+            .fields
+            .iter()
+            .any(|field| type_contains_future_or_stream(self.resolve, &field.ty));
         let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
+        if self.derive_opts.derive_debug && !contains_endpoint {
             deriviation.push("Debug")
         }
-        if self.derive_opts.derive_show {
+        if self.derive_opts.derive_show && !contains_endpoint {
             deriviation.push("Show")
         }
-        if self.derive_opts.derive_eq {
+        if self.derive_opts.derive_eq && !contains_endpoint {
             deriviation.push("Eq")
         }
+
+        let derivation = if deriviation.is_empty() {
+            String::new()
+        } else {
+            format!(" derive({})", deriviation.join(", "))
+        };
 
         uwrite!(
             self.src,
             "
             pub(all) struct {name} {{
                 {parameters}
-            }} derive({})
-            ",
-            deriviation.join(", ")
+            }}{derivation}
+            "
         );
     }
 
@@ -1326,14 +1224,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n  ");
 
+        let contains_endpoint = variant
+            .cases
+            .iter()
+            .filter_map(|case| case.ty.as_ref())
+            .any(|ty| type_contains_future_or_stream(self.resolve, ty));
         let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
+        if self.derive_opts.derive_debug && !contains_endpoint {
             deriviation.push("Debug")
         }
-        if self.derive_opts.derive_show {
+        if self.derive_opts.derive_show && !contains_endpoint {
             deriviation.push("Show")
         }
-        if self.derive_opts.derive_eq {
+        if self.derive_opts.derive_eq && !contains_endpoint {
             deriviation.push("Eq")
         }
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
@@ -1342,14 +1245,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "enum"
         };
 
+        let derivation = if deriviation.is_empty() {
+            String::new()
+        } else {
+            format!(" derive({})", deriviation.join(", "))
+        };
+
         uwrite!(
             self.src,
             "
             pub(all) {declaration} {name} {{
               {cases}
-            }} derive({})
-            ",
-            deriviation.join(", ")
+            }}{derivation}
+            "
         );
     }
 
@@ -1464,11 +1372,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_future(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
-        unimplemented!() // Not needed
+        // Rendered inline by `PkgResolver::type_name`.
     }
 
     fn type_stream(&mut self, _id: TypeId, _name: &str, _ty: &Option<Type>, _docs: &Docs) {
-        unimplemented!() // Not needed
+        // Rendered inline by `PkgResolver::type_name`.
     }
 
     fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
@@ -1490,22 +1398,10 @@ struct BlockStorage {
     cleanup: Vec<Cleanup>,
 }
 
-#[derive(Clone, Debug)]
-enum DeferredTaskReturn {
-    None,
-    Generating {
-        prev_src: String,
-        return_param: String,
-    },
-    Emitted {
-        params: Vec<(WasmType, String)>,
-        body: String,
-        return_param: String,
-    },
-}
-
 struct FunctionBindgen<'a, 'b> {
     interface_gen: &'b mut InterfaceGenerator<'a>,
+    type_context: String,
+    func_interface: String,
     params: Box<[String]>,
     src: String,
     locals: Ns,
@@ -1514,7 +1410,12 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     cleanup: Vec<Cleanup>,
     needs_cleanup_list: bool,
-    deferred_task_return: DeferredTaskReturn,
+    suppress_block_cleanup: bool,
+    preserve_guest_allocations: bool,
+    sync_endpoint_drop: bool,
+    commit_endpoints: bool,
+    sync_import_argument_types: Option<Vec<Type>>,
+    async_state: AsyncFunctionState,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1526,8 +1427,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params.iter().for_each(|str| {
             locals.tmp(str);
         });
+        let type_context = r#gen.name.to_string();
         Self {
             interface_gen: r#gen,
+            func_interface: type_context.clone(),
+            type_context,
             params,
             src: String::new(),
             locals,
@@ -1536,7 +1440,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             cleanup: Vec::new(),
             needs_cleanup_list: false,
-            deferred_task_return: DeferredTaskReturn::None,
+            suppress_block_cleanup: false,
+            preserve_guest_allocations: false,
+            sync_endpoint_drop: false,
+            commit_endpoints: false,
+            sync_import_argument_types: None,
+            async_state: AsyncFunctionState::default(),
         }
     }
 
@@ -1711,21 +1620,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         self.interface_gen
             .world_gen
             .pkg_resolver
-            .type_constructor(self.interface_gen.name, ty)
+            .type_constructor(&self.type_context, ty)
     }
 
     fn resolve_type_name(&mut self, ty: &Type) -> String {
         self.interface_gen
             .world_gen
             .pkg_resolver
-            .type_name(self.interface_gen.name, ty)
-    }
-
-    fn resolve_pkg(&mut self, pkg: &str) -> String {
-        self.interface_gen
-            .world_gen
-            .pkg_resolver
-            .qualify_package(self.interface_gen.name, pkg)
+            .type_name(&self.type_context, ty)
     }
 
     fn use_ffi(&mut self, str: &'static str) {
@@ -2367,77 +2269,37 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
 
                 let func_name = name.to_upper_camel_case();
-
-                let operands = operands.join(", ");
+                let call_operands = if self.sync_import_argument_types.is_some() {
+                    operands
+                        .iter()
+                        .map(|operand| {
+                            let stable = self.locals.tmp("lower_arg");
+                            uwriteln!(self.src, "let {stable} = {operand}");
+                            stable
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    operands.clone()
+                };
+                let arguments = call_operands.join(", ");
                 // TODO: handle this to support async functions
-                uwriteln!(self.src, "{assignment} wasmImport{func_name}({operands});");
+                uwriteln!(self.src, "{assignment} wasmImport{func_name}({arguments});");
+                self.commit_sync_import_arguments(sig, &call_operands);
             }
 
             Instruction::CallInterface { func, async_ } => {
+                if *async_ {
+                    self.emit_async_call_interface(func, operands, results);
+                    return;
+                }
+
                 let name = self.interface_gen.world_gen.pkg_resolver.func_call(
-                    self.interface_gen.name,
+                    &self.type_context,
                     func,
-                    self.interface_gen.name,
+                    &self.func_interface,
                 );
 
                 let args = operands.join(", ");
-
-                if *async_ {
-                    let (async_func_result, task_return_result, task_return_type) =
-                        match func.result {
-                            Some(ty) => {
-                                let res = self.locals.tmp("return_result");
-                                (res.clone(), res, self.resolve_type_name(&ty))
-                            }
-                            None => ("_ignore".into(), "".into(), "Unit".into()),
-                        };
-
-                    if func.result.is_some() {
-                        results.push(async_func_result.clone());
-                    }
-                    let ffi = self.resolve_pkg(FFI_DIR);
-                    uwrite!(
-                        self.src,
-                        r#"
-                        let task = {ffi}current_task();
-                        let _ = task.with_waitable_set(fn(task) {{
-                            let {async_func_result}: Ref[{task_return_type}?] = Ref::new(None)
-                            task.wait(fn() {{
-                                {async_func_result}.val = Some({name}({args}));
-                            }})
-                            for {{
-                                if task.no_wait() && {async_func_result}.val is Some({async_func_result}){{
-                                   {name}_task_return({task_return_result});
-                                   break;
-                                }} else {{
-                                   {ffi}suspend() catch {{ 
-                                        _ => {{
-                                            {ffi}task_cancel();
-                                        }}
-                                   }}
-                                }}
-                            }}
-                        }})
-                        if task.is_fail() is Some({ffi}Cancelled::Cancelled) {{
-                                {ffi}task_cancel();
-                                return {ffi}CallbackCode::Exit.encode()
-                        }}
-                        if task.is_done() {{
-                            return {ffi}CallbackCode::Exit.encode()
-                        }}
-                        return {ffi}CallbackCode::Wait(task.handle()).encode()
-                        "#,
-                    );
-                    assert!(matches!(
-                        self.deferred_task_return,
-                        DeferredTaskReturn::None
-                    ));
-                    self.deferred_task_return = DeferredTaskReturn::Generating {
-                        prev_src: mem::take(&mut self.src),
-                        return_param: async_func_result.to_string(),
-                    };
-                    return;
-                }
 
                 let assignment = match func.result {
                     None => "let _ = ".into(),
@@ -2651,13 +2513,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::GuestDeallocate { .. } => {
-                self.use_ffi(ffi::FREE);
-                uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
+                if !self.preserve_guest_allocations {
+                    self.use_ffi(ffi::FREE);
+                    uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
+                }
             }
 
             Instruction::GuestDeallocateString => {
-                self.use_ffi(ffi::FREE);
-                uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
+                if !self.preserve_guest_allocations {
+                    self.use_ffi(ffi::FREE);
+                    uwriteln!(self.src, "mbt_ffi_free({})", operands[0])
+                }
             }
 
             Instruction::GuestDeallocateVariant { blocks } => {
@@ -2722,8 +2588,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                self.use_ffi(ffi::FREE);
-                uwriteln!(self.src, "mbt_ffi_free({address})",);
+                if !self.preserve_guest_allocations {
+                    self.use_ffi(ffi::FREE);
+                    uwriteln!(self.src, "mbt_ffi_free({address})",);
+                }
             }
 
             Instruction::Flush { amt } => {
@@ -2731,80 +2599,42 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::FutureLift { ty, .. } => {
-                let result = self.locals.tmp("result");
-                let op = &operands[0];
-                // let qualifier = self.r#gen.qualify_package(self.func_interface);
-                let ty = self.resolve_type_name(&Type::Id(*ty));
-                let ffi = self
-                    .interface_gen
-                    .world_gen
-                    .pkg_resolver
-                    .qualify_package(self.interface_gen.name, FFI_DIR);
-
-                let snake_name = format!("static_{}_future_table", ty.to_snake_case(),);
-
-                uwriteln!(
-                    self.src,
-                    r#"let {result} = {ffi}FutureReader::new({op}, {snake_name});"#,
-                );
-
-                results.push(result);
+                self.emit_future_lift(*ty, operands, results);
             }
 
-            Instruction::FutureLower { .. } => {
-                let op = &operands[0];
-                results.push(format!("{op}.handle"));
+            Instruction::FutureLower { ty, .. } => {
+                self.emit_future_lower(*ty, operands, results);
             }
 
             Instruction::AsyncTaskReturn { params, .. } => {
-                let (body, return_param) = match &mut self.deferred_task_return {
-                    DeferredTaskReturn::Generating {
-                        prev_src,
-                        return_param,
-                    } => {
-                        mem::swap(&mut self.src, prev_src);
-                        (mem::take(prev_src), return_param.clone())
-                    }
-                    _ => unreachable!(),
-                };
-                assert_eq!(params.len(), operands.len());
-                self.deferred_task_return = DeferredTaskReturn::Emitted {
-                    body,
-                    params: params
-                        .iter()
-                        .zip(operands)
-                        .map(|(a, b)| (*a, b.clone()))
-                        .collect(),
-                    return_param,
-                };
+                self.capture_task_return(params, operands);
             }
 
-            Instruction::StreamLower { .. } => {
-                let op = &operands[0];
-                results.push(format!("{op}.handle"));
+            Instruction::StreamLower { ty, .. } => {
+                self.emit_stream_lower(*ty, operands, results);
             }
 
             Instruction::StreamLift { ty, .. } => {
-                let result = self.locals.tmp("result");
-                let op = &operands[0];
-                let qualifier = self.resolve_pkg(self.interface_gen.name);
-                let ty = self.resolve_type_name(&Type::Id(*ty));
-                let ffi = self.resolve_pkg(FFI_DIR);
-                let snake_name = format!(
-                    "static_{}_stream_table",
-                    ty.replace(&qualifier, "").to_snake_case(),
-                );
-
-                uwriteln!(
-                    self.src,
-                    r#"let {result} = {ffi}StreamReader::new({op}, {snake_name});"#,
-                );
-
-                results.push(result);
+                self.emit_stream_lift(*ty, operands, results);
             }
-            Instruction::ErrorContextLower { .. }
-            | Instruction::ErrorContextLift { .. }
-            | Instruction::DropHandle { .. } => todo!(),
+            Instruction::DropHandle { ty } => {
+                let is_endpoint = match ty {
+                    Type::Id(id) => matches!(
+                        &self.interface_gen.resolve.types[*id].kind,
+                        TypeDefKind::Future(_) | TypeDefKind::Stream(_)
+                    ),
+                    _ => false,
+                };
+                if !self.commit_endpoints {
+                    let method = if self.sync_endpoint_drop && is_endpoint {
+                        "drop_sync"
+                    } else {
+                        "drop"
+                    };
+                    uwriteln!(self.src, "{}.{method}()", operands[0]);
+                }
+            }
+            Instruction::ErrorContextLower { .. } | Instruction::ErrorContextLift { .. } => todo!(),
             Instruction::FixedLengthListLift {
                 element: _,
                 size,
@@ -2824,13 +2654,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 size,
                 id: _,
             } => {
+                uwriteln!(
+                    self.src,
+                    "if ({}).length() != {size} {{ panic() }}",
+                    operands[0]
+                );
                 for i in 0..(*size as usize) {
                     results.push(format!("({})[{i}]", operands[0]));
                 }
             }
             Instruction::FixedLengthListLowerToMemory {
                 element,
-                size: _,
+                size: fixed_length,
                 id: _,
             } => {
                 let Block {
@@ -2847,7 +2682,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    for {index} = 0; {index} < ({vec}).length(); {index} = {index} + 1 {{
+                    if ({vec}).length() != {fixed_length} {{ panic() }}
+                    for {index} = 0; {index} < {fixed_length}; {index} = {index} + 1 {{
                         let iter_elem = ({vec})[{index}]
                         let iter_base = ({target}) + ({index} * {size})
                         {body}
@@ -3000,8 +2836,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
                 }
 
-                self.use_ffi(ffi::FREE);
-                uwriteln!(self.src, "mbt_ffi_free({address})",);
+                if !self.preserve_guest_allocations {
+                    self.use_ffi(ffi::FREE);
+                    uwriteln!(self.src, "mbt_ffi_free({address})",);
+                }
             }
         }
     }
@@ -3034,7 +2872,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn finish_block(&mut self, operands: &mut Vec<String>) {
         let BlockStorage { body, cleanup } = self.block_storage.pop().unwrap();
 
-        if !self.cleanup.is_empty() {
+        if !self.cleanup.is_empty() && !self.suppress_block_cleanup {
             self.needs_cleanup_list = true;
             self.use_ffi(ffi::FREE);
 
@@ -3121,6 +2959,125 @@ fn flags_repr(flags: &Flags) -> Int {
     }
 }
 
+fn type_contains_future_or_stream(resolve: &Resolve, ty: &Type) -> bool {
+    let mut live = LiveTypes::default();
+    live.add_type(resolve, ty);
+    live.iter().any(|id| {
+        matches!(
+            resolve.types[id].kind,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_)
+        )
+    })
+}
+
+fn type_contains_endpoint_fixed_length_list_combination(
+    resolve: &Resolve,
+    ty: &Type,
+    inside_fixed_length_list: bool,
+    inside_endpoint: bool,
+) -> bool {
+    let Type::Id(id) = ty else {
+        return false;
+    };
+
+    match &resolve.types[*id].kind {
+        TypeDefKind::Future(payload) | TypeDefKind::Stream(payload) => {
+            inside_fixed_length_list
+                || payload.as_ref().is_some_and(|ty| {
+                    type_contains_endpoint_fixed_length_list_combination(resolve, ty, false, true)
+                })
+        }
+        TypeDefKind::FixedLengthList(ty, _) => {
+            inside_endpoint
+                || type_contains_endpoint_fixed_length_list_combination(resolve, ty, true, false)
+        }
+        TypeDefKind::Record(record) => record.fields.iter().any(|field| {
+            type_contains_endpoint_fixed_length_list_combination(
+                resolve,
+                &field.ty,
+                inside_fixed_length_list,
+                inside_endpoint,
+            )
+        }),
+        TypeDefKind::Tuple(tuple) => tuple.types.iter().any(|ty| {
+            type_contains_endpoint_fixed_length_list_combination(
+                resolve,
+                ty,
+                inside_fixed_length_list,
+                inside_endpoint,
+            )
+        }),
+        TypeDefKind::Variant(variant) => variant
+            .cases
+            .iter()
+            .filter_map(|case| case.ty.as_ref())
+            .any(|ty| {
+                type_contains_endpoint_fixed_length_list_combination(
+                    resolve,
+                    ty,
+                    inside_fixed_length_list,
+                    inside_endpoint,
+                )
+            }),
+        TypeDefKind::Option(ty) | TypeDefKind::List(ty) | TypeDefKind::Type(ty) => {
+            type_contains_endpoint_fixed_length_list_combination(
+                resolve,
+                ty,
+                inside_fixed_length_list,
+                inside_endpoint,
+            )
+        }
+        TypeDefKind::Map(key, value) => {
+            type_contains_endpoint_fixed_length_list_combination(
+                resolve,
+                key,
+                inside_fixed_length_list,
+                inside_endpoint,
+            ) || type_contains_endpoint_fixed_length_list_combination(
+                resolve,
+                value,
+                inside_fixed_length_list,
+                inside_endpoint,
+            )
+        }
+        TypeDefKind::Result(result) => result.ok.iter().chain(result.err.iter()).any(|ty| {
+            type_contains_endpoint_fixed_length_list_combination(
+                resolve,
+                ty,
+                inside_fixed_length_list,
+                inside_endpoint,
+            )
+        }),
+        TypeDefKind::Resource
+        | TypeDefKind::Handle(_)
+        | TypeDefKind::Flags(_)
+        | TypeDefKind::Enum(_) => false,
+        TypeDefKind::Unknown => unreachable!(),
+    }
+}
+
+fn world_contains_endpoint_fixed_length_list_combination(
+    resolve: &Resolve,
+    world: WorldId,
+) -> bool {
+    let mut live = LiveTypes::default();
+    live.add_world(resolve, world);
+    live.iter().any(|id| {
+        type_contains_endpoint_fixed_length_list_combination(resolve, &Type::Id(id), false, false)
+    })
+}
+
+fn world_contains_future_or_stream(resolve: &Resolve, world: WorldId) -> bool {
+    let mut live = LiveTypes::default();
+    live.add_world(resolve, world);
+    live.iter().any(|id| {
+        matches!(
+            resolve.types[id].kind,
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_)
+        )
+    })
+}
+
 fn indent(code: &str) -> Source {
     let mut indented = Source::default();
     let mut was_empty = false;
@@ -3153,5 +3110,751 @@ fn print_docs(src: &mut String, docs: &Docs) {
         for line in docs.trim().lines() {
             uwrite!(src, "\n/// {line}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn try_generate_with_opts(wit: &str, world: &str, opts: Opts) -> Result<Files> {
+        let mut resolve = Resolve::default();
+        let pkg = resolve.push_str("test.wit", wit).unwrap();
+        let world = resolve.select_world(&[pkg], Some(world)).unwrap();
+        let mut files = Files::default();
+        let mut generator = MoonBit {
+            opts,
+            ..MoonBit::default()
+        };
+        generator.generate(&mut resolve, world, &mut files)?;
+        Ok(files)
+    }
+
+    fn try_generate(wit: &str, world: &str) -> Result<Files> {
+        try_generate_with_opts(
+            wit,
+            world,
+            Opts {
+                gen_dir: "gen".into(),
+                ..Opts::default()
+            },
+        )
+    }
+
+    fn generate(wit: &str, world: &str) -> Files {
+        try_generate(wit, world).unwrap()
+    }
+
+    fn file<'a>(files: &'a Files, path: &str) -> &'a str {
+        let contents = files
+            .iter()
+            .find_map(|(name, contents)| (name == path).then_some(contents))
+            .unwrap_or_else(|| {
+                let names = files
+                    .iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                std::panic!("missing generated file `{path}`; generated: {names}")
+            });
+        std::str::from_utf8(contents).unwrap()
+    }
+
+    #[test]
+    fn endpoint_free_sync_generation_matches_golden() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            world runner {
+                import add: func(a: u32, b: u32) -> u32;
+                export echo: func(value: u32) -> u32;
+            }
+            "#,
+            "runner",
+        );
+
+        // This exact-output fingerprint runs with both async adapters. Ignore only
+        // the release-version preamble, which is unrelated to generated ABI.
+        let mut entries = files.iter().collect::<Vec<_>>();
+        entries.sort_by_key(|(name, _)| *name);
+        let fingerprints = entries
+            .into_iter()
+            .map(|(name, contents)| {
+                let contents = if contents.starts_with(b"// Generated by") {
+                    let preamble_end = contents.iter().position(|byte| *byte == b'\n').unwrap() + 1;
+                    &contents[preamble_end..]
+                } else {
+                    contents
+                };
+                let hash = contents
+                    .iter()
+                    .fold(0xcbf29ce484222325_u64, |mut hash, byte| {
+                        hash ^= u64::from(*byte);
+                        hash.wrapping_mul(0x100000001b3)
+                    });
+                (name.to_string(), hash)
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            fingerprints,
+            vec![
+                ("gen/ffi.mbt".into(), 10220319382745692950),
+                ("gen/moon.pkg.json".into(), 15894505084782869543),
+                ("gen/world/runner/ffi.mbt".into(), 14715999128234894449),
+                ("gen/world/runner/moon.pkg.json".into(), 6361049410124596525,),
+                ("gen/world/runner/top.mbt".into(), 12192865914091673515,),
+                ("moon.mod.json".into(), 14111159726816684443),
+                ("world/runner/ffi_import.mbt".into(), 17812050158059242657,),
+                ("world/runner/import.mbt".into(), 5430383198437179961),
+                ("world/runner/moon.pkg.json".into(), 6361049410124596525,),
+            ]
+        );
+    }
+
+    #[test]
+    fn sync_world_does_not_emit_async_runtime_or_wrappers() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            world runner {
+                import add: func(a: u32, b: u32) -> u32;
+            }
+            "#,
+            "runner",
+        );
+
+        let import = file(&files, "world/runner/import.mbt");
+        assert!(import.contains("pub fn add("));
+        for async_name in [
+            "pub async fn",
+            "with_waitableset",
+            "TaskGroup",
+            "background_group",
+            "CMFuture",
+            "CMStream",
+        ] {
+            assert!(!import.contains(async_name));
+        }
+        assert!(
+            files
+                .iter()
+                .all(|(name, _)| !name.starts_with("async-core/async_"))
+        );
+        let package = file(&files, "gen/moon.pkg.json");
+        assert!(!package.contains("supported-targets"), "{package}");
+    }
+
+    #[test]
+    fn async_filters_respect_import_export_direction() {
+        let wit = r#"
+            package a:b;
+            world runner { import run: func(); }
+        "#;
+
+        let mut import_opts = Opts {
+            gen_dir: "gen".into(),
+            ..Opts::default()
+        };
+        import_opts.async_.push("import:run");
+        let import_files = try_generate_with_opts(wit, "runner", import_opts).unwrap();
+        let import = file(&import_files, "world/runner/import.mbt");
+        let import_ffi = file(&import_files, "world/runner/ffi_import.mbt");
+        assert!(import.contains("pub async fn run("), "{import}");
+        assert!(import_ffi.contains("[async-lower]run"), "{import_ffi}");
+
+        let mut export_opts = Opts {
+            gen_dir: "gen".into(),
+            ..Opts::default()
+        };
+        export_opts.async_.push("export:run");
+        let export_files = try_generate_with_opts(wit, "runner", export_opts).unwrap();
+        let import = file(&export_files, "world/runner/import.mbt");
+        let import_ffi = file(&export_files, "world/runner/ffi_import.mbt");
+        assert!(import.contains("pub fn run("), "{import}");
+        assert!(!import.contains("pub async fn run("), "{import}");
+        assert!(!import_ffi.contains("[async-lower]run"), "{import_ffi}");
+    }
+
+    #[test]
+    fn async_import_indirect_params_emit_malloc_builtin() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface types {
+                resource descriptor {
+                    run: async func(first: string, second: list<s32>);
+                }
+            }
+
+            world bindings { import types; }
+            "#,
+            "bindings",
+        );
+
+        let ffi = file(&files, "interface/a/b/types/ffi.mbt");
+        assert!(ffi.contains("extern \"wasm\" fn mbt_ffi_malloc"), "{ffi}");
+    }
+
+    #[test]
+    fn endpoint_payload_lowering_reserves_destination_pointer() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                consume: async func(value: future<string>);
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+
+        let ffi = file(&files, "interface/a/b/api/ffi.mbt");
+        assert!(ffi.contains("let ptr0 = mbt_ffi_str2ptr(value)"), "{ffi}");
+        assert!(ffi.contains("mbt_ffi_store32((ptr) + 0, ptr0)"), "{ffi}");
+    }
+
+    #[test]
+    fn type_only_endpoints_emit_async_runtime() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface types {
+                record payload { ready: future<u32> }
+            }
+
+            world runner { import types; }
+            "#,
+            "runner",
+        );
+
+        let source = file(&files, "interface/a/b/types/top.mbt");
+        assert!(source.contains("@async-core.Future[UInt]"), "{source}");
+        let package = file(&files, "interface/a/b/types/moon.pkg.json");
+        assert!(
+            package.contains("\"supported-targets\": \"+wasm\""),
+            "{package}"
+        );
+        let link_package = file(&files, "gen/moon.pkg.json");
+        assert!(
+            link_package.contains("\"supported-targets\": \"+wasm\""),
+            "{link_package}"
+        );
+        file(&files, "async-core/moon.pkg.json");
+        file(&files, "async-core/async_trait.mbt");
+    }
+
+    #[test]
+    fn endpoint_container_types_omit_value_derives() {
+        let mut resolve = Resolve::default();
+        let pkg = resolve
+            .push_str(
+                "test.wit",
+                r#"
+                package a:b;
+
+                interface types {
+                    record plain { value: u32 }
+                    record nested { value: option<future<u32>> }
+                    variant streamed { none, value(list<stream<string>>) }
+                    use-types: func(a: plain, b: nested, c: streamed);
+                }
+
+                world runner { import types; }
+                "#,
+            )
+            .unwrap();
+        let world = resolve.select_world(&[pkg], Some("runner")).unwrap();
+        let mut files = Files::default();
+        let mut generator = MoonBit {
+            opts: Opts {
+                derive: DeriveOpts {
+                    derive_debug: true,
+                    derive_show: true,
+                    derive_eq: true,
+                    derive_error: false,
+                },
+                gen_dir: "gen".into(),
+                ..Opts::default()
+            },
+            ..MoonBit::default()
+        };
+        generator.generate(&mut resolve, world, &mut files).unwrap();
+
+        let source = file(&files, "interface/a/b/types/top.mbt");
+        assert!(
+            source.contains("struct Plain {\n      value : UInt\n} derive(Debug, Show, Eq)"),
+            "{source}"
+        );
+        assert!(
+            source.contains("struct Nested {\n      value : @async-core.Future[UInt]?\n}"),
+            "{source}"
+        );
+        assert!(
+            !source.contains("struct Nested {\n      value : @async-core.Future[UInt]?\n} derive(")
+        );
+        assert!(
+            source.contains(
+                "Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n}"
+            ),
+            "{source}"
+        );
+        assert!(!source.contains(
+            "Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n} derive("
+        ));
+    }
+
+    #[test]
+    fn sync_functions_with_endpoints_remain_sync() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            world runner {
+                import exchange: func(
+                    input: stream<u8>,
+                    ready: future<u32>,
+                ) -> tuple<stream<u8>, future<u32>>;
+            }
+            "#,
+            "runner",
+        );
+
+        let import = file(&files, "world/runner/import.mbt");
+        assert!(import.contains("pub fn exchange("));
+        assert!(import.contains("@async-core.Stream[Byte]"));
+        assert!(import.contains("@async-core.Future[UInt]"));
+        assert!(!import.contains("pub async fn exchange"));
+        assert!(!import.contains("background_group"));
+        let call = import.find("wasmImportExchange").unwrap();
+        let after_call = &import[call..];
+        assert!(after_call.contains("StreamCommit"), "{import}");
+        assert!(after_call.contains("FutureCommit"), "{import}");
+        assert_eq!(import.matches("StreamLower(input)").count(), 1, "{import}");
+        assert_eq!(import.matches("FutureLower(ready)").count(), 1, "{import}");
+        assert!(
+            files
+                .iter()
+                .any(|(name, _)| name == "async-core/async_trait.mbt")
+        );
+    }
+
+    #[test]
+    fn async_export_background_group_name_is_deconflicted() {
+        let files = generate(
+            r#"
+            package a:b;
+            world service {
+                export handle: async func(background-group: u32);
+            }
+            "#,
+            "service",
+        );
+        let public = file(&files, "gen/world/service/top.mbt");
+        assert!(
+            public.contains(
+                "background_group : UInt, background_group0 : @async-core.TaskGroup[Unit]"
+            ),
+            "{public}"
+        );
+        let wrapper = file(&files, "gen/world/service/ffi.mbt");
+        assert!(
+            wrapper.contains("with_task_group(async fn(background_group0)"),
+            "{wrapper}"
+        );
+        assert!(
+            wrapper.contains("handle((p0).reinterpret_as_uint(), background_group0)"),
+            "{wrapper}"
+        );
+    }
+
+    #[test]
+    fn async_export_surface_hides_component_model_bridge_types() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface handler {
+                handle: async func(
+                    input: stream<u8>,
+                    ready: future<u32>,
+                ) -> tuple<stream<u8>, future<u32>>;
+            }
+
+            world service {
+                export handler;
+            }
+            "#,
+            "service",
+        );
+
+        let public = file(&files, "gen/interface/a/b/handler/top.mbt");
+        assert!(public.contains("input : @async-core.Stream[Byte]"));
+        assert!(public.contains("ready : @async-core.Future[UInt]"));
+        assert!(public.contains("background_group : @async-core.TaskGroup[Unit]"));
+        for internal_name in [
+            "CMFuture",
+            "CMStream",
+            "VTable",
+            "take_cm_handle",
+            "take_producer",
+            "from_callbacks",
+        ] {
+            assert!(!public.contains(internal_name));
+        }
+
+        let wrapper = file(&files, "gen/interface/a/b/handler/ffi.mbt");
+        assert!(wrapper.contains("with_task_group(async fn(background_group)"));
+        let root_wrapper = file(&files, "gen/ffi.mbt");
+        for ffi in [wrapper, root_wrapper] {
+            let lines = ffi.lines().collect::<Vec<_>>();
+            for (index, line) in lines.iter().enumerate() {
+                if line.trim_start().starts_with("pub fn wasmExport") {
+                    assert_eq!(lines[index - 1].trim(), "#doc(hidden)", "{ffi}");
+                }
+            }
+        }
+
+        let coroutine = file(&files, "async-core/async_coroutine.mbt");
+        assert!(!coroutine.contains("fn pause()"));
+        assert!(!coroutine.contains("wait_until"));
+        let task = file(&files, "async-core/async_task.mbt");
+        assert!(task.contains("pub struct Task[X] {\n  priv value : Ref[X?]"));
+        let promise = file(&files, "async-core/async_promise.mbt");
+        assert!(promise.contains("pub struct Promise[X]"));
+        assert!(promise.contains("pub fn[X] Future::new()"));
+        assert!(promise.contains("pub fn[X] Promise::complete"));
+        let semaphore = file(&files, "async-core/async_semaphore.mbt");
+        assert!(semaphore.contains("pub struct Semaphore"));
+        assert!(semaphore.contains("pub async fn Semaphore::acquire"));
+        let cond_var = file(&files, "async-core/async_cond_var.mbt");
+        assert!(cond_var.contains("pub struct CondVar"));
+        assert!(cond_var.contains("pub async fn CondVar::wait"));
+        let mutex = file(&files, "async-core/async_mutex.mbt");
+        assert!(mutex.contains("pub struct Mutex"));
+        assert!(mutex.contains("pub async fn Mutex::acquire"));
+
+        let async_core = files
+            .iter()
+            .filter(|(name, _)| name.starts_with("async-core/"))
+            .map(|(_, contents)| String::from_utf8_lossy(contents))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for hidden in [
+            "#doc(hidden)\npub fn with_waitableset",
+            "#doc(hidden)\npub fn cb",
+            "#doc(hidden)\npub fn spawn_component_task_current",
+            "#doc(hidden)\npub fn has_component_task_scope",
+            "#doc(hidden)\npub async fn suspend_for_subtask",
+            "#doc(hidden)\npub async fn suspend_for_future_read",
+            "#doc(hidden)\npub async fn suspend_for_future_write_terminal",
+            "#doc(hidden)\npub async fn suspend_for_stream_read",
+            "#doc(hidden)\npub async fn suspend_for_stream_write",
+        ] {
+            assert!(
+                async_core.contains(hidden),
+                "runtime helper is public: {hidden}"
+            );
+        }
+        for raw in [
+            "pub extern \"wasm\" fn malloc",
+            "pub extern \"wasm\" fn load32",
+            "pub fn context_set",
+            "pub fn context_get",
+            "pub fn task_cancel",
+            "pub fn backpressure_inc",
+            "pub fn backpressure_dec",
+            "[backpressure-inc]",
+            "[backpressure-dec]",
+            "pub fn current_coroutine",
+            "pub fn detach_waitable",
+            "pub fn has_immediately_ready_task",
+            "pub fn no_more_work",
+            "pub fn reschedule",
+            "pub fn spawn(",
+            "pub fn spawn_bg_current",
+            "pub async fn suspend()",
+        ] {
+            assert!(
+                !async_core.contains(raw),
+                "raw async-core API leaked: {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_endpoints_use_static_boundary_helpers() {
+        let files = generate(
+            r#"
+            package test:moonbit-nested;
+
+            interface nested {
+                relay: async func(
+                    value: future<future<stream<u8>>>,
+                ) -> future<future<stream<u8>>>;
+                relay-stream: async func(
+                    value: stream<future<u8>>,
+                ) -> stream<future<u8>>;
+            }
+
+            world service { export nested; }
+            "#,
+            "service",
+        );
+
+        let ffi = file(&files, "gen/interface/test/moonbit-nested/nested/ffi.mbt");
+        for site in [
+            "RelayStream0StreamSource",
+            "RelayFuture1FutureSource",
+            "RelayFuture2FutureSource",
+            "RelayStream3StreamLower",
+            "RelayFuture4FutureLower",
+            "RelayFuture5FutureLower",
+        ] {
+            assert!(ffi.contains(site), "missing static endpoint site {site}");
+        }
+        assert!(ffi.contains("[async-lower][future-read-2]relay"));
+        assert!(ffi.contains("[async-lower][future-write-2]relay"));
+        assert!(ffi.contains("suspend_for_future_write_terminal"));
+        assert!(ffi.contains("let data_len = if data.length() < 1"));
+        assert!(ffi.contains("let writer_lock = @async-core.Mutex()"));
+        assert!(ffi.contains("let close_writer_serialized = async fn()"));
+        assert!(ffi.contains("writer_lock.acquire()"));
+        assert!(ffi.contains("defer writer_lock.release()"));
+        assert!(
+            ffi.contains("() => close_writer_serialized(),\n            resume_on_cancel=true,")
+        );
+        assert!(!ffi.contains("defer close_writer()"));
+        assert!(ffi.contains("read_cleanup : @async-core.CondVar"));
+        assert!(ffi.contains("let read_count = if count < 64"));
+        assert!(ffi.contains("self.read_cleanup.broadcast()"));
+        assert!(ffi.contains("@async-core.cancel_future_read("));
+        assert!(ffi.contains("@async-core.cancel_stream_read("));
+        assert!(ffi.contains("@async-core.cancel_stream_write("));
+        assert!(ffi.contains("[stream-cancel-write-"));
+        assert!(!ffi.contains("suspend_for_future_cancel_read"));
+        assert!(!ffi.contains("wait_until"));
+        assert!(ffi.contains("RelayFuture5FutureLowerCommitted"));
+        assert!(ffi.contains("RelayFuture4FutureRejectPrepared"));
+        assert!(ffi.contains("producer.future.reject((value :"));
+        assert!(ffi.contains("rejected component future unexpectedly transferred a value"));
+        assert!(ffi.contains("RelayStream3StreamRejectPrepared"));
+        assert!(!ffi.contains("RelayFuture5FutureRejectPrepared"));
+
+        let generated = files
+            .iter()
+            .map(|(name, contents)| format!("{name}\n{}", String::from_utf8_lossy(contents)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for legacy in [
+            "async_cm.mbt",
+            "CMFutureVTable",
+            "CMStreamVTable",
+            "take_cm_handle",
+            "new_cm_future",
+            "new_cm_stream",
+        ] {
+            assert!(
+                !generated.contains(legacy),
+                "legacy bridge leaked: {legacy}"
+            );
+        }
+
+        let imports = generate(
+            r#"
+            package test:moonbit-nested;
+
+            interface nested {
+                relay: async func(
+                    value: future<future<stream<u8>>>,
+                ) -> future<future<stream<u8>>>;
+                relay-stream: async func(
+                    value: stream<future<u8>>,
+                ) -> stream<future<u8>>;
+            }
+
+            world client { import nested; }
+            "#,
+            "client",
+        );
+        let import = file(&imports, "interface/test/moonbit-nested/nested/top.mbt");
+        assert!(import.contains("if before_started"));
+        assert!(import.contains(".drop_sync()"));
+        assert!(import.contains("defer mbt_ffi_free(result_ptr)"));
+        for misleading_name in ["_lower_ptr", "_lower_arg", "_subtask_code", "_result_ptr"] {
+            assert!(!import.contains(misleading_name), "{import}");
+        }
+        assert_eq!(import.matches("FutureLower(value)").count(), 1, "{import}");
+        assert_eq!(import.matches("StreamLower(value)").count(), 1, "{import}");
+        assert!(!import.contains("cleanup_list"));
+    }
+
+    #[test]
+    fn fixed_length_lists_use_checked_fixed_arrays_but_reject_nested_endpoints() {
+        let files = generate(
+            r#"
+            package test:fixed-array;
+
+            interface api {
+                type pair = list<u32, 2>;
+                type block = list<u32, 20>;
+                accept: func(value: pair) -> pair;
+                accept-block: func(value: block);
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+        let top = file(&files, "interface/test/fixed-array/api/top.mbt");
+        assert!(top.contains("FixedArray[UInt]"), "{top}");
+        assert!(top.contains(".length() != 2"), "{top}");
+        assert!(top.contains(".length() != 20"), "{top}");
+
+        for unsupported in [
+            "type unsupported = list<future<u32>, 1>;",
+            "type unsupported = future<list<u32, 1>>;",
+        ] {
+            let wit = format!(
+                r#"
+                package test:fixed-endpoints;
+
+                interface api {{
+                    {unsupported}
+                    accept: func(value: unsupported);
+                }}
+
+                world client {{ import api; }}
+                "#
+            );
+            let error = match try_generate(&wit, "client") {
+                Ok(_) => std::panic!(
+                    "fixed-length list and async endpoint combinations must be rejected"
+                ),
+                Err(error) => error,
+            };
+            assert!(
+                error
+                    .to_string()
+                    .contains("combining future or stream types with fixed-length lists"),
+                "{error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn cancelled_returned_async_import_recursively_cleans_result() {
+        let files = generate(
+            r#"
+            package test:cancelled-result;
+
+            interface api {
+                resource leaf;
+                record payload {
+                    label: string,
+                    leaves: list<leaf>,
+                    ready: future<leaf>,
+                }
+                load: async func() -> payload;
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+
+        let import = file(&files, "interface/test/cancelled-result/api/top.mbt");
+        assert!(
+            import.contains("suspend_for_subtask")
+                && import.contains("fn() {")
+                && import.contains(".drop_sync()")
+                && import.contains(".drop()"),
+            "{import}"
+        );
+        assert!(
+            import.contains("mbt_ffi_free(mbt_ffi_load32((result_ptr) + 0))")
+                && import.contains("mbt_ffi_free(mbt_ffi_load32((result_ptr) + 8))")
+                && import.contains("defer mbt_ffi_free(result_ptr)"),
+            "cancelled returned result must free its strings, lists, and result area: {import}"
+        );
+    }
+
+    #[test]
+    fn async_runtime_traps_unhandled_export_failure() {
+        let files = generate(
+            r#"
+            package test:failing-export;
+            world service { export run: async func(); }
+            "#,
+            "service",
+        );
+
+        let event_loop = file(&files, "async-core/async_ev.mbt");
+        assert!(
+            event_loop.contains("abort(\"async export failed before task return\")")
+                && event_loop.contains("if !(ev.resolved.get(waitable_set) is Some(true))"),
+            "{event_loop}"
+        );
+    }
+
+    #[test]
+    fn async_runtime_borrows_waitable_poll_payload() {
+        let files = generate(
+            r#"
+            package test:poll-payload;
+            world service { export run: async func(); }
+            "#,
+            "service",
+        );
+
+        let abi = file(&files, "async-core/async_abi.mbt");
+        assert!(
+            abi.contains("#borrow(array)\nextern \"wasm\" fn int_array2ptr"),
+            "{abi}"
+        );
+        assert!(!abi.contains("#owned(array)"), "{abi}");
+    }
+
+    #[test]
+    fn async_runtime_uses_baseline_subtask_cancel() {
+        let files = generate(
+            r#"
+            package test:subtask-cancel;
+            world service { export run: async func(); }
+            "#,
+            "service",
+        );
+
+        let abi = file(&files, "async-core/async_abi.mbt");
+        assert!(
+            abi.contains(r#""$root" "[subtask-cancel]""#)
+                && !abi.contains("[async-lower][subtask-cancel]"),
+            "{abi}"
+        );
+    }
+
+    #[test]
+    fn unit_future_intrinsics_use_wit_parser_unit_name() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            world runner {
+                import exchange: func(value: future) -> future;
+            }
+            "#,
+            "runner",
+        );
+
+        let ffi = file(&files, "world/runner/ffi_import.mbt");
+        assert!(ffi.contains(r#""$root" "[future-new-unit]exchange""#));
+        assert!(ffi.contains(r#""$root" "[async-lower][future-read-unit]exchange""#));
+        assert!(ffi.contains(r#""$root" "[future-cancel-read-unit]exchange""#));
     }
 }

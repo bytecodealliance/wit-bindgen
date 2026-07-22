@@ -1,0 +1,30 @@
+//@ async = true
+
+package test:moonbit-nested-future-stream;
+
+interface nested {
+  relay: async func(
+    value: future<future<stream<u8>>>,
+  ) -> future<future<stream<u8>>>;
+
+  relay-stream: async func(
+    value: stream<future<u8>>,
+  ) -> stream<future<u8>>;
+
+  concurrent-writes: async func() -> stream<u8>;
+  post-return-lazy: async func() -> stream<u8>;
+  wait-shared: async func() -> u32;
+  resolve-shared: async func(value: u32);
+  wait-cancelled: async func();
+  wait-cancellation-observed: async func();
+  cancellation-observed: func() -> bool;
+}
+
+world test {
+  export nested;
+}
+
+world runner {
+  import nested;
+  export run: async func();
+}

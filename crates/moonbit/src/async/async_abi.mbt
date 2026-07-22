@@ -33,14 +33,10 @@ fn SubTask::from(code : Int) -> SubTask {
 }
 
 ///|
-/// None : the subtask is blocked
-fn SubTask::cancel(self : SubTask) -> SubTaskState? {
-  let result = subtask_cancel(self.handle)
-  if result == -1 {
-    None
-  } else {
-    Some(SubTaskState::from(subtask_cancel(self.handle)))
-  }
+/// The baseline intrinsic cooperatively waits in the component model and
+/// returns only after the subtask reaches a terminal state.
+fn SubTask::cancel(self : SubTask) -> SubTaskState {
+  SubTaskState::from(subtask_cancel(self.handle))
 }
 
 // #endregion
@@ -61,13 +57,13 @@ priv enum EventCode {
 ///|
 fn EventCode::from(int : Int) -> EventCode {
   match int {
-    0 => EventCode::None
-    1 => EventCode::SubTask
-    2 => EventCode::StreamRead
-    3 => EventCode::StreamWrite
-    4 => EventCode::FutureRead
-    5 => EventCode::FutureWrite
-    6 => EventCode::TaskCancelled
+    0 => None
+    1 => SubTask
+    2 => StreamRead
+    3 => StreamWrite
+    4 => FutureRead
+    5 => FutureWrite
+    6 => TaskCancelled
     _ => panic()
   }
 }
@@ -101,7 +97,12 @@ fn Events::new(code : EventCode, i : Int, j : Int) -> Events {
 // #region waitable set
 
 ///|
-struct WaitableSet(Int) derive(Eq, Show, Hash)
+#borrow(array)
+extern "wasm" fn int_array2ptr(array : FixedArray[Int]) -> Int =
+  #|(func (param i32) (result i32) local.get 0)
+
+///|
+struct WaitableSet(Int) derive(Eq, Hash)
 
 ///|
 fn WaitableSet::new() -> WaitableSet {
@@ -113,6 +114,13 @@ fn WaitableSet::drop(self : Self) -> Unit {
   waitable_set_drop(self.0)
 }
 
+///|
+fn WaitableSet::poll(self : Self) -> (Events, Int) {
+  let payload : FixedArray[Int] = FixedArray::make(2, 0)
+  let event = waitable_set_poll(self.0, int_array2ptr(payload))
+  (Events::new(EventCode::from(event), payload[0], payload[1]), payload[0])
+}
+
 // #endregion
 
 // #region Future
@@ -120,14 +128,14 @@ fn WaitableSet::drop(self : Self) -> Unit {
 ///|
 priv enum FutureReadResult {
   Completed = 0
-  Cancelled = 1
+  Cancelled = 2
 }
 
 ///|
 fn FutureReadResult::from(int : Int) -> FutureReadResult {
   match int {
     0 => Completed
-    1 => Cancelled
+    2 => Cancelled
     _ => panic()
   }
 }
@@ -193,7 +201,6 @@ priv enum CallbackCode {
   Completed
   Yield
   Wait(WaitableSet)
-  Poll(WaitableSet)
 }
 
 ///|
@@ -202,19 +209,6 @@ fn CallbackCode::encode(self : Self) -> Int {
     Completed => 0
     Yield => 1
     Wait(id) => 2 | (id.0 << 4)
-    Poll(id) => 3 | (id.0 << 4)
-  }
-}
-
-///|
-fn CallbackCode::decode(int : Int) -> CallbackCode {
-  let id = int >> 4
-  match int & 0xf {
-    0 => Completed
-    1 => Yield
-    2 => Wait(id)
-    3 => Poll(id)
-    _ => panic()
   }
 }
 
@@ -223,27 +217,10 @@ fn CallbackCode::decode(int : Int) -> CallbackCode {
 // #region Component async primitives
 
 ///|
-/// Return whether is cancelled.
-/// Use for non-callback implementation.
-fn _yield() -> Bool = "$root" "[cancellable][yield]"
-
-///|
-fn _backpressure_inc() = "$root" "[backpressure-inc]"
-
-///|
-fn _backpressure_dec() = "$root" "[backpressure-dec]"
-
-///|
 fn subtask_cancel(id : Int) -> Int = "$root" "[subtask-cancel]"
 
 ///|
 fn subtask_drop(id : Int) = "$root" "[subtask-drop]"
-
-///|
-pub fn context_set(task : Int) = "$root" "[context-set-0]"
-
-///|
-pub fn context_get() -> Int = "$root" "[context-get-0]"
 
 ///|
 fn tls_set(tls : Int) = "$root" "[context-set-0]"
@@ -252,13 +229,36 @@ fn tls_set(tls : Int) = "$root" "[context-set-0]"
 fn tls_get() -> Int = "$root" "[context-get-0]"
 
 ///|
-pub fn task_cancel() = "[export]$root" "[task-cancel]"
+fn task_cancel() = "[export]$root" "[task-cancel]"
 
 ///|
 fn waitable_set_new() -> Int = "$root" "[waitable-set-new]"
 
 ///|
 fn waitable_set_drop(set : Int) = "$root" "[waitable-set-drop]"
+
+///|
+/// This poll is deliberately non-cancellable. Component-task cancellation is
+/// delivered by the stackless callback instead of being consumed here.
+fn waitable_set_poll(set : Int, payload : Int) -> Int = "$root" "[waitable-set-poll]"
+
+///|
+fn task_wakeup_stream_new() -> Int64 = "$root" "[stream-new-unit]"
+
+///|
+fn task_wakeup_stream_read(handle : Int, ptr : Int, len : Int) -> Int = "$root" "[async-lower][stream-read-unit]"
+
+///|
+fn task_wakeup_stream_write(handle : Int, ptr : Int, len : Int) -> Int = "$root" "[async-lower][stream-write-unit]"
+
+///|
+fn task_wakeup_stream_cancel_read(handle : Int) -> Int = "$root" "[stream-cancel-read-unit]"
+
+///|
+fn task_wakeup_stream_drop_readable(handle : Int) = "$root" "[stream-drop-readable-unit]"
+
+///|
+fn task_wakeup_stream_drop_writable(handle : Int) = "$root" "[stream-drop-writable-unit]"
 
 ///|
 fn waitable_join(waitable : Int, set : Int) = "$root" "[waitable-join]"

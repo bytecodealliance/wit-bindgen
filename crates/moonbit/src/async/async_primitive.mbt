@@ -13,9 +13,9 @@
 // limitations under the License.
 
 ///|
-async fn[T] async_suspend(
-  cb : ((T) -> Unit, (Cancelled) -> Unit) -> Unit,
-) -> T raise Cancelled = "%async.suspend"
+async fn[T, E : Error] async_suspend(
+  cb : ((T) -> Unit, (E) -> Unit) -> Unit,
+) -> T raise E = "%async.suspend"
 
 ///|
 fn run_async(f : async () -> Unit noraise) = "%async.run"

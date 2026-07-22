@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/test_/results/test/stub.mbt'
+//@ path = 'gen/interface/test/results/test/stub.mbt'
 
 ///|
 pub fn string_error(_a : Float) -> Result[Float, String] {

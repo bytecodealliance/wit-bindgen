@@ -1,38 +1,37 @@
 //@ [lang]
-//@ path = 'gen/interface/my/test_/i/stub.mbt'
+//@ path = 'gen/interface/my/test/i/stub.mbt'
 
 ///|
 pub async fn cancel_before_read(
-  x : @ffi.FutureReader[UInt],
-) -> Unit noraise {
-  let task = @ffi.current_task()
-  let _ = x.drop()
+  x : @async-core.Future[UInt],
+  _background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+  x.drop()
 }
 
 ///|
 pub async fn cancel_after_read(
-  x : @ffi.FutureReader[UInt],
-) -> Unit noraise {
-  let task = @ffi.current_task()
-  task.spawn(
-    fn() {
-      let _ = x.read() catch { _ => raise @ffi.Cancelled::Cancelled }
+  x : @async-core.Future[UInt],
+  background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+  background_group.spawn_bg(
+    async fn() {
+      let _ = x.get() catch { _ => raise @async-core.Cancelled::Cancelled }
     }
   )
-  task.cancel_waitable(x)
+  x.drop()
 }
 
 ///|
 pub async fn start_read_then_cancel(
-  data : @ffi.FutureReader[UInt],
-  signal : @ffi.FutureReader[Unit],
-) -> Unit noraise {
-  let task = @ffi.current_task()
-  task.spawn(
-    fn() { let _ = data.read() catch { _ => raise @ffi.Cancelled::Cancelled } },
-  ) 
-  task.spawn(
-    fn() { signal.read() catch { _ => raise @ffi.Cancelled::Cancelled } },
+  data : @async-core.Future[UInt],
+  signal : @async-core.Future[Unit],
+  background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+  background_group.spawn_bg(
+    async fn() { let _ = data.get() catch { _ => raise @async-core.Cancelled::Cancelled } },
+  )
+  background_group.spawn_bg(
+    async fn() { signal.get() catch { _ => raise @async-core.Cancelled::Cancelled } },
   )
 }
-

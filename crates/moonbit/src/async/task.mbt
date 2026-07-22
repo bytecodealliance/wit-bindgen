@@ -15,9 +15,9 @@
 ///|
 /// `Task[X]` represents a running task with result type `X`,
 /// it can be used to wait and retrieve the result value of the task.
-struct Task_[X] {
-  value : Ref[X?]
-  coro : Coroutine
+pub struct Task[X] {
+  priv value : Ref[X?]
+  priv coro : Coroutine
 }
 
 ///|
@@ -25,7 +25,7 @@ struct Task_[X] {
 /// If the task fails, `wait` will also fail with the same error.
 ///
 /// If the current task is cancelled, `wait` return immediately with error.
-pub async fn[X] Task_::wait(self : Task_[X]) -> X {
+pub async fn[X] Task::wait(self : Task[X]) -> X {
   self.coro.wait()
   self.value.val.unwrap()
 }
@@ -36,15 +36,13 @@ pub async fn[X] Task_::wait(self : Task_[X]) -> X {
 /// If the task already failed, `try_wait` will fail immediately.
 /// If the task is still running, `try_wait` returns `None`.
 /// `try_wait` is a synchoronous function: it never blocks.
-pub fn[X] Task_::try_wait(self : Task_[X]) -> X? raise {
+pub fn[X] Task::try_wait(self : Task[X]) -> X? raise {
   self.coro.check_error()
   self.value.val
 }
 
 ///|
 /// Cancel a task. Subsequent attempt to wait for the task will receive error.
-/// Note that if the task is *not* spawned with `allow_failure=true`,
-/// the whole task group will fail too.
-pub fn[X] Task_::cancel(self : Task_[X]) -> Unit {
+pub fn[X] Task::cancel(self : Task[X]) -> Unit {
   self.coro.cancel()
 }

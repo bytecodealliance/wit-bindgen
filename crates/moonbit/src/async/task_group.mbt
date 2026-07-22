@@ -31,18 +31,14 @@ priv enum TaskGroupState {
 ///
 /// The type parameter `X` in `TaskGroup[X]` is the result type of the group,
 /// see `with_task_group` for more detail.
-struct TaskGroup[X] {
-  children : Set[Coroutine]
-  parent : Coroutine
-  mut waiting : Int
-  mut state : TaskGroupState
-  mut result : X?
-  group_defer : Array[async () -> Unit]
+pub struct TaskGroup[X] {
+  priv children : Set[Coroutine]
+  priv parent : Coroutine
+  priv mut waiting : Int
+  priv mut state : TaskGroupState
+  priv mut result : X?
+  priv group_defer : Array[async () -> Unit]
 }
-
-///|
-#deprecated("this error is no longer emitted")
-pub suberror AlreadyTerminated derive(Show)
 
 ///|
 fn[X] TaskGroup::spawn_coroutine(
@@ -51,17 +47,17 @@ fn[X] TaskGroup::spawn_coroutine(
   no_wait~ : Bool,
   allow_failure~ : Bool,
 ) -> Coroutine {
-  guard self.state is Running else {
+  guard self.state is Running || !self.children.is_empty() else {
     abort("trying to spawn from a terminated task group")
   }
-  if not(no_wait) {
+  if !no_wait {
     self.waiting += 1
   }
   async fn worker() {
     let coro = current_coroutine()
     defer {
       self.children.remove(coro)
-      if not(no_wait) {
+      if !no_wait {
         self.waiting -= 1
         if self.waiting == 0 && self.state is Running {
           for child in self.children {
@@ -74,16 +70,16 @@ fn[X] TaskGroup::spawn_coroutine(
         self.parent.wake()
       }
     }
-    guard self.state is Running else {  }
     f() catch {
       err if allow_failure => raise err
+      Cancelled::Cancelled as err if is_being_cancelled() => raise err
       err => {
         if self.state is Running {
           for child in self.children {
             child.cancel()
           }
           self.state = Fail(err)
-        } else if not(err is Cancelled::Cancelled) {
+        } else {
           self.state = Fail(err)
         }
         raise err
@@ -93,6 +89,9 @@ fn[X] TaskGroup::spawn_coroutine(
 
   let coro = spawn(worker)
   self.children.add(coro)
+  if !(self.state is Running) {
+    coro.cancel()
+  }
   coro
 }
 
@@ -100,14 +99,23 @@ fn[X] TaskGroup::spawn_coroutine(
 /// Spawn a child task in a task group, and run it asynchronously in the background.
 ///
 /// Unless `no_wait` (`false` by default) is `true`,
-/// the whole task group will only exit after this child task terminates.
+/// the task group will wait for this task to complete before normal exit.
+/// No matter what the value of `no_wait` is,
+/// `with_task_group` will only return after all child tasks terminate.
+/// The task will be cancelled automatically if it is still running
+/// when the task group wishes to terminate.
 ///
 /// Unless `allow_failure` (`false` by default) is `true`,
-/// Ithe whole task group will also fail if the spawned task fails, 
+/// the whole task group will also fail if the spawned task fails,
 /// other tasks in the group will be cancelled in this case.
 ///
-/// If the task group is already cancelled or has been terminated,
-/// `spawn_bg` will fail with error and the child task will not be spawned.
+/// Cancelled tasks are not considered failing, although they raise a
+/// cancellation error. A different error raised during cancellation is still
+/// considered a failure.
+///
+/// A task spawned while the group is cancelling still starts, but begins in a
+/// cancelled state so its entry cleanup can run. Spawning after the group has
+/// terminated or from a group defer is invalid and aborts.
 ///
 /// It is undefined whether the child task will start running immediately
 /// before `spawn_bg` returns.
@@ -126,14 +134,23 @@ pub fn[X] TaskGroup::spawn_bg(
 /// and retrieved using `.wait()`, or cancelled using `.cancel()`.
 ///
 /// Unless `no_wait` (`false` by default) is `true`,
-/// the whole task group will only exit after this child task terminates.
+/// the task group will wait for this task to complete before normal exit.
+/// No matter what the value of `no_wait` is,
+/// `with_task_group` will only return after all child tasks terminate.
+/// The task will be cancelled automatically if it is still running
+/// when the task group wishes to terminate.
 ///
 /// Unless `allow_failure` (`false` by default) is `true`,
-/// Ithe whole task group will also fail if the spawned task fails, 
+/// the whole task group will also fail if the spawned task fails,
 /// other tasks in the group will be cancelled in this case.
 ///
-/// If the task group is already cancelled or has been terminated,
-/// `spawn` will fail with error and the child task will not be spawned.
+/// Cancelled tasks are not considered failing, although they raise a
+/// cancellation error. A different error raised during cancellation is still
+/// considered a failure.
+///
+/// A task spawned while the group is cancelling still starts, but begins in a
+/// cancelled state so its entry cleanup can run. Spawning after the group has
+/// terminated or from a group defer is invalid and aborts.
 ///
 /// It is undefined whether the child task will start running immediately
 /// before `spawn` returns.
@@ -142,7 +159,7 @@ pub fn[G, X] TaskGroup::spawn(
   f : async () -> X,
   no_wait? : Bool = false,
   allow_failure? : Bool = false,
-) -> Task_[X] {
+) -> Task[X] {
   let value = @ref.new(Option::None)
   let coro = self.spawn_coroutine(
     () => value.val = Some(f()),
@@ -154,7 +171,8 @@ pub fn[G, X] TaskGroup::spawn(
 
 ///|
 /// Attach a defer block, represented as a cleanup function, to a task group.
-/// The clenaup function will be invoked when the group terminates.
+/// The cleanup function runs after every child task has terminated. Spawning a
+/// new child from a group defer is invalid and aborts.
 /// Group scoped defer blocks are executed in FILO order, just like normal `defer`.
 /// `with_task_group` will only exit after all group defer blocks terminate.
 ///
@@ -183,36 +201,39 @@ pub fn[X] TaskGroup::add_defer(
 /// `with_task_group` will return the result of `f`.
 pub async fn[X] with_task_group(f : async (TaskGroup[X]) -> X) -> X {
   let tg = {
-    children: Set::new(),
+    children: Set([]),
     parent: current_coroutine(),
     waiting: 0,
     state: Running,
     result: None,
     group_defer: [],
   }
-  tg.spawn_bg(fn() {
+  let curr = current_coroutine()
+  let prev = curr.spawner
+  curr.spawner = Some(fn(child) { tg.spawn_bg(child) })
+  defer {
+    curr.spawner = prev
+  }
+  tg.spawn_bg(() => {
     let value = f(tg)
     if tg.result is None {
       tg.result = Some(value)
     }
   })
-  if not(tg.children.is_empty()) {
-    suspend() catch {
-      err =>
-        if tg.state is Running {
-          tg.state = Fail(err)
-          for child in tg.children {
-            child.cancel()
-          }
+  suspend() catch {
+    err => {
+      if tg.state is Running {
+        tg.state = Fail(err)
+      }
+      if !tg.children.is_empty() {
+        for child in tg.children {
+          child.cancel()
         }
+        protect_from_cancel(() => suspend(), resume_on_cancel=true)
+      }
     }
   }
-  if not(tg.children.is_empty()) {
-    protect_from_cancel(() => suspend()) catch {
-      _ => ()
-    }
-  }
-  tg.children.clear()
+  guard tg.children.is_empty()
   while tg.group_defer.pop() is Some(defer_block) {
     defer_block() catch {
       err => if tg.state is Done { tg.state = Fail(err) }
@@ -238,12 +259,11 @@ pub fn[X] TaskGroup::return_immediately(
   }
   if self.state is Running {
     self.state = Done
-    let curr_coro = current_coroutine()
     for child in self.children {
-      if child != curr_coro {
-        child.cancel()
-      }
+      child.cancel()
     }
   }
-  raise Cancelled::Cancelled
+  if is_being_cancelled() {
+    raise Cancelled::Cancelled
+  }
 }

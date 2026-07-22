@@ -1,0 +1,17 @@
+package wasi:random@0.3.0;
+
+interface random {
+  get-random-bytes: func(max-len: u64) -> list<u8>;
+
+  get-random-u64: func() -> u64;
+}
+
+interface insecure {
+  get-insecure-random-bytes: func(max-len: u64) -> list<u8>;
+
+  get-insecure-random-u64: func() -> u64;
+}
+
+interface insecure-seed {
+  get-insecure-seed: func() -> tuple<u64, u64>;
+}

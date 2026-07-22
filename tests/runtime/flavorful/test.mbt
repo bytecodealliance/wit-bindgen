@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/test_/flavorful/toTest/stub.mbt'
+//@ path = 'gen/interface/test/flavorful/to-test/stub.mbt'
 
 ///|
 pub fn f_list_in_record1(_a : ListInRecord1) -> Unit {
@@ -65,7 +65,7 @@ pub fn errno_result() -> Result[Unit, MyErrno] {
   }
 }
 
-pub fn write_utf8_char(buf : @buffer.T, value : Char) -> Unit {
+pub fn write_utf8_char(buf : @buffer.Buffer, value : Char) -> Unit {
   let code = value.to_uint()
   match code {
     _..<0x80 => {

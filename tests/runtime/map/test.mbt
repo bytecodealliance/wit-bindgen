@@ -1,5 +1,5 @@
 //@ [lang]
-//@ path = 'gen/interface/test_/maps/toTest/stub.mbt'
+//@ path = 'gen/interface/test/maps/to-test/stub.mbt'
 
 ///|
 pub fn named_roundtrip(a : Map[UInt, String]) -> Map[String, UInt] {

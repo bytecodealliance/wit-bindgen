@@ -1,15 +1,11 @@
 //@ [lang]
-//@ path = 'gen/interface/my/test_/i/stub.mbt'
+//@ path = 'gen/interface/my/test/i/stub.mbt'
 
-pub async fn read_stream(x : @ffi.StreamReader[Unit]) -> Unit noraise {
-      let task = @ffi.current_task()
-      let buffer = FixedArray::make(10, Unit::default());
-
-      task.spawn(fn(){
-            let _ = x.read(buffer, 1) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
-      task.spawn(fn(){
-            let _ = x.read(buffer, 2) catch { _ => raise @ffi.Cancelled::Cancelled }
-      })
+pub async fn read_stream(
+  x : @async-core.Stream[Unit],
+  _background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+      let _ = x.read(1) catch { _ => None }
+      let _ = x.read(2) catch { _ => None }
+      let _ = x.drop() catch { _ => () }
 }
-
