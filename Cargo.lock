@@ -1361,7 +1361,7 @@ checksum = "0592e1c9d151f854e6fd382574c3a0855250e1d9b2f99d9281c6e6391af352f1"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "bitflags",
  "futures",
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-c"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1386,7 +1386,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1406,7 +1406,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cpp"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1434,7 +1434,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-csharp"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-go"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1462,7 +1462,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-markdown"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1473,7 +1473,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-moonbit"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1504,7 +1504,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "macro-string",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-test"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "anyhow",
  "clap",
