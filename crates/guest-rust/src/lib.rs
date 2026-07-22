@@ -682,6 +682,31 @@ extern crate std;
 ///     // By default this set is empty.
 ///     additional_derives: [PartialEq, Eq, Hash, Clone],
 ///
+///     // Extra attributes to emit on specific generated types (records, variants,
+///     // and enums), rather than on all types like `additional_derives`. A type is
+///     // selected by its bare kebab name, its package (`my:pkg`), its owning
+///     // interface (`my:pkg/types`), or its fully-qualified name; the qualified
+///     // forms written as in `with`, carrying the `@version` when versioned. An
+///     // injected `#[derive(...)]` folds into the generated derive (deduped); other
+///     // attributes are emitted verbatim, on every form including the borrowed one
+///     // under `Borrowing` (so owned-only derives fail there). See the CLI docs for
+///     // the full grammar.
+///     //
+///     // By default this map is empty.
+///     additional_type_attributes: {
+///         "my-record": [r#"#[derive(serde::Serialize)]"#],   // one type, by bare name
+///         "my:pkg/types": [r#"#[derive(Clone)]"#],           // every type in an interface
+///     },
+///
+///     // Like `additional_type_attributes`, but for generated record fields and
+///     // enum/variant cases, selected by `<type-selector>.member-name` (any type
+///     // selector above) or a bare `member-name`.
+///     //
+///     // By default this map is empty.
+///     additional_member_attributes: {
+///         "my-record.my-field": [r#"#[serde(rename = "mf")]"#],
+///     },
+///
 ///     // When generating bindings for interfaces that are not defined in the
 ///     // same package as `world`, this option can be used to either generate
 ///     // those bindings or point to already generated bindings.
