@@ -21,6 +21,30 @@ use super::FunctionBindgen;
 use super::InterfaceGenerator;
 use super::wasm_type;
 
+const DEFAULT_STREAM_WINDOW_ELEMENTS: usize = 64;
+const PRIMITIVE_STREAM_BUFFER_BYTES: usize = 4 * 1024;
+
+fn is_fixed_primitive(resolve: &Resolve, ty: &Type) -> bool {
+    match ty {
+        Type::U8
+        | Type::S8
+        | Type::U16
+        | Type::S16
+        | Type::U32
+        | Type::S32
+        | Type::U64
+        | Type::S64
+        | Type::F32
+        | Type::F64
+        | Type::Char => true,
+        Type::Id(id) => match &resolve.types[*id].kind {
+            TypeDefKind::Type(ty) => is_fixed_primitive(resolve, ty),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum PayloadFor {
     Future,
@@ -1233,8 +1257,15 @@ impl<'a> InterfaceGenerator<'a> {
             .map(|ty| self.world_gen.sizes.size(ty).size_wasm32())
             .unwrap_or(0);
         let read_chunk_owns_buffer = result_type.is_some_and(|ty| self.is_list_canonical(ty));
-        let staging_window = if payload_sites.is_empty() { 64 } else { 1 };
-        let max_read_count = 64;
+        let primitive_window = result_type
+            .filter(|ty| is_fixed_primitive(self.resolve, ty))
+            .map(|_| (PRIMITIVE_STREAM_BUFFER_BYTES / elem_size).max(1));
+        let staging_window = if payload_sites.is_empty() {
+            primitive_window.unwrap_or(DEFAULT_STREAM_WINDOW_ELEMENTS)
+        } else {
+            1
+        };
+        let max_read_count = primitive_window.unwrap_or(DEFAULT_STREAM_WINDOW_ELEMENTS);
 
         let EndpointPayloadFragments {
             lift,
@@ -2104,6 +2135,7 @@ fn wasm{symbol_name}StreamCommit(handle : Int) -> Unit {{
             () => close_writer_serialized(),
             () => !writer_closed.val,
             Some(cleanup_value),
+            {staging_window},
         )
         let relay_source = producer is None
         let run_producer = async fn() -> Unit {{

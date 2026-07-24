@@ -3446,6 +3446,76 @@ mod tests {
     }
 
     #[test]
+    fn fixed_primitive_streams_use_four_kibibyte_buffer_budget() {
+        for (wit_type, expected_window) in [
+            ("u8", 4096),
+            ("s8", 4096),
+            ("u16", 2048),
+            ("s16", 2048),
+            ("u32", 1024),
+            ("s32", 1024),
+            ("f32", 1024),
+            ("char", 1024),
+            ("u64", 512),
+            ("s64", 512),
+            ("f64", 512),
+            ("bool", 64),
+            ("string", 64),
+        ] {
+            let wit = format!(
+                r#"
+                package a:b;
+
+                interface api {{
+                    type scalar = {wit_type};
+                    exchange: func(input: stream<scalar>) -> stream<scalar>;
+                }}
+
+                world runner {{ import api; }}
+                "#
+            );
+            let files = generate(&wit, "runner");
+            let generated = files
+                .iter()
+                .map(|(_, contents)| String::from_utf8_lossy(contents))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                generated.contains(&format!("let read_count = if count < {expected_window}")),
+                "unexpected read window for {wit_type}: {generated}"
+            );
+            assert!(
+                generated.contains(&format!(
+                    "let data_len = if data.length() < {expected_window}"
+                )),
+                "unexpected write window for {wit_type}: {generated}"
+            );
+            let compact = generated.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                compact.contains(&format!("Some(cleanup_value), {expected_window}, )")),
+                "sink did not receive the {expected_window}-element window for {wit_type}: \
+                 {generated}"
+            );
+        }
+
+        let runtime = generate(
+            r#"
+            package a:b;
+            world runner {
+                import exchange: func(input: stream<u8>) -> stream<u8>;
+            }
+            "#,
+            "runner",
+        );
+        let sink = file(&runtime, "async-core/async_trait.mbt");
+        assert!(sink.contains("priv write_window_size : Int"));
+        assert!(sink.contains("data.length() < self.write_window_size"));
+        assert!(sink.contains("FixedArray::from_array(data[:length])"));
+        assert!(sink.contains("data[:length].to_fixedarray()"));
+        assert!(!sink.contains("FixedArray::makei"));
+    }
+
+    #[test]
     fn async_export_background_group_name_is_deconflicted() {
         let files = generate(
             r#"
