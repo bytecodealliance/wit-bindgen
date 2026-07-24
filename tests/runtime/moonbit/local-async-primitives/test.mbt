@@ -11,7 +11,15 @@ priv struct LocalOnlyValue {
 }
 
 ///|
+let previous_completed_task : Ref[@async-core.Task[Bool]?] = Ref(None)
+
+///|
 pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
+  if previous_completed_task.val is Some(task) {
+    task.cancel()
+    previous_completed_task.val = None
+  }
+
   let semaphore = @async-core.Semaphore(1, initial_value=1)
   guard semaphore.try_acquire() else { return false }
   guard !semaphore.try_acquire() else { return false }
@@ -307,5 +315,7 @@ pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
   assigned_started.get()
   assigned.release()
   assigned_waiter.cancel()
-  assigned_waiter.wait()
+  let result = assigned_waiter.wait()
+  previous_completed_task.val = Some(assigned_waiter)
+  result
 }

@@ -16,17 +16,20 @@
 priv struct Scheduler {
   mut coro_id : Int
   mut curr_coro : Coroutine?
-  tasks : Map[WaitableSet, TaskSchedule]
 }
 
 ///|
-priv struct TaskSchedule {
+/// The per-component-task part of the scheduler. Coroutines retain this lane,
+/// not `ComponentTaskState`, so a retired task cannot be kept alive by an RC
+/// cycle through its registry entry or subscribers.
+priv struct TaskLane {
   mut blocking : Int
   run_later : @deque.Deque[Coroutine]
+  mut wakeup : TaskWakeup?
 }
 
 ///|
-let scheduler : Scheduler = { coro_id: 0, curr_coro: None, tasks: Map([]) }
+let scheduler : Scheduler = { coro_id: 0, curr_coro: None }
 
 ///|
 fn current_coroutine() -> Coroutine {
@@ -34,52 +37,28 @@ fn current_coroutine() -> Coroutine {
 }
 
 ///|
-fn task_schedule(waitable_set : WaitableSet) -> TaskSchedule {
-  match scheduler.tasks.get(waitable_set) {
-    Some(schedule) => schedule
-    None => {
-      let schedule = { blocking: 0, run_later: Deque([]) }
-      scheduler.tasks.set(waitable_set, schedule)
-      schedule
-    }
-  }
-}
-
-///|
 fn enqueue(coro : Coroutine) -> Unit {
-  task_schedule(coro.waitable_set).run_later.push_back(coro)
+  coro.lane.run_later.push_back(coro)
 }
 
 ///|
-fn has_immediately_ready_task(waitable_set : WaitableSet) -> Bool {
-  match scheduler.tasks.get(waitable_set) {
-    Some(schedule) => !schedule.run_later.is_empty()
-    None => false
-  }
+fn has_immediately_ready_task(lane : TaskLane) -> Bool {
+  !lane.run_later.is_empty()
 }
 
 ///|
-fn no_more_work(waitable_set : WaitableSet) -> Bool {
-  match scheduler.tasks.get(waitable_set) {
-    Some(schedule) => schedule.blocking == 0 && schedule.run_later.is_empty()
-    None => true
-  }
-}
-
-///|
-fn forget_schedule(waitable_set : WaitableSet) -> Unit {
-  scheduler.tasks.remove(waitable_set)
+fn no_more_work(lane : TaskLane) -> Bool {
+  lane.blocking == 0 && lane.run_later.is_empty()
 }
 
 ///|
 /// Run one fair scheduling round for a component task. Coroutines woken or
 /// spawned during this round are left for the next round so the component
 /// event loop gets a chance to poll completed waitables.
-fn reschedule(waitable_set : WaitableSet) -> Unit {
-  guard scheduler.tasks.get(waitable_set) is Some(schedule) else { return }
-  let count = schedule.run_later.length()
+fn reschedule(lane : TaskLane) -> Unit {
+  let count = lane.run_later.length()
   for _ in 0..<count {
-    guard schedule.run_later.pop_front() is Some(coro) else { break }
+    guard lane.run_later.pop_front() is Some(coro) else { break }
     coro.ready = false
     guard coro.state is Suspend(ok_cont~, err_cont~) else {  }
     coro.state = Running

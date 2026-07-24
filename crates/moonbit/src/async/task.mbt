@@ -42,7 +42,8 @@ pub fn[X] Task::try_wait(self : Task[X]) -> X? raise {
 }
 
 ///|
-/// Cancel a task. Subsequent attempt to wait for the task will receive error.
+/// Cancel a running task. Cancelling a terminated task has no effect.
+/// Subsequent attempt to wait for a cancelled task will receive error.
 pub fn[X] Task::cancel(self : Task[X]) -> Unit {
   self.coro.cancel()
 }
