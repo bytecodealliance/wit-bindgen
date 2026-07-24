@@ -3786,7 +3786,7 @@ mod tests {
     }
 
     #[test]
-    fn async_runtime_traps_unhandled_export_failure() {
+    fn async_runtime_panics_when_export_finishes_unresolved() {
         let files = generate(
             r#"
             package test:failing-export;
@@ -3797,8 +3797,45 @@ mod tests {
 
         let event_loop = file(&files, "async-core/async_ev.mbt");
         assert!(
-            event_loop.contains("abort(\"async export failed before task return\")")
-                && event_loop.contains("if !(ev.resolved.get(waitable_set) is Some(true))"),
+            event_loop.contains("let resolution = task_state.resolution")
+                && event_loop.contains("guard resolution is Resolved")
+                && !event_loop.contains("abort("),
+            "{event_loop}"
+        );
+    }
+
+    #[test]
+    fn async_runtime_does_not_reschedule_terminated_task_cancellation() {
+        let files = generate(
+            r#"
+            package test:terminated-task-cancellation;
+            world service { export run: async func(); }
+            "#,
+            "service",
+        );
+
+        let coroutine = file(&files, "async-core/async_coroutine.mbt");
+        assert!(
+            coroutine.contains("Done | Fail(_) => return"),
+            "{coroutine}"
+        );
+    }
+
+    #[test]
+    fn async_runtime_traps_callback_without_task_state() {
+        let files = generate(
+            r#"
+            package test:missing-task-state;
+            world service { export run: async func(); }
+            "#,
+            "service",
+        );
+
+        let event_loop = file(&files, "async-core/async_ev.mbt");
+        assert!(
+            event_loop.contains(
+                "guard component_task_state(waitable_set) is Some(task_state) else { panic() }"
+            ),
             "{event_loop}"
         );
     }

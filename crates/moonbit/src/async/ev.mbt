@@ -13,15 +13,15 @@
 // limitations under the License.
 
 ///|
-priv struct EventLoop {
-  subscribes : Map[WaitableSet, Map[Int, Subscriber]]
-  wakeups : Map[WaitableSet, TaskWakeup]
-  tasks : Map[WaitableSet, Coroutine]
-  owned_coroutines : Map[WaitableSet, @set.Set[Coroutine]]
-  finished : Map[WaitableSet, Bool]
-  resolved : Map[WaitableSet, Bool]
-  cancellations : Map[WaitableSet, TaskCancellation]
-  post_return_flush : Map[WaitableSet, Bool]
+/// State owned by one P3 component task. `task.state` is the sole completion
+/// source; `owned_coroutines` contains only runtime bridge coroutines.
+priv struct ComponentTaskState {
+  lane : TaskLane
+  subscribers : Map[Int, Subscriber]
+  task : Coroutine
+  owned_coroutines : @set.Set[Coroutine]
+  mut resolution : TaskResolution
+  mut cancellation_pending : Bool
 }
 
 ///|
@@ -39,9 +39,10 @@ priv struct Subscriber {
 }
 
 ///|
-priv enum TaskCancellation {
-  Requested
-  Acknowledged
+priv enum TaskResolution {
+  Pending
+  FlushPending
+  Resolved
 }
 
 ///|
@@ -50,77 +51,57 @@ fn current_waitableset() -> WaitableSet {
 }
 
 ///|
-fn subscribers_for(waitable_set : WaitableSet) -> Map[Int, Subscriber] {
-  match ev.subscribes.get(waitable_set) {
-    Some(subscribers) => subscribers
-    None => {
-      let subscribers = Map([])
-      ev.subscribes.set(waitable_set, subscribers)
-      subscribers
-    }
-  }
+fn component_task_state(waitable_set : WaitableSet) -> ComponentTaskState? {
+  component_tasks.get(waitable_set)
 }
 
 ///|
-fn clear_subscribers(waitable_set : WaitableSet) -> Unit {
-  if ev.subscribes.get(waitable_set) is Some(subscribers) {
-    subscribers.each(fn(waitable_id, _subscriber) {
-      waitable_join(waitable_id, 0)
-    })
-    ev.subscribes.remove(waitable_set)
+fn finish_waitableset(
+  waitable_set : WaitableSet,
+  task_state : ComponentTaskState,
+) -> Unit {
+  guard task_state.owned_coroutines.is_empty() else { panic() }
+  guard task_state.lane.blocking == 0 && task_state.lane.run_later.is_empty() else {
+    panic()
   }
-}
-
-///|
-fn finish_waitableset(waitable_set : WaitableSet) -> Unit {
-  ev.tasks.remove(waitable_set)
-  ev.owned_coroutines.remove(waitable_set)
-  ev.finished.remove(waitable_set)
-  ev.resolved.remove(waitable_set)
-  ev.cancellations.remove(waitable_set)
-  ev.post_return_flush.remove(waitable_set)
-  drop_task_wakeup(waitable_set)
-  clear_subscribers(waitable_set)
-  forget_schedule(waitable_set)
+  drop_task_wakeup(task_state)
+  guard task_state.subscribers.is_empty() else { panic() }
+  component_tasks.remove(waitable_set)
   waitable_set.drop()
   tls_set(0)
 }
 
 ///|
-fn acknowledge_cancellation(waitable_set : WaitableSet) -> Unit {
-  guard ev.cancellations.get(waitable_set) is Some(Requested) else { return }
-  guard ev.finished.get(waitable_set) is Some(true) else { return }
-  guard ev.tasks.get(waitable_set) is Some(coro) else { return }
-  match coro.state {
+fn acknowledge_cancellation(task_state : ComponentTaskState) -> Unit {
+  guard task_state.cancellation_pending else { return }
+  match task_state.task.state {
     Done => () // The generated wrapper already called task.return.
     Fail(_) =>
-      if !(ev.resolved.get(waitable_set) is Some(true)) {
+      if task_state.resolution is Pending {
         task_cancel()
-        ev.resolved.set(waitable_set, true)
+        task_state.resolution = Resolved
       }
     Running | Suspend(_) => return
   }
-  ev.cancellations.set(waitable_set, Acknowledged)
+  task_state.cancellation_pending = false
 }
 
 ///|
 fn notify_subscriber(
-  waitable_set : WaitableSet,
+  task_state : ComponentTaskState,
   waitable_id : Int,
   event : Events,
 ) -> Unit {
-  if ev.wakeups.get(waitable_set) is Some(wakeup) &&
-    wakeup.reader == waitable_id {
+  if task_state.lane.wakeup is Some(wakeup) && wakeup.reader == waitable_id {
     guard event is StreamRead(i, { progress: 1, copy_result: Completed }) &&
       i == waitable_id
     wakeup.reading = false
     wakeup.signaled = false
-    remove_subscriber(waitable_set, waitable_id)
+    task_state.subscribers.remove(waitable_id)
     waitable_join(waitable_id, 0)
     return
   }
-  guard ev.subscribes.get(waitable_set) is Some(subscribers)
-  guard subscribers.get(waitable_id) is Some(subscriber)
+  guard task_state.subscribers.get(waitable_id) is Some(subscriber)
   subscriber.event = Some(event)
   subscriber.coro.each(Coroutine::wake)
   // Keep the delivered event discoverable until its waiter consumes it. A
@@ -130,43 +111,35 @@ fn notify_subscriber(
 }
 
 ///|
-fn next_callback(waitable_set : WaitableSet) -> Int {
-  if ev.post_return_flush.get(waitable_set) is Some(true) {
-    ev.post_return_flush.remove(waitable_set)
-    reschedule(waitable_set)
+fn next_callback(
+  waitable_set : WaitableSet,
+  task_state : ComponentTaskState,
+) -> Int {
+  if task_state.resolution is FlushPending {
+    task_state.resolution = Resolved
+    reschedule(task_state.lane)
   }
-  acknowledge_cancellation(waitable_set)
-  if ev.finished.get(waitable_set) is Some(true) && no_more_work(waitable_set) {
-    let resolved = ev.resolved.get(waitable_set) is Some(true)
-    let failed = match ev.tasks.get(waitable_set) {
-      Some(coro) => coro.state is Fail(_)
-      None => false
-    }
-    finish_waitableset(waitable_set)
-    if !resolved {
-      if failed {
-        abort("async export failed before task return")
-      } else {
-        abort("async export completed without task return")
-      }
-    }
+  acknowledge_cancellation(task_state)
+  if task_state.task.state is (Done | Fail(_)) && no_more_work(task_state.lane) {
+    let resolution = task_state.resolution
+    finish_waitableset(waitable_set, task_state)
+    guard resolution is Resolved
     return CallbackCode::Completed.encode()
   }
-  if has_immediately_ready_task(waitable_set) {
-    if ev.subscribes.get(waitable_set) is Some(subscribers) &&
-      !subscribers.is_empty() {
+  if has_immediately_ready_task(task_state.lane) {
+    if !task_state.subscribers.is_empty() {
       let (event, waitable_id) = waitable_set.poll()
       match event {
         None => ()
         TaskCancelled => panic()
-        _ => notify_subscriber(waitable_set, waitable_id, event)
+        _ => notify_subscriber(task_state, waitable_id, event)
       }
     }
     tls_set(waitable_set.0)
     return CallbackCode::Yield.encode()
   }
   tls_set(waitable_set.0)
-  arm_task_wakeup(waitable_set)
+  arm_task_wakeup(waitable_set, task_state)
   CallbackCode::Wait(waitable_set.0).encode()
 }
 
@@ -175,25 +148,20 @@ fn next_callback(waitable_set : WaitableSet) -> Int {
 #doc(hidden)
 pub fn with_waitableset(f : async () -> Unit) -> Int {
   let waitable_set = WaitableSet::new()
-  let owned = @set.Set([])
+  let lane = { blocking: 0, run_later: Deque([]), wakeup: None }
   tls_set(waitable_set.0)
-  let coro = spawn_owned(
-    async fn() -> Unit {
-      let coro = current_coroutine()
-      defer owned.remove(coro)
-      defer ev.finished.set(waitable_set, true)
-      f()
-    },
-    waitable_set,
-    None,
-  )
-  ev.tasks.set(waitable_set, coro)
-  owned.add(coro)
-  ev.owned_coroutines.set(waitable_set, owned)
-  ev.finished.set(waitable_set, false)
-  ev.resolved.set(waitable_set, false)
-  reschedule(waitable_set)
-  next_callback(waitable_set)
+  let task = spawn_owned(f, lane, None)
+  let task_state = {
+    lane,
+    subscribers: Map([]),
+    task,
+    owned_coroutines: Set([]),
+    resolution: Pending,
+    cancellation_pending: false,
+  }
+  component_tasks.set(waitable_set, task_state)
+  reschedule(lane)
+  next_callback(waitable_set, task_state)
 }
 
 ///|
@@ -204,9 +172,9 @@ pub fn with_waitableset(f : async () -> Unit) -> Int {
 #doc(hidden)
 pub fn task_returned() -> Unit {
   let waitable_set = current_waitableset()
-  guard ev.tasks.get(waitable_set) is Some(_)
-  ev.post_return_flush.set(waitable_set, true)
-  ev.resolved.set(waitable_set, true)
+  guard component_task_state(waitable_set) is Some(task_state)
+  guard task_state.resolution is Pending
+  task_state.resolution = FlushPending
 }
 
 ///|
@@ -214,50 +182,39 @@ pub fn task_returned() -> Unit {
 #doc(hidden)
 pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
   let waitable_set = current_waitableset()
+  guard component_task_state(waitable_set) is Some(task_state) else { panic() }
   let events = Events::new(EventCode::from(event), waitable_id, code)
   let preserve_task_wakeup = match events {
     StreamRead(i, _) =>
-      match ev.wakeups.get(waitable_set) {
+      match task_state.lane.wakeup {
         Some(wakeup) => wakeup.reader == i
         None => false
       }
     _ => false
   }
-  cancel_task_wakeup_read(waitable_set, preserve=preserve_task_wakeup)
+  cancel_task_wakeup_read(task_state, preserve=preserve_task_wakeup)
   match events {
     None => {
-      reschedule(waitable_set)
-      next_callback(waitable_set)
+      reschedule(task_state.lane)
+      next_callback(waitable_set, task_state)
     }
     TaskCancelled => {
-      guard ev.tasks.get(waitable_set) is Some(coro)
-      ev.cancellations.set(waitable_set, Requested)
-      coro.cancel()
-      if ev.owned_coroutines.get(waitable_set) is Some(owned) {
-        owned.each(Coroutine::cancel)
-      }
-      reschedule(waitable_set)
-      next_callback(waitable_set)
+      task_state.cancellation_pending = true
+      task_state.task.cancel()
+      task_state.owned_coroutines.each(Coroutine::cancel)
+      reschedule(task_state.lane)
+      next_callback(waitable_set, task_state)
     }
     _ => {
-      notify_subscriber(waitable_set, waitable_id, events)
-      reschedule(waitable_set)
-      next_callback(waitable_set)
+      notify_subscriber(task_state, waitable_id, events)
+      reschedule(task_state.lane)
+      next_callback(waitable_set, task_state)
     }
   }
 }
 
 ///|
-let ev : EventLoop = {
-  subscribes: Map([]),
-  wakeups: Map([]),
-  tasks: Map([]),
-  owned_coroutines: Map([]),
-  finished: Map([]),
-  resolved: Map([]),
-  cancellations: Map([]),
-  post_return_flush: Map([]),
-}
+let component_tasks : Map[WaitableSet, ComponentTaskState] = Map([])
 
 ///|
 /// Spawn a coroutine owned by the current component-model async task.
@@ -271,18 +228,17 @@ let ev : EventLoop = {
 #doc(hidden)
 pub fn spawn_component_task_current(f : async () -> Unit) -> Unit {
   let waitable_set = current_waitableset()
-  guard ev.tasks.get(waitable_set) is Some(_)
-  guard ev.owned_coroutines.get(waitable_set) is Some(owned)
+  guard component_task_state(waitable_set) is Some(task_state)
   let coro = spawn_owned(
     async fn() -> Unit {
       let coro = current_coroutine()
-      defer owned.remove(coro)
+      defer task_state.owned_coroutines.remove(coro)
       f()
     },
-    waitable_set,
+    task_state.lane,
     Some(spawn_component_task_current),
   )
-  owned.add(coro)
+  task_state.owned_coroutines.add(coro)
 }
 
 ///|
@@ -290,8 +246,7 @@ pub fn spawn_component_task_current(f : async () -> Unit) -> Unit {
 #doc(hidden)
 pub fn has_component_task_scope() -> Bool {
   let waitable_set = current_waitableset()
-  ev.tasks.get(waitable_set) is Some(_) &&
-  ev.owned_coroutines.get(waitable_set) is Some(_)
+  component_task_state(waitable_set) is Some(_)
 }
 
 ///|
@@ -302,33 +257,17 @@ pub fn current_component_task_token() -> Int {
 }
 
 ///|
-fn detach_waitable(waitable_id : Int) -> Unit {
-  let waitable_set = current_waitableset()
-  if ev.subscribes.get(waitable_set) is Some(subscribers) {
-    if subscribers.get(waitable_id) is Some(subscriber) {
-      subscriber.coro.clear()
-      subscribers.remove(waitable_id)
-    }
-    if subscribers.is_empty() {
-      ev.subscribes.remove(waitable_set)
-    }
+fn detach_waitable(task_state : ComponentTaskState, waitable_id : Int) -> Unit {
+  if task_state.subscribers.get(waitable_id) is Some(subscriber) {
+    subscriber.coro.clear()
+    task_state.subscribers.remove(waitable_id)
   }
   waitable_join(waitable_id, 0)
 }
 
 ///|
-fn remove_subscriber(waitable_set : WaitableSet, waitable_id : Int) -> Unit {
-  if ev.subscribes.get(waitable_set) is Some(subscribers) {
-    subscribers.remove(waitable_id)
-    if subscribers.is_empty() {
-      ev.subscribes.remove(waitable_set)
-    }
-  }
-}
-
-///|
-fn task_wakeup(waitable_set : WaitableSet) -> TaskWakeup {
-  match ev.wakeups.get(waitable_set) {
+fn task_wakeup(lane : TaskLane) -> TaskWakeup {
+  match lane.wakeup {
     Some(wakeup) => wakeup
     None => {
       let pair = task_wakeup_stream_new()
@@ -338,21 +277,24 @@ fn task_wakeup(waitable_set : WaitableSet) -> TaskWakeup {
         reading: false,
         signaled: false,
       }
-      ev.wakeups.set(waitable_set, wakeup)
+      lane.wakeup = Some(wakeup)
       wakeup
     }
   }
 }
 
 ///|
-fn arm_task_wakeup(waitable_set : WaitableSet) -> Unit {
-  let wakeup = task_wakeup(waitable_set)
+fn arm_task_wakeup(
+  waitable_set : WaitableSet,
+  task_state : ComponentTaskState,
+) -> Unit {
+  let wakeup = task_wakeup(task_state.lane)
   if wakeup.reading {
     return
   }
   let result = task_wakeup_stream_read(wakeup.reader, 0, 1)
   guard result == -1
-  let subscribers = subscribers_for(waitable_set)
+  let subscribers = task_state.subscribers
   guard subscribers.get(wakeup.reader) is None
   subscribers.set(wakeup.reader, { event: None, coro: Set([]) })
   waitable_join(wakeup.reader, waitable_set.0)
@@ -361,8 +303,8 @@ fn arm_task_wakeup(waitable_set : WaitableSet) -> Unit {
 }
 
 ///|
-fn signal_component_task(waitable_set : WaitableSet) -> Unit {
-  guard ev.wakeups.get(waitable_set) is Some(wakeup) else { return }
+fn signal_component_task(lane : TaskLane) -> Unit {
+  guard lane.wakeup is Some(wakeup) else { return }
   if !wakeup.reading || wakeup.signaled {
     return
   }
@@ -373,31 +315,31 @@ fn signal_component_task(waitable_set : WaitableSet) -> Unit {
 
 ///|
 fn cancel_task_wakeup_read(
-  waitable_set : WaitableSet,
+  task_state : ComponentTaskState,
   preserve~ : Bool,
 ) -> Unit {
-  guard ev.wakeups.get(waitable_set) is Some(wakeup) else { return }
+  guard task_state.lane.wakeup is Some(wakeup) else { return }
   if !wakeup.reading || preserve {
     return
   }
   waitable_join(wakeup.reader, 0)
-  remove_subscriber(waitable_set, wakeup.reader)
+  task_state.subscribers.remove(wakeup.reader)
   ignore(task_wakeup_stream_cancel_read(wakeup.reader))
   wakeup.reading = false
   wakeup.signaled = false
 }
 
 ///|
-fn drop_task_wakeup(waitable_set : WaitableSet) -> Unit {
-  guard ev.wakeups.get(waitable_set) is Some(wakeup) else { return }
+fn drop_task_wakeup(task_state : ComponentTaskState) -> Unit {
+  guard task_state.lane.wakeup is Some(wakeup) else { return }
   if wakeup.reading {
     waitable_join(wakeup.reader, 0)
-    remove_subscriber(waitable_set, wakeup.reader)
+    task_state.subscribers.remove(wakeup.reader)
     ignore(task_wakeup_stream_cancel_read(wakeup.reader))
   }
   task_wakeup_stream_drop_readable(wakeup.reader)
   task_wakeup_stream_drop_writable(wakeup.writer)
-  ev.wakeups.remove(waitable_set)
+  task_state.lane.wakeup = None
 }
 
 ///|
@@ -407,8 +349,8 @@ fn cancel_waitable_event(
   cancel : () -> Events,
 ) -> Events {
   let waitable_set = WaitableSet(owner_task)
-  guard ev.subscribes.get(waitable_set) is Some(subscribers)
-  guard subscribers.get(waitable_id) is Some(subscriber)
+  guard component_task_state(waitable_set) is Some(task_state)
+  guard task_state.subscribers.get(waitable_id) is Some(subscriber)
 
   // Baseline cancel-read is synchronous and traps while its endpoint belongs
   // to a waitable set. Detach before invoking the generated intrinsic.
@@ -419,7 +361,7 @@ fn cancel_waitable_event(
   }
   subscriber.event = Some(event)
   subscriber.coro.each(Coroutine::wake)
-  remove_subscriber(waitable_set, waitable_id)
+  task_state.subscribers.remove(waitable_id)
   event
 }
 
@@ -429,21 +371,20 @@ fn cancel_waitable_event(
 /// detachment for future and stream copy operations.
 async fn waitable_event(waitable_id : Int, immediate : Events?) -> Events {
   let waitable_set = current_waitableset()
+  let task_state = component_task_state(waitable_set).unwrap()
+  let subscribers = task_state.subscribers
   match immediate {
     Some(event) => {
-      if ev.subscribes.get(waitable_set) is Some(subscribers) {
-        if subscribers.get(waitable_id) is Some(subscriber) {
-          subscriber.event = Some(event)
-          subscriber.coro.each(Coroutine::wake)
-          subscriber.coro.clear()
-          waitable_join(waitable_id, 0)
-        }
-        remove_subscriber(waitable_set, waitable_id)
+      if subscribers.get(waitable_id) is Some(subscriber) {
+        subscriber.event = Some(event)
+        subscriber.coro.each(Coroutine::wake)
+        subscriber.coro.clear()
+        waitable_join(waitable_id, 0)
       }
+      subscribers.remove(waitable_id)
       event
     }
     None => {
-      let subscribers = subscribers_for(waitable_set)
       let subscriber = if subscribers.get(waitable_id) is Some(subscriber) {
         subscriber
       } else {
@@ -467,7 +408,7 @@ async fn waitable_event(waitable_id : Int, immediate : Events?) -> Events {
       } noraise {
         _ => subscriber.event.unwrap()
       }
-      remove_subscriber(waitable_set, waitable_id)
+      subscribers.remove(waitable_id)
       event
     }
   }
@@ -518,16 +459,17 @@ pub async fn suspend_for_subtask(
   // A subtask can report intermediate states, so register the same subscriber
   // again after each callback until a terminal state arrives.
   let waitable_set = current_waitableset()
+  let task_state = component_task_state(waitable_set).unwrap()
   let set = @set.Set([])
   let subscriber = { event: None, coro: set }
   let coro = current_coroutine()
   set.add(coro)
   defer {
     set.remove(coro)
-    detach_waitable(task.handle)
+    detach_waitable(task_state, task.handle)
   }
   for ;; {
-    let subscribers = subscribers_for(waitable_set)
+    let subscribers = task_state.subscribers
     guard subscribers.get(task.handle) is None
     subscribers.set(task.handle, subscriber)
     waitable_join(task.handle, waitable_set.0)
@@ -535,7 +477,7 @@ pub async fn suspend_for_subtask(
       Cancelled::Cancelled =>
         // Cancel the subtask
         return protect_from_cancel(() => {
-          detach_waitable(task.handle)
+          detach_waitable(task_state, task.handle)
           // A terminal event can race with local cancellation after waking
           // this coroutine. Once delivered, cancelling the subtask again
           // traps, so consume that event before requesting cancellation.
@@ -567,7 +509,7 @@ pub async fn suspend_for_subtask(
       err => raise err
     }
 
-    remove_subscriber(waitable_set, task.handle)
+    task_state.subscribers.remove(task.handle)
 
     // Subsequent state, return if finished
     if subscriber.event is Some(Subtask(i, state)) {

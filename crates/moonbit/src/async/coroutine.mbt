@@ -23,7 +23,7 @@ priv enum State {
 ///|
 struct Coroutine {
   coro_id : Int
-  waitable_set : WaitableSet
+  lane : TaskLane
   mut state : State
   mut shielded : Bool
   mut cancelled : Bool
@@ -47,7 +47,7 @@ fn Coroutine::wake(self : Coroutine) -> Unit {
   if !self.ready {
     self.ready = true
     enqueue(self)
-    signal_component_task(self.waitable_set)
+    signal_component_task(self.lane)
   }
 }
 
@@ -69,6 +69,10 @@ pub(all) suberror Cancelled derive(Debug)
 
 ///|
 fn Coroutine::cancel(self : Coroutine) -> Unit {
+  match self.state {
+    Done | Fail(_) => return
+    Running | Suspend(_) => ()
+  }
   self.cancelled = true
   if !self.shielded {
     self.wake()
@@ -81,10 +85,9 @@ async fn suspend() -> Unit {
   if coro.cancelled && !coro.shielded {
     raise Cancelled::Cancelled
   }
-  let schedule = task_schedule(coro.waitable_set)
-  schedule.blocking += 1
+  coro.lane.blocking += 1
   defer {
-    schedule.blocking -= 1
+    coro.lane.blocking -= 1
   }
   async_suspend(fn(ok_cont, err_cont) {
     guard coro.state is Running
@@ -95,7 +98,7 @@ async fn suspend() -> Unit {
 ///|
 fn spawn_owned(
   f : async () -> Unit,
-  waitable_set : WaitableSet,
+  lane : TaskLane,
   inherited_spawner : ((async () -> Unit) -> Unit)?,
 ) -> Coroutine {
   scheduler.coro_id += 1
@@ -105,7 +108,7 @@ fn spawn_owned(
     shielded: true,
     downstream: Set([]),
     coro_id: scheduler.coro_id,
-    waitable_set,
+    lane,
     cancelled: false,
     spawner: inherited_spawner,
   }
@@ -132,8 +135,12 @@ fn spawn_owned(
 ///|
 fn spawn(f : async () -> Unit) -> Coroutine {
   match scheduler.curr_coro {
-    Some(parent) => spawn_owned(f, parent.waitable_set, parent.spawner)
-    None => spawn_owned(f, current_waitableset(), None)
+    Some(parent) => spawn_owned(f, parent.lane, parent.spawner)
+    None => {
+      let waitable_set = current_waitableset()
+      let task_state = component_task_state(waitable_set).unwrap()
+      spawn_owned(f, task_state.lane, None)
+    }
   }
 }
 
