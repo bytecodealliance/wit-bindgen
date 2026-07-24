@@ -5,10 +5,11 @@ pub struct Sink[X] {
   priv is_open : () -> Bool
   priv has_cleanup : () -> Bool
   priv cleanup : ((X) -> Unit)?
+  priv write_window_size : Int
 }
 
 ///|
-let sink_write_window_size : Int = 64
+let default_sink_write_window_size : Int = 64
 
 ///|
 /// The write callback must either raise before consuming any value or return
@@ -21,8 +22,17 @@ pub fn[X] Sink::from_callbacks(
   close : async () -> Unit,
   is_open : () -> Bool,
   cleanup : ((X) -> Unit)?,
+  write_window_size : Int,
 ) -> Sink[X] {
-  { write, close, is_open, has_cleanup: () => cleanup is Some(_), cleanup }
+  guard write_window_size > 0
+  {
+    write,
+    close,
+    is_open,
+    has_cleanup: () => cleanup is Some(_),
+    cleanup,
+    write_window_size,
+  }
 }
 
 ///|
@@ -34,13 +44,13 @@ pub async fn[X] Sink::write(self : Sink[X], data : ArrayView[X]) -> Int {
   if data.length() == 0 {
     return 0
   }
-  let length = if data.length() < sink_write_window_size {
+  let length = if data.length() < self.write_window_size {
     data.length()
   } else {
-    sink_write_window_size
+    self.write_window_size
   }
   // The callback may suspend, so it must not retain the caller's borrowed view.
-  let buffer = FixedArray::makei(length, i => data[i])
+  let buffer = FixedArray::from_array(data[:length])
   let written = (self.write)(buffer[:])
   guard written >= 0 && written <= length
   if !(self.is_open)() && written < length && (self.has_cleanup)() {
@@ -60,12 +70,12 @@ pub async fn Sink::write_bytes(self : Sink[Byte], data : BytesView) -> Int {
   if data.length() == 0 {
     return 0
   }
-  let length = if data.length() < sink_write_window_size {
+  let length = if data.length() < self.write_window_size {
     data.length()
   } else {
-    sink_write_window_size
+    self.write_window_size
   }
-  let buffer = FixedArray::makei(length, i => data[i])
+  let buffer = data[:length].to_fixedarray()
   let written = (self.write)(buffer[:])
   guard written >= 0 && written <= length
   if !(self.is_open)() && written < length && (self.has_cleanup)() {
@@ -314,7 +324,7 @@ fn[X] fill_stream_pipe_from_writers(pipe : Ref[StreamPipe[X]]) -> Unit {
     guard take_stream_pipe_writer(pipe) is Some(writer) else { return }
     guard writer.value is Some(data) else { continue }
     let take = if available < data.length() { available } else { data.length() }
-    let chunk = FixedArray::makei(take, i => data[i])
+    let chunk = FixedArray::from_array(data[:take])
     pipe.val.chunks.push_back(chunk)
     pipe.val.buffered = pipe.val.buffered + take
     wake_stream_pipe_writer(writer, take)
@@ -415,7 +425,7 @@ async fn[X] stream_pipe_write(
       } else {
         data.length()
       }
-      let chunk = FixedArray::makei(take, i => data[i])
+      let chunk = FixedArray::from_array(data[:take])
       wake_stream_pipe_reader(reader, Some(chunk), false)
       return take
     }
@@ -424,13 +434,13 @@ async fn[X] stream_pipe_write(
   if pipe.val.capacity > 0 && pipe.val.buffered < pipe.val.capacity {
     let available = pipe.val.capacity - pipe.val.buffered
     let take = if available < data.length() { available } else { data.length() }
-    let chunk = FixedArray::makei(take, i => data[i])
+    let chunk = FixedArray::from_array(data[:take])
     pipe.val.chunks.push_back(chunk)
     pipe.val.buffered = pipe.val.buffered + take
     return take
   }
   let writer = StreamPipeWriter::{
-    value: Some(FixedArray::makei(data.length(), i => data[i])),
+    value: Some(FixedArray::from_array(data)),
     accepted: 0,
     coro: Some(current_coroutine()),
   }
@@ -463,7 +473,9 @@ async fn[X] stream_pipe_read(
       Some(head) => {
         let available = head.length() - pipe.val.head_pos
         let take = if count < available { count } else { available }
-        let result = FixedArray::makei(take, i => head[pipe.val.head_pos + i])
+        let result = FixedArray::from_array(
+          head[pipe.val.head_pos:pipe.val.head_pos + take],
+        )
         pipe.val.head_pos = pipe.val.head_pos + take
         pipe.val.buffered = pipe.val.buffered - take
         if pipe.val.head_pos >= head.length() {
@@ -484,7 +496,7 @@ async fn[X] stream_pipe_read(
       Some(writer) => {
         guard writer.value is Some(data) else { continue }
         let take = if count < data.length() { count } else { data.length() }
-        let result = FixedArray::makei(take, i => data[i])
+        let result = FixedArray::from_array(data[:take])
         wake_stream_pipe_writer(writer, take)
         return Some(result)
       }
@@ -740,6 +752,7 @@ fn[X] stream_pipe_sink(pipe : Ref[StreamPipe[X]]) -> Sink[X] {
         None => ()
       }
     }),
+    write_window_size: default_sink_write_window_size,
   }
 }
 
