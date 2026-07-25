@@ -33,6 +33,9 @@ impl LanguageMethods for D {
         config.async_ || config.error_context || name == "map.wit"
     }
 
+    fn default_bindgen_args(&self) -> &[&str] {
+        &["--self-contained"]
+    }
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
         &["--emit-export-stubs"]
     }
@@ -110,8 +113,8 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
     let output = compile.output.with_extension("core.wasm");
 
     std::fs::write(
-        compile.artifacts_dir.join("libc.d"),
-        include_bytes!("../d-test-support/libc.d"),
+        compile.artifacts_dir.join("runtime.d"),
+        include_bytes!("../d-test-support/runtime.d"),
     )?;
     std::fs::write(
         compile.artifacts_dir.join("walloc.d"),
@@ -119,19 +122,20 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
     )?;
 
     cmd.arg(&compile.component.path)
-        .arg("-betterC")
+        .arg("-betterC") // don't allow features needing DRuntime
         .arg("-mtriple=wasm32-unknown-unknown")
-        .arg("-fvisibility=hidden") // important to make sure unused symbols don't get linked
         .arg("-I")
         .arg(&compile.bindings_dir)
         .arg("-i") // compile included dependencies
         .arg("--de") // deperecations are errors
         .arg("-w") // warnings are errors
         .arg("-L--no-entry")
+        .arg("-L--no-export-dynamic") // important to make sure unused symbols don't get linked
         .arg("--checkaction=halt") // to trap instead of using libc __assert
+        .arg("-g") // debug info
         .arg("-of")
         .arg(&output)
-        .arg(compile.artifacts_dir.join("libc.d"))
+        .arg(compile.artifacts_dir.join("runtime.d"))
         .arg(compile.artifacts_dir.join("walloc.d"));
 
     runner.run_command(&mut cmd)?;

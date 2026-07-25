@@ -1,4 +1,6 @@
 // From https://github.com/Inochi2D/numem/blob/main/modules/hookset-wasm/source/walloc.d
+// Modified to include double-free detection
+
 /**
     A small malloc implementation for use in WebAssembly targets
 
@@ -10,6 +12,7 @@
     (See accompanying LICENSE file or copy at
     https://github.com/wingo/walloc/blob/master/LICENSE.md)
 */
+
 module walloc;
 import ldc.intrinsics :
     llvm_wasm_memory_grow,
@@ -18,18 +21,44 @@ import ldc.intrinsics :
 
 extern(C) @nogc nothrow:
 
+/// MODIFIED FOR wit-bindgen TESTS
+enum MAX_ALLOCATIONS = 32;
+void*[MAX_ALLOCATIONS] activePointers;
+/// END
+
 void* malloc(size_t size) @nogc nothrow @system {
     if (size == 0)
         return null;
 
     size_t granules = size_to_granules(size);
     chunk_kind kind = granules_to_chunk_kind(granules);
-    return (kind == chunk_kind.LARGE_OBJECT) ? allocate_large(size) : allocate_small(kind);
+
+    /// MODIFIED FOR wit-bindgen TESTS
+    auto result = (kind == chunk_kind.LARGE_OBJECT) ? allocate_large(size) : allocate_small(kind);
+    assert(result !is null);
+    foreach (ref ptr; activePointers) {
+        if (ptr !is null) continue;
+        ptr = result;
+        return result;
+    }
+    assert(0);
+    /// END
 }
 
 export
 void free(void *ptr) @nogc nothrow @system {
-    if (!ptr) return;
+    /// MODIFIED FOR wit-bindgen TESTS
+    assert(ptr !is null);
+
+    bool found = false;
+    foreach (ref existingPtr; activePointers) {
+        if (ptr !is existingPtr) continue;
+        existingPtr = null;
+        found = true;
+        break;
+    }
+    assert(found);
+    /// END
 
     _page_t* page = get_page(ptr);
     size_t chunk = get_chunk_index(ptr);
