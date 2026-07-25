@@ -352,9 +352,10 @@ auto ref T reinterpretCast(T, U)(auto ref U from) @trusted if (T.sizeof == U.siz
     return tmp(from).to;
 }
 
-auto mallocSlice(T)(size_t count) @nogc nothrow {
+T[] mallocSlice(T)(size_t count) @nogc nothrow {
+    if (count == 0) return [];
     auto ptr = malloc(count*T.sizeof);
-    if (ptr is null) return null;
+    if (ptr is null) return [];
 
     return (cast(T*)ptr)[0..count];
 }
@@ -441,6 +442,60 @@ template witExportsIn(T) {
                 }
             }
         }
+    }
+}
+
+struct DeallocateBuffer {
+    @nogc nothrow:
+    struct Page {
+        void*[32] slots;
+        static assert(slots.length < 256);
+
+        ubyte cursor;
+        Page* next;
+    }
+
+    Page first;
+    Page* head;
+
+    @disable this(this);
+
+    private void allocNewPage() {
+        Page* page = cast(Page*)malloc(Page.sizeof);
+        if (page is null) abort();
+
+        *page = Page.init;
+        page.next = head;
+        head = page;
+    }
+
+    void opOpAssign(string op: "~")(void* ptr) {
+        import core.builtins : unlikely;
+
+        if (unlikely(ptr is null)) return;
+        if (/*unlikely?*/(head is null)) head = &first;
+
+        if (head.cursor >= head.slots.length) allocNewPage();
+
+        head.slots[head.cursor++] = ptr;
+    }
+
+    void purge() {
+        auto page = head;
+        while (page) {
+            foreach (ptr; page.slots[0..page.cursor]) free(ptr);
+
+            auto next = page.next;
+            if (page != &first) free(page);
+            page = next;
+        }
+
+        first = Page.init;
+        head = null;
+    }
+
+    ~this() {
+        purge();
     }
 }
 

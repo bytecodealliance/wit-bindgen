@@ -63,7 +63,10 @@ Tuple!(ListTypedef2, ListTypedef3) listTypedefs(in ListTypedef a, in ListTypedef
         cast(WitString)"typedef4".witList
     ];
 
-    return (const Tuple!(ListTypedef2, ListTypedef3)((cast(immutable ubyte[])"typedef3").witList, strings[].witList)).witClone;
+    return (const Tuple!(ListTypedef2, ListTypedef3)(
+        (cast(immutable ubyte[])"typedef3").witList,
+        strings[].witList
+    )).witClone;
 }
 
 

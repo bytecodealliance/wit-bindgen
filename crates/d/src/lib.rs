@@ -1312,8 +1312,18 @@ impl<'a> DInterfaceGenerator<'a> {
         );
         let ret_area_decl = f.emit_ret_area_if_needed();
 
-        let FunctionBindgen { src, .. } = f;
+        let FunctionBindgen {
+            src,
+            needs_deallocate,
+            ..
+        } = f;
         self.src.push_str(&ret_area_decl);
+        if needs_deallocate {
+            self.src.push_str(&format!(
+                "{}.DeallocateBuffer deallocate;\n",
+                self.r#gen.common_module
+            ));
+        }
         self.src.push_str(&src);
 
         self.src.push_str("}\n");
@@ -1503,6 +1513,7 @@ impl<'a> DInterfaceGenerator<'a> {
             src,
             return_pointer_area_size,
             return_pointer_area_align,
+            needs_deallocate,
             ..
         } = f;
         self.return_pointer_area_size = self.return_pointer_area_size.max(return_pointer_area_size);
@@ -1511,6 +1522,12 @@ impl<'a> DInterfaceGenerator<'a> {
             .max(return_pointer_area_align);
 
         self.src.push_str(&ret_area_decl);
+        if needs_deallocate {
+            self.src.push_str(&format!(
+                "{}.DeallocateBuffer deallocate;\n",
+                self.r#gen.common_module
+            ));
+        }
         self.src.push_str(&src);
 
         self.src.push_str("}\n");
@@ -2355,6 +2372,7 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     return_pointer_area_size: ArchitectureSize,
     return_pointer_area_align: Alignment,
+    needs_deallocate: bool,
 }
 
 fn tempname(base: &str, idx: usize) -> String {
@@ -2373,6 +2391,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Default::default(),
             return_pointer_area_size: Default::default(),
             return_pointer_area_align: Default::default(),
+            needs_deallocate: false,
         }
     }
 
@@ -2613,10 +2632,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 self.push_str(&format!(
                     "auto {list_src} = {};
-                    auto {list} = {}.malloc({list_src}.length * ({size_str}));
-                    scope(exit) {{ {1}.free({list}); }}\n",
+                    auto {list} = {}.malloc({list_src}.length * ({size_str}));\n",
                     operands[0], self.r#gen.r#gen.common_module
                 ));
+
+                if matches!(self.r#gen.direction, Some(Direction::Import)) {
+                    self.needs_deallocate = true;
+                    self.push_str(&format!("deallocate ~= {list};\n"));
+                }
 
                 self.push_str(&format!(
                     "foreach ({block_element}_idx, const ref {block_element}; {list_src}) {{\n"
@@ -2627,6 +2650,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&body);
                 //self.push_str(&format!("_targetElem = {};", body.1[0]));
                 self.push_str("\n}\n");
+
+                if !matches!(self.r#gen.direction, Some(Direction::Import)) {
+                    self.push_str(&format!(
+                        "{}.free({list_src}.ptr);\n",
+                        self.r#gen.r#gen.common_module
+                    ));
+                }
 
                 results.push(format!("{list}"));
                 results.push(format!("{}.length", operands[0]));
@@ -2686,6 +2716,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen.r#gen.common_module
                 ));
 
+                if matches!(self.r#gen.direction, Some(Direction::Export)) {
+                    self.needs_deallocate = true;
+                    self.push_str(&format!("deallocate ~= cast(void*){list}.ptr;\n"));
+                }
+
                 self.push_str(&format!(
                     "foreach ({block_element}_idx, ref {block_element}; {list}) {{\n",
                 ));
@@ -2695,6 +2730,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&body);
                 self.push_str(&format!("{block_element} = {};", block_results[0]));
                 self.push_str("\n}\n");
+
+                if !matches!(self.r#gen.direction, Some(Direction::Export)) {
+                    self.push_str(&format!(
+                        "{}.free({list_src});\n",
+                        self.r#gen.r#gen.common_module
+                    ));
+                }
 
                 let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
                 results.push(format!("{list_name}({list})"));
@@ -3175,6 +3217,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "__import_{escaped_name}({});\n",
                     operands.iter().cloned().collect::<Vec<_>>().join(", ")
                 ));
+
+                if self.needs_deallocate {
+                    self.push_str(&format!("deallocate.purge();\n"));
+                }
             }
             abi::Instruction::CallInterface { func, async_ } => {
                 if *async_ {
@@ -3227,6 +3273,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         .join(", "),
                 );
                 self.src.push_str(");\n");
+
+                if self.needs_deallocate {
+                    self.push_str(&format!("deallocate.purge();\n"));
+                }
             }
             abi::Instruction::Return { amt, .. } => match amt {
                 0 => {}
