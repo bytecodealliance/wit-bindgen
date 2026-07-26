@@ -1858,7 +1858,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedLengthList(ty, size) => {
+                TypeDefKind::FixedLengthList(_ty, _size) => {
                     todo!()
                     // let temp = flat_types(self.resolve, ty, None).unwrap();
                     // let flat_per_elem = temp.to_vec().len();
