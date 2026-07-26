@@ -3300,13 +3300,17 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     &self.namespace,
                     Flavor::InStruct,
                 );
+                // Bind payloads by reference: the payload's heap data must
+                // stay owned by `op0` (which outlives the lowered call). A
+                // by-value binding would free that data at the end of the
+                // `if`/`else` block below, before the flat ABI consumes it.
                 let bind_ok = if let Some(_ok) = result.ok.as_ref() {
-                    format!("{ok_ty} {ok_payload} = std::move({op0}).value();")
+                    format!("{ok_ty}&& {ok_payload} = std::move({op0}).value();")
                 } else {
                     String::new()
                 };
                 let bind_err = if let Some(_err) = result.err.as_ref() {
-                    format!("{err_ty} {err_payload} = std::move({op0}).error();")
+                    format!("{err_ty}&& {err_payload} = std::move({op0}).error();")
                 } else {
                     String::new()
                 };
