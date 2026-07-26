@@ -1356,30 +1356,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::DropHandle { .. } => {
                 uwriteln!(self.src, "let _ = {};", operands[0]);
             }
-            // Instruction::FixedLengthListLift {
-            //     element: _,
-            //     size,
-            //     id: _,
-            // } => {
-            //     let tmp = self.tmp();
-            //     let result = format!("result{tmp}");
-            //     self.push_str(&format!("let {result} = [",));
-            //     for a in operands.drain(0..(*size as usize)) {
-            //         self.push_str(&a);
-            //         self.push_str(", ");
-            //     }
-            //     self.push_str("];\n");
-            //     results.push(result);
-            // }
-            // Instruction::FixedLengthListLower {
-            //     element: _,
-            //     size,
-            //     id: _,
-            // } => {
-            //     for i in 0..(*size as usize) {
-            //         results.push(format!("{}[{i}]", operands[0]));
-            //     }
-            // }
+            Instruction::FixedLengthListCanonLower { .. } => {
+                let tmp = self.tmp();
+                let addr = format!("result{tmp}");
+                let elem = &operands[0];
+                self.push_str(&format!(
+                    "let {addr} = core::ptr::from_ref(&{elem}[0]).cast::<u8>().cast_mut();",
+                ));
+                results.push(addr);
+            }
             Instruction::FixedLengthListLiftFromMemory {
                 element,
                 size,

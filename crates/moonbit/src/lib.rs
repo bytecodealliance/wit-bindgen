@@ -2635,34 +2635,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
             Instruction::ErrorContextLower { .. } | Instruction::ErrorContextLift { .. } => todo!(),
-            // Instruction::FixedLengthListLift {
-            //     element: _,
-            //     size,
-            //     id: _,
-            // } => {
-            //     let array = self.locals.tmp("array");
-            //     let mut elements = String::new();
-            //     for a in operands.drain(0..(*size as usize)) {
-            //         elements.push_str(&a);
-            //         elements.push_str(", ");
-            //     }
-            //     uwriteln!(self.src, "let {array} : FixedArray[_] = [{elements}]");
-            //     results.push(array);
-            // }
-            // Instruction::FixedLengthListLower {
-            //     element: _,
-            //     size,
-            //     id: _,
-            // } => {
-            //     uwriteln!(
-            //         self.src,
-            //         "if ({}).length() != {size} {{ panic() }}",
-            //         operands[0]
-            //     );
-            //     for i in 0..(*size as usize) {
-            //         results.push(format!("({})[{i}]", operands[0]));
-            //     }
-            // }
+            Instruction::FixedLengthListCanonLower { .. } => todo!(),
             Instruction::FixedLengthListLowerToMemory {
                 element,
                 size: fixed_length,

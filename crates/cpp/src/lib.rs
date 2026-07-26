@@ -2778,24 +2778,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(move_if_necessary(&result));
                 }
             }
-            // abi::Instruction::FixedLengthListLift {
-            //     element,
-            //     size,
-            //     id: _,
-            // } => {
-            //     let tmp = self.tmp();
-            //     let result = format!("_result{tmp}");
-            //     let typename = self
-            //         .r#gen
-            //         .type_name(element, &self.namespace, Flavor::InStruct);
-            //     self.push_str(&format!("std::array<{typename}, {size}> {result} = {{",));
-            //     for a in operands.drain(0..(*size as usize)) {
-            //         self.push_str(&a);
-            //         self.push_str(", ");
-            //     }
-            //     self.push_str("};\n");
-            //     results.push(result);
-            // }
+            abi::Instruction::FixedLengthListCanonLower { .. } => todo!(),
             abi::Instruction::FixedLengthListLiftFromMemory {
                 element,
                 size: elemsize,
@@ -2825,15 +2808,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str("\n}\n}\n");
                 results.push(vec);
             }
-            // abi::Instruction::FixedLengthListLower {
-            //     element: _,
-            //     size,
-            //     id: _,
-            // } => {
-            //     for i in 0..(*size as usize) {
-            //         results.push(format!("{}[{i}]", operands[0]));
-            //     }
-            // }
             abi::Instruction::FixedLengthListLowerToMemory {
                 element,
                 size: elemsize,
