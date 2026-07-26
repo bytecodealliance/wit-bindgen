@@ -332,20 +332,20 @@ def_instruction! {
             ty: TypeId,
         } : [2] => [1],
 
-        /// Pops all fields for a fixed list off the stack and then composes them
-        /// into an array.
-        FixedLengthListLift {
-            element: &'a Type,
-            size: u32,
-            id: TypeId,
-        } : [*size as usize] => [1],
+        // /// Pops all fields for a fixed list off the stack and then composes them
+        // /// into an array.
+        // FixedLengthListLift {
+        //     element: &'a Type,
+        //     size: u32,
+        //     id: TypeId,
+        // } : [*size as usize] => [1],
 
-        /// Pops an array off the stack, decomposes the elements and then pushes them onto the stack.
-        FixedLengthListLower {
-            element: &'a Type,
-            size: u32,
-            id: TypeId,
-        } : [1] => [*size as usize],
+        // /// Pops an array off the stack, decomposes the elements and then pushes them onto the stack.
+        // FixedLengthListLower {
+        //     element: &'a Type,
+        //     size: u32,
+        //     id: TypeId,
+        // } : [1] => [*size as usize],
 
         /// Pops an array and an address off the stack, passes each element to a block storing it
         FixedLengthListLowerToMemory {
@@ -1641,20 +1641,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Unknown => unreachable!(),
-                TypeDefKind::FixedLengthList(ty, size) => {
-                    self.emit(&FixedLengthListLower {
-                        element: ty,
-                        size: *size,
-                        id,
-                    });
-                    let mut values = self
-                        .stack
-                        .drain(self.stack.len() - (*size as usize)..)
-                        .collect::<Vec<_>>();
-                    for value in values.drain(..) {
-                        self.stack.push(value);
-                        self.lower(ty);
-                    }
+                TypeDefKind::FixedLengthList(_ty, _size) => {
+                    todo!()
+                    // self.emit(&FixedLengthListLower {
+                    //     element: ty,
+                    //     size: *size,
+                    //     id,
+                    // });
+                    // let mut values = self
+                    //     .stack
+                    //     .drain(self.stack.len() - (*size as usize)..)
+                    //     .collect::<Vec<_>>();
+                    // for value in values.drain(..) {
+                    //     self.stack.push(value);
+                    //     self.lower(ty);
+                    // }
                 }
                 TypeDefKind::Map(key, value) => {
                     let realloc = self.list_realloc();
@@ -1858,22 +1859,23 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedLengthList(ty, size) => {
-                    let temp = flat_types(self.resolve, ty, None).unwrap();
-                    let flat_per_elem = temp.to_vec().len();
-                    let flatsize = flat_per_elem * (*size as usize);
-                    let mut lowered_args = self
-                        .stack
-                        .drain(self.stack.len() - flatsize..)
-                        .collect::<Vec<_>>();
-                    for _ in 0..*size {
-                        self.stack.extend(lowered_args.drain(..flat_per_elem));
-                        self.lift(ty);
-                    }
-                    self.emit(&FixedLengthListLift {
-                        element: ty,
-                        size: *size,
-                        id,
-                    });
+                    todo!()
+                    // let temp = flat_types(self.resolve, ty, None).unwrap();
+                    // let flat_per_elem = temp.to_vec().len();
+                    // let flatsize = flat_per_elem * (*size as usize);
+                    // let mut lowered_args = self
+                    //     .stack
+                    //     .drain(self.stack.len() - flatsize..)
+                    //     .collect::<Vec<_>>();
+                    // for _ in 0..*size {
+                    //     self.stack.extend(lowered_args.drain(..flat_per_elem));
+                    //     self.lift(ty);
+                    // }
+                    // self.emit(&FixedLengthListLift {
+                    //     element: ty,
+                    //     size: *size,
+                    //     id,
+                    // });
                 }
                 TypeDefKind::Map(key, value) => {
                     let value_offset = self.bindgen.sizes().field_offsets([key, value])[1].0;
