@@ -379,7 +379,7 @@ impl WorldGenerator for D {
         false
     }
 
-    fn preprocess(&mut self, resolve: &Resolve, world_id: WorldId) {
+    fn preprocess(&mut self, resolve: &Resolve, world_id: WorldId) -> Result<()> {
         self.root_pkg = self.opts.root_package.as_deref().unwrap_or("wit").into();
         self.common_module = if self.opts.self_contained {
             format!("{}.common", self.root_pkg)
@@ -476,6 +476,8 @@ impl WorldGenerator for D {
                 _ => {}
             }
         }
+
+        Ok(())
     }
 
     fn import_interface(
@@ -2642,7 +2644,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
 
                 self.push_str(&format!(
-                    "foreach ({block_element}_idx, const ref {block_element}; {list_src}) {{\n"
+                    "foreach ({block_element}_idx, ref {block_element}; {list_src}) {{\n"
                 ));
                 self.push_str(&format!(
                     "auto {base} = {list} + {block_element}_idx * ({size_str});\n"
@@ -2772,7 +2774,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let size_str = self.r#gen.sizes.size(element).format("size_t.sizeof");
 
                 self.push_str(&format!(
-                    "foreach ({block_element}_idx, const ref {block_element}; {arr_src}) {{\n"
+                    "foreach ({block_element}_idx, ref {block_element}; {arr_src}) {{\n"
                 ));
                 self.push_str(&format!(
                     "const auto {base} = {arr_dst} + {block_element}_idx * {size_str};\n"

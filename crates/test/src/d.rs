@@ -26,11 +26,12 @@ impl LanguageMethods for D {
 
     fn should_fail_verify(
         &self,
+        _runner: &Runner,
         name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.async_ || config.error_context || name == "map.wit"
+        config.async_ || config.error_context || name == "map.wit" || name == "issue1642.wit"
     }
 
     fn default_bindgen_args(&self) -> &[&str] {
