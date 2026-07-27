@@ -163,6 +163,19 @@ jobs:
     - run: rustup target add wasm32-wasip2
 
     - uses: ./.github/actions/install-wasi-sdk
+
+    # The threading builtins are encoded with a canonical-function opcode
+    # newer than any released wasmtime understands (46.0.1 and 47.0.2 both
+    # reject it with "invalid leading byte (0x2d) for canonical function"),
+    # so this job runs wasmtime's `dev` build instead of the pinned release.
+    # This can go back to the shared pin once a release parses the encoding.
+    - name: Install wasmtime dev build
+      run: |
+        curl --retry 5 --retry-all-errors -L -o wasmtime-dev.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/dev/wasmtime-dev-x86_64-linux.tar.xz
+        tar xJf wasmtime-dev.tar.xz
+        echo "`pwd`/wasmtime-dev-x86_64-linux" >> $GITHUB_PATH
+      working-directory: ${{ runner.temp }}
+
     - run: |
         cargo run test --languages rust,c,go tests/threading \
           --artifacts target/artifacts \
