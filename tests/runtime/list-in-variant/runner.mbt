@@ -33,4 +33,25 @@ pub fn run() -> Unit {
   // top-level-list (contrast)
   let r7 = @to-test.top_level_list(["x", "y", "z"])
   guard r7 == "x,y,z"
+
+  // Canonical primitive lists borrow their MoonBit backing arrays through the
+  // call, including when nested under another parameter.
+  let bytes : FixedArray[Byte] = [1, 2, 3, 4]
+  let unsigned_shorts : FixedArray[UInt16] = [100, 200]
+  let signed_shorts : FixedArray[Int16] = [-10, 20]
+  let words : FixedArray[UInt] = [10, 20, 30]
+  let nested = @to-test.CanonicalLists::{
+    bytes: [5, 6, 7],
+    unsigned_shorts: [300, 400],
+    signed_shorts: [-30, 40],
+    words: [40, 50],
+  }
+  let r8 = @to-test.canonical_list_params(
+    bytes,
+    unsigned_shorts,
+    signed_shorts,
+    words,
+    nested,
+  )
+  guard r8 == 172U
 }

@@ -18,6 +18,20 @@ interface to-test {
   list-in-option-with-return: func(data: option<list<string>>) -> summary;
 
   top-level-list: func(items: list<string>) -> string;
+
+  record canonical-lists {
+    bytes: list<u8>,
+    unsigned-shorts: list<u16>,
+    signed-shorts: list<s16>,
+    words: list<u32>,
+  }
+  canonical-list-params: func(
+    bytes: list<u8>,
+    unsigned-shorts: list<u16>,
+    signed-shorts: list<s16>,
+    words: list<u32>,
+    nested: canonical-lists,
+  ) -> u32;
 }
 
 world test {

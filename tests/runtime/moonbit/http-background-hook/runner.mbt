@@ -26,7 +26,7 @@ async fn run_hook(payload : Bytes, expected_error : String?) -> Unit {
     Ok(response) => response
     Err(_) => panic()
   }
-  guard response.get_status_code() == 202U else { panic() }
+  guard response.get_status_code() == 202 else { panic() }
 
   let (response_body, response_trailers) = response.consume_body(
     @async-core.Future::ready(Ok(())),
