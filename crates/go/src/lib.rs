@@ -238,8 +238,7 @@ struct Go {
     resources: HashMap<TypeId, Direction>,
     futures_and_streams: HashMap<(TypeId, bool), Option<WorldKey>>,
     // Tracks which `future`/`stream` declarations have already been generated.
-    // Key: (in_import, is_exported, pkg_name, mangled_name)
-    generated_futures_and_streams: HashSet<(bool, bool, String, String)>,
+    generated_futures_and_streams: HashSet<FutureStreamDedup>,
 }
 
 impl Go {
@@ -1521,12 +1520,15 @@ func wasm_export_{name}({params}) {results} {{
                     .map(|ty| self.mangle_name(resolve, ty, interface))
                     .unwrap_or_else(|| "unit".into());
 
-                if !self.generated_futures_and_streams.insert((
-                    in_import,
-                    exported,
-                    name.clone(),
-                    format!("{kind}_{snake}"),
-                )) {
+                if !self
+                    .generated_futures_and_streams
+                    .insert(FutureStreamDedup {
+                        in_import,
+                        is_exported: exported,
+                        pkg_name: name.clone(),
+                        mangled_name: format!("{kind}_{snake}"),
+                    })
+                {
                     continue;
                 }
 
@@ -3344,4 +3346,12 @@ fn maybe_gofmt<'a>(format: Format, code: &'a [u8]) -> Cow<'a, [u8]> {
 
         Cow::Borrowed(code)
     })
+}
+
+#[derive(Eq, PartialEq, Hash)]
+struct FutureStreamDedup {
+    in_import: bool,
+    is_exported: bool,
+    pkg_name: String,
+    mangled_name: String,
 }
