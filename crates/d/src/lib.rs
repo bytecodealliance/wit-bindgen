@@ -1110,7 +1110,7 @@ impl<'a> DInterfaceGenerator<'a> {
         self.src.push_str(&format!("module {};\n\n", self.fqn));
 
         for version in &self.r#gen.opts.required_d_versions {
-            self.src.push_str(&format!("version({}):\n", version));
+            self.src.push_str(&format!("version({version}):\n"));
         }
 
         self.src
