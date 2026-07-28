@@ -683,23 +683,20 @@ extern crate std;
 ///     additional_derives: [PartialEq, Eq, Hash, Clone],
 ///
 ///     // Extra attributes to emit on specific generated types (records, variants,
-///     // and enums), rather than on all types like `additional_derives`. A type is
-///     // selected by its bare name, its package, its interface, or its fully
-///     // qualified name, the qualified forms written as in `with`.
+///     // and enums), rather than on all types like `additional_derives`. A type
+///     // is selected by its fully qualified name, written as in `with`.
 ///     //
 ///     // By default this map is empty.
 ///     additional_type_attributes: {
-///         "my-record": [#[derive(serde::Serialize)]],  // one type, by bare name
-///         "my:pkg/types": [#[derive(Hash)]],           // every type in an interface
+///         "my:pkg/types/my-record": [#[derive(serde::Serialize)]],
 ///     },
 ///
 ///     // Like `additional_type_attributes`, but for generated record fields and
-///     // enum/variant cases, selected by `<type-selector>.member-name` (any type
-///     // selector above) or a bare `member-name`.
+///     // enum/variant cases, selected by `<type-name>.member-name`.
 ///     //
 ///     // By default this map is empty.
 ///     additional_member_attributes: {
-///         "my-record.my-field": [#[serde(rename = "mf")]],
+///         "my:pkg/types/my-record.my-field": [#[serde(rename = "mf")]],
 ///     },
 ///
 ///     // When generating bindings for interfaces that are not defined in the

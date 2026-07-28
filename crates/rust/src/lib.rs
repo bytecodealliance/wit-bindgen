@@ -253,23 +253,14 @@ pub struct Opts {
     /// Extra attributes to emit on specific generated types, rather than on all
     /// types like `additional_derive_attributes`.
     ///
-    /// Each entry pairs a selector with an attribute, where a selector names a
-    /// type by one of:
+    /// Each entry pairs a selector with an attribute. A selector is a type's
+    /// fully qualified name, written as in `with`, so `my:pkg/types/point`,
+    /// carrying `@version` when the package is versioned. A selector matching
+    /// nothing is an error, as with `with`.
     ///
-    /// * bare name, `challenge-data`
-    /// * package, `my:pkg`
-    /// * interface, `my:pkg/types`
-    /// * fully qualified, `my:pkg/types/challenge-data`
-    ///
-    /// The qualified forms are written as in `with`, so they carry `@version`
-    /// when versioned. A selector matching nothing is an error, as with `with`.
-    ///
-    /// Only records, variants, and enums are covered; broader selectors skip
-    /// everything else. Attributes are emitted verbatim on every form of the
-    /// type, including the borrowed form under `ownership: Borrowing`, so an
-    /// owned-only derive fails to compile there. Identical attributes are
-    /// emitted once, but overlapping selectors naming one derive twice, say
-    /// `#[derive(Clone)]` and `#[derive(Clone, Hash)]`, will not compile.
+    /// Only records, variants, and enums are covered. Attributes are emitted
+    /// verbatim on every form of the type, including the borrowed form under
+    /// `ownership: Borrowing`, so an owned-only derive fails to compile there.
     ///
     /// In a CLI, this flag can be specified multiple times as
     /// `selector=attribute`.
@@ -279,9 +270,8 @@ pub struct Opts {
     /// Extra attributes to emit on specific generated record fields and
     /// enum/variant cases.
     ///
-    /// As `additional_type_attributes`, except the selector is
-    /// `<type>.<member-name>` for any type selector above, or a bare
-    /// `member-name` matching that member of any type.
+    /// As `additional_type_attributes`, except the selector is a type's fully
+    /// qualified name, a `.`, and the member name.
     ///
     /// In a CLI, this flag can be specified multiple times as
     /// `selector=attribute`.
@@ -2035,24 +2025,6 @@ fn full_wit_type_name(resolve: &Resolve, id: TypeId) -> String {
         Some(interface_name) => format!("{}/{}", interface_name, type_def.name.clone().unwrap()),
         None => type_def.name.clone().unwrap(),
     }
-}
-
-/// Every string that names `id` in configuration: its full name, its bare name,
-/// and, when interface-owned, its interface and package. `with` matches only the
-/// full name, since a remapping names one Rust path, while the attribute options
-/// match any of them, since one attribute can apply to many types.
-fn wit_type_selectors(resolve: &Resolve, id: TypeId) -> Vec<String> {
-    let mut names = vec![full_wit_type_name(resolve, id)];
-    let type_def = &resolve.types[dealias(resolve, id)];
-    names.extend(type_def.name.clone());
-    if let TypeOwner::Interface(iface) = type_def.owner {
-        // `Resolve::id_of` unwraps the package, so only ask once there is one.
-        if let Some(pkg) = resolve.interfaces[iface].package {
-            names.extend(resolve.id_of(iface));
-            names.push(resolve.packages[pkg].name.to_string());
-        }
-    }
-    names
 }
 
 enum ConstructorReturnType {

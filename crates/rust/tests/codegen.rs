@@ -316,19 +316,11 @@ mod targeted_attributes {
             // an owned `String` form and a borrowed `&str` form
             record label { text: string }
 
-            record note-a { note: string }
-            record note-b { note: u32 }
-
-            flags perms { read, write }
-
             paint: func(c: color) -> color;
             draw: func(s: shape) -> shape;
             round: func(p: point) -> point;
             make-label: func() -> label;
             use-label: func(l: label) -> u32;
-            first: func() -> note-a;
-            second: func(x: note-b) -> u32;
-            set-perms: func(p: perms) -> perms;
         }
 
         world test {
@@ -338,34 +330,28 @@ mod targeted_attributes {
         generate_all,
         ownership: Borrowing { duplicate_if_necessary: true },
         additional_type_attributes: {
-            "point": [#[derive(PartialEq, Eq)] #[derive(PartialOrd, Ord)]],
-            "color": [#[doc = "a primary color"]],
-            "shape": [#[derive(PartialEq)]],
-            "label": [#[derive(PartialEq, Eq)]],
-            "test:attrs/iface/note-a": [#[derive(PartialEq, Eq)]],
-            // `perms` already derives `Hash`, so if this package selector leaked
-            // into flags it would be a conflicting impl. It compiles => skipped.
-            "test:attrs": [#[derive(Hash)]],
+            // two entries for one selector, both apply
+            "test:attrs/iface/point": [#[derive(PartialEq, Eq)] #[derive(Hash)]],
+            "test:attrs/iface/color": [#[doc = "a primary color"] #[derive(Hash)]],
+            "test:attrs/iface/shape": [#[derive(PartialEq)]],
+            "test:attrs/iface/label": [#[derive(PartialEq, Eq)]],
         },
         additional_member_attributes: {
-            "point.x": [#[allow(dead_code)]],
-            "red": [#[doc = "the primary color"]],
-            "shape.circle": [#[doc = "a round shape"]],
+            "test:attrs/iface/point.x": [#[allow(dead_code)]],
+            "test:attrs/iface/color.red": [#[doc = "the primary color"]],
+            "test:attrs/iface/shape.circle": [#[doc = "a round shape"]],
             // `a-b` upper-camels to `AB`, so this matches only via the raw wit name
-            "shape.a-b": [#[allow(dead_code)]],
-            "label.text": [#[allow(dead_code)]],
-            // bare selector: fans out to `note` on both note-a and note-b
-            "note": [#[allow(dead_code)]],
+            "test:attrs/iface/shape.a-b": [#[allow(dead_code)]],
+            "test:attrs/iface/label.text": [#[allow(dead_code)]],
         },
     });
 
     #[test]
     fn injected_derives_are_usable() {
-        use test::attrs::iface::{Color, LabelParam, LabelResult, NoteA, Point, Shape};
+        use test::attrs::iface::{Color, LabelParam, LabelResult, Point, Shape};
 
         let a = Point { x: 1, y: 2 };
         assert_eq!(a, a.clone());
-        assert!(Point { x: 1, y: 2 } < Point { x: 1, y: 3 });
         let mut set = std::collections::HashSet::new();
         set.insert(a);
         assert!(set.contains(&Point { x: 1, y: 2 }));
@@ -385,53 +371,35 @@ mod targeted_attributes {
         );
         assert_eq!(LabelParam { text: "hi" }, LabelParam { text: "hi" });
         assert_ne!(LabelParam { text: "hi" }, LabelParam { text: "bye" });
-        let mut labels = std::collections::HashSet::new();
-        labels.insert(LabelResult { text: "hi".into() });
-        assert!(labels.contains(&LabelResult { text: "hi".into() }));
-
-        assert_eq!(NoteA { note: "n".into() }, NoteA { note: "n".into() });
     }
 }
 
-mod hierarchical_selectors {
+// Guards where `@version` lands in a qualified selector: after the interface,
+// before the type.
+mod versioned_selectors {
     wit_bindgen::generate!({
         inline: r#"
         package test:hier@1.2.3;
         interface types {
             record alpha { x: u32 }
-            record beta { y: u32 }
             get-alpha: func() -> alpha;
-            get-beta: func() -> beta;
         }
         world w { import types; }
         "#,
         generate_all,
         additional_type_attributes: {
-            "test:hier@1.2.3": [#[derive(Hash)]],                // package => alpha + beta
-            "test:hier/types@1.2.3": [#[derive(PartialEq, Eq)]], // interface => alpha + beta
-            "test:hier/types@1.2.3/alpha": [#[derive(PartialOrd, Ord)]], // one type => alpha only
+            "test:hier/types@1.2.3/alpha": [#[derive(PartialEq, Eq)] #[derive(PartialOrd, Ord)]],
         },
         additional_member_attributes: {
             "test:hier/types@1.2.3/alpha.x": [#[allow(dead_code)]],
-            "test:hier/types@1.2.3.x": [#[doc = "interface-scoped"]],
         },
     });
 
     #[test]
-    fn hierarchical_and_versioned_selectors_resolve() {
-        use test::hier::types::{Alpha, Beta};
+    fn versioned_selectors_resolve() {
+        use test::hier::types::Alpha;
 
         assert_eq!(Alpha { x: 1 }, Alpha { x: 1 });
         assert!(Alpha { x: 1 } < Alpha { x: 2 });
-        let mut set = std::collections::HashSet::new();
-        set.insert(Alpha { x: 1 });
-        assert!(set.contains(&Alpha { x: 1 }));
-
-        // beta gets the package and interface derives but not `alpha`'s Ord
-        assert_eq!(Beta { y: 7 }, Beta { y: 7 });
-        assert_ne!(Beta { y: 7 }, Beta { y: 8 });
-        let mut bset = std::collections::HashSet::new();
-        bset.insert(Beta { y: 7 });
-        assert!(bset.contains(&Beta { y: 7 }));
     }
 }
