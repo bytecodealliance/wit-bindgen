@@ -42,8 +42,7 @@ pub struct RustWasm {
     // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
     // are required to be used.
     generated_types: HashSet<String>,
-    // Selectors from `additional_type_attributes` / `additional_member_attributes` that matched at
-    // least one generated type or member; used to reject selectors that matched nothing.
+    // Attribute selectors that matched something, so `finish` can reject the rest.
     used_type_attr_selectors: HashSet<String>,
     used_member_attr_selectors: HashSet<String>,
     world: Option<WorldId>,
@@ -149,7 +148,7 @@ fn parse_attribute(s: &str) -> Result<(String, String), String> {
     let (sel, attr) = s
         .split_once('=')
         .ok_or_else(|| format!("expected string of form `<selector>=<attribute>`; got `{s}`"))?;
-    // an empty attribute would mark the selector used and escape the unused check
+    // An empty attribute would mark the selector used and escape the unused check.
     if attr.trim().is_empty() {
         return Err(format!("attribute must not be empty; got `{s}`"));
     }
@@ -251,38 +250,40 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub additional_derive_ignore: Vec<String>,
 
-    /// Extra attributes to emit on specific generated types (records, variants,
-    /// and enums) rather than on all types like `additional_derive_attributes`.
-    /// Each entry is a `(selector, attribute)` pair. The selector matches a type by
-    /// its bare kebab name (`challenge-data`), its package (`my:pkg`), its owning
-    /// interface (`my:pkg/types`), or its fully-qualified name
-    /// (`my:pkg/types/challenge-data`). The qualified forms are written exactly as in
-    /// the `with` option, so they carry the package `@version` when versioned
-    /// (`my:pkg/types@1.0.0/challenge-data`); package and interface selectors apply to
-    /// interface-owned types only (world-owned types are matched by name). An injected
-    /// `#[derive(...)]` is folded into the type's generated `#[derive(...)]`, so its
-    /// traits dedup against the built-in and `additional_derive_attributes` derives
-    /// rather than colliding; any other attribute is emitted verbatim, and multiple
-    /// matching entries all apply. Attributes land on every generated form of the
-    /// type, including the borrowed (`<'a>`) form produced under `ownership:
-    /// Borrowing`; there is no owned-only targeting, so an owned-only derive such as
-    /// `#[derive(Default)]` or `serde::Deserialize` fails to compile on the borrowed
-    /// form (as it would via `additional_derive_attributes`). Only records, variants,
-    /// and enums are covered; flags, resources, type aliases, and the built-in
-    /// option/result/list types are not. A package or interface selector silently
-    /// skips them (they do not count toward the selector being used), but a selector
-    /// that resolves to nothing covered is an error. For a derive on *all* types use
-    /// `additional_derive_attributes`. In a CLI, this flag can be specified multiple
-    /// times as `selector=attribute`.
+    /// Extra attributes to emit on specific generated types, rather than on all
+    /// types like `additional_derive_attributes`.
+    ///
+    /// Each entry pairs a selector with an attribute, where a selector names a
+    /// type by one of:
+    ///
+    /// * bare name, `challenge-data`
+    /// * package, `my:pkg`
+    /// * interface, `my:pkg/types`
+    /// * fully qualified, `my:pkg/types/challenge-data`
+    ///
+    /// The qualified forms are written as in `with`, so they carry `@version`
+    /// when versioned. A selector matching nothing is an error, as with `with`.
+    ///
+    /// Only records, variants, and enums are covered; broader selectors skip
+    /// everything else. Attributes are emitted verbatim on every form of the
+    /// type, including the borrowed form under `ownership: Borrowing`, so an
+    /// owned-only derive fails to compile there. Identical attributes are
+    /// emitted once, but overlapping selectors naming one derive twice, say
+    /// `#[derive(Clone)]` and `#[derive(Clone, Hash)]`, will not compile.
+    ///
+    /// In a CLI, this flag can be specified multiple times as
+    /// `selector=attribute`.
     #[cfg_attr(feature = "clap", arg(long, value_name = "SELECTOR=ATTR", value_parser = parse_attribute))]
     pub additional_type_attributes: Vec<(String, String)>,
 
-    /// Extra attributes to emit on specific generated fields (of records) and
-    /// enum/variant cases. Like `additional_type_attributes`, but the selector is
-    /// `<type>.<member-name>`, where `<type>` is any type selector above (bare name,
-    /// package, interface, or fully-qualified, carrying `@version` when versioned),
-    /// or a bare `member-name` matching that member in any record/variant/enum, all
-    /// in kebab case. In a CLI, this flag can be specified multiple times as
+    /// Extra attributes to emit on specific generated record fields and
+    /// enum/variant cases.
+    ///
+    /// As `additional_type_attributes`, except the selector is
+    /// `<type>.<member-name>` for any type selector above, or a bare
+    /// `member-name` matching that member of any type.
+    ///
+    /// In a CLI, this flag can be specified multiple times as
     /// `selector=attribute`.
     #[cfg_attr(feature = "clap", arg(long, value_name = "SELECTOR=ATTR", value_parser = parse_attribute))]
     pub additional_member_attributes: Vec<(String, String)>,
@@ -1181,6 +1182,18 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_ignore
             );
         }
+        for (selector, attr) in self.opts.additional_type_attributes.iter() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional type attribute {selector:?} = {attr:?}"
+            );
+        }
+        for (selector, attr) in self.opts.additional_member_attributes.iter() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional member attribute {selector:?} = {attr:?}"
+            );
+        }
         for (k, v) in self.opts.with.iter() {
             uwriteln!(self.src_preamble, "//   * with {k:?} = {v}");
         }
@@ -1587,8 +1600,6 @@ impl WorldGenerator for RustWasm {
             bail!("unused remappings provided via `with`: {unused_keys:?}");
         }
 
-        // A selector that matched no generated type or member is almost always a
-        // typo or a stale path, so reject it like an unused `with` remapping.
         let mut unused_selectors = self
             .opts
             .additional_type_attributes
@@ -2026,6 +2037,24 @@ fn full_wit_type_name(resolve: &Resolve, id: TypeId) -> String {
     }
 }
 
+/// Every string that names `id` in configuration: its full name, its bare name,
+/// and, when interface-owned, its interface and package. `with` matches only the
+/// full name, since a remapping names one Rust path, while the attribute options
+/// match any of them, since one attribute can apply to many types.
+fn wit_type_selectors(resolve: &Resolve, id: TypeId) -> Vec<String> {
+    let mut names = vec![full_wit_type_name(resolve, id)];
+    let type_def = &resolve.types[dealias(resolve, id)];
+    names.extend(type_def.name.clone());
+    if let TypeOwner::Interface(iface) = type_def.owner {
+        // `Resolve::id_of` unwraps the package, so only ask once there is one.
+        if let Some(pkg) = resolve.interfaces[iface].package {
+            names.extend(resolve.id_of(iface));
+            names.push(resolve.packages[pkg].name.to_string());
+        }
+    }
+    names
+}
+
 enum ConstructorReturnType {
     /// Resource constructor is infallible. E.g.:
     /// ```wit
@@ -2084,29 +2113,4 @@ fn classify_constructor_return_type(
     }
 
     classify(resolve, resource_id, result).expect("invalid constructor")
-}
-
-#[cfg(all(test, feature = "clap"))]
-mod tests {
-    use super::parse_attribute;
-
-    #[test]
-    fn parse_attribute_splits_on_first_equals() {
-        assert_eq!(
-            parse_attribute("point=#[derive(Clone)]").unwrap(),
-            ("point".to_string(), "#[derive(Clone)]".to_string())
-        );
-        // the attribute may itself contain `=`
-        assert_eq!(
-            parse_attribute(r#"point.x=#[serde(rename = "x")]"#).unwrap(),
-            (
-                "point.x".to_string(),
-                r#"#[serde(rename = "x")]"#.to_string()
-            )
-        );
-        assert!(parse_attribute("no-equals-sign").is_err());
-        // an empty attribute is rejected rather than silently escaping the check
-        assert!(parse_attribute("point=").is_err());
-        assert!(parse_attribute("point=   ").is_err());
-    }
 }

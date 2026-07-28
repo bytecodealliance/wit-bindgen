@@ -2,7 +2,7 @@ use crate::bindgen::{FunctionBindgen, POINTER_SIZE_EXPRESSION};
 use crate::{
     ConstructorReturnType, FnSig, Identifier, InterfaceName, Ownership, RuntimeItem, RustFlagsRepr,
     RustWasm, TypeGeneration, classify_constructor_return_type, full_wit_type_name, int_repr,
-    to_rust_ident, to_upper_camel_case, wasm_type,
+    to_rust_ident, to_upper_camel_case, wasm_type, wit_type_selectors,
 };
 use anyhow::Result;
 use heck::*;
@@ -2087,44 +2087,8 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         result
     }
 
-    /// The owning interface and its package, when `id` is owned by an interface.
-    fn type_owner(&self, id: TypeId) -> Option<(InterfaceId, &PackageName)> {
-        let TypeOwner::Interface(iface_id) = self.resolve.types[id].owner else {
-            return None;
-        };
-        let pkg_id = self.resolve.interfaces[iface_id].package?;
-        Some((iface_id, &self.resolve.packages[pkg_id].name))
-    }
-
-    /// Selector keys naming the type itself: its bare wit name and its
-    /// fully-qualified `ns:pkg/iface/type` name. Qualified keys are written exactly
-    /// as in `with`, so they carry the package `@version` when versioned.
-    fn type_identity_keys(&self, id: TypeId) -> Vec<String> {
-        let id = dealias(self.resolve, id);
-        match self.resolve.types[id].name.as_deref() {
-            Some(name) => vec![name.to_string(), full_wit_type_name(self.resolve, id)],
-            None => Vec::new(),
-        }
-    }
-
-    /// Every selector key that matches type `id`: its identity keys plus its
-    /// owning interface and package.
-    fn type_selector_keys(&self, id: TypeId) -> Vec<String> {
-        let id = dealias(self.resolve, id);
-        let mut keys = self.type_identity_keys(id);
-        if let Some((iface_id, pkg)) = self.type_owner(id) {
-            keys.push(pkg.to_string());
-            if let Some(iface) = self.resolve.id_of(iface_id) {
-                keys.push(iface);
-            }
-        }
-        keys
-    }
-
-    /// The attributes from `entries` whose selector satisfies `matches`, deduped in
-    /// configured order, paired with the distinct selectors that matched. The
-    /// matched selectors are recorded so `finish` can report selectors that matched
-    /// nothing, exactly as the `with` option reports unused remappings.
+    /// Matching attributes, deduped in configured order, plus the selectors that
+    /// matched, which `finish` uses to report the ones that did not.
     fn matching_attrs(
         entries: &[(String, String)],
         matches: impl Fn(&str) -> bool,
@@ -2138,62 +2102,30 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         (attrs.into_iter().collect(), used.into_iter().collect())
     }
 
-    /// Attributes configured via `additional_type_attributes` for type `id`.
-    fn additional_type_attrs(&mut self, id: TypeId) -> Vec<String> {
-        let keys = self.type_selector_keys(id);
+    fn additional_type_attrs(&mut self, selectors: &[String]) -> Vec<String> {
         let (attrs, used) =
             Self::matching_attrs(&self.r#gen.opts.additional_type_attributes, |sel| {
-                keys.iter().any(|k| k == sel)
+                selectors.iter().any(|name| name == sel)
             });
         self.r#gen.used_type_attr_selectors.extend(used);
         attrs
     }
 
-    /// Attributes configured via `additional_member_attributes` for `member` (a
-    /// record field or enum/variant case) of type `id`, matched by `<type>.<member>`
-    /// for any type selector (bare, qualified, interface, or package) or a bare
-    /// `<member>`.
-    fn additional_member_attrs(&mut self, id: TypeId, member: &str) -> Vec<String> {
-        let type_keys = self.type_selector_keys(id);
+    /// `member` is a record field or an enum/variant case, selected by a bare
+    /// name or `<type-selector>.<member>`. Member names contain no `.`, so the
+    /// last one separates the two halves.
+    fn additional_member_attrs(&mut self, selectors: &[String], member: &str) -> Vec<String> {
         let (attrs, used) =
             Self::matching_attrs(&self.r#gen.opts.additional_member_attributes, |sel| {
-                // member names are dot-free, so the last `.` splits `<type>.<member>`
                 sel == member
-                    || sel
-                        .rsplit_once('.')
-                        .is_some_and(|(ty, m)| m == member && type_keys.iter().any(|tk| tk == ty))
+                    || sel.rsplit_once('.').is_some_and(|(ty, m)| {
+                        m == member && selectors.iter().any(|name| name == ty)
+                    })
             });
         self.r#gen.used_member_attr_selectors.extend(used);
         attrs
     }
 
-    /// Split injected attributes into derive paths and everything else. Derive
-    /// paths are merged into the generated `#[derive(...)]` so they dedup against
-    /// the built-in and `additional_derives` derives instead of colliding (E0119);
-    /// other attributes are emitted verbatim.
-    fn split_injected_derives(attrs: &[String]) -> (Vec<String>, Vec<String>) {
-        let mut derives = Vec::new();
-        let mut others = Vec::new();
-        for attr in attrs {
-            match attr
-                .trim()
-                .strip_prefix("#[derive(")
-                .and_then(|s| s.strip_suffix(")]"))
-            {
-                Some(inner) => derives.extend(
-                    inner
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|p| !p.is_empty())
-                        .map(String::from),
-                ),
-                None => others.push(attr.clone()),
-            }
-        }
-        (derives, others)
-    }
-
-    /// Emit each attribute on its own line, verbatim.
     fn push_attrs(&mut self, attrs: &[String]) {
         for attr in attrs {
             uwriteln!(self.src, "{attr}");
@@ -2211,12 +2143,12 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .cloned()
             .collect();
         // Computed once, then emitted on every ownership mode below.
-        let (injected_derives, injected_attrs) =
-            Self::split_injected_derives(&self.additional_type_attrs(id));
+        let selectors = wit_type_selectors(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&selectors);
         let field_attrs: Vec<Vec<String>> = record
             .fields
             .iter()
-            .map(|f| self.additional_member_attrs(id, &f.name))
+            .map(|f| self.additional_member_attrs(&selectors, &f.name))
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
@@ -2235,7 +2167,6 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             } else if info.is_clone() {
                 derives.insert("Clone".to_string());
             }
-            derives.extend(injected_derives.iter().cloned());
             if !derives.is_empty() {
                 self.push_str("#[derive(");
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
@@ -2307,8 +2238,6 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     {
         self.print_rust_enum(
             id,
-            // Raw wit case names; `print_rust_enum` upper-camel-cases them at the
-            // emit site so member selectors still match the wit (kebab) name.
             variant
                 .cases
                 .iter()
@@ -2334,12 +2263,12 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .iter()
             .cloned()
             .collect();
-        let (injected_derives, injected_attrs) =
-            Self::split_injected_derives(&self.additional_type_attrs(id));
+        let selectors = wit_type_selectors(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&selectors);
         let case_attrs: Vec<Vec<String>> = cases
             .clone()
             .into_iter()
-            .map(|(case_name, _, _)| self.additional_member_attrs(id, &case_name))
+            .map(|(case_name, _, _)| self.additional_member_attrs(&selectors, &case_name))
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
@@ -2357,7 +2286,6 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             } else if info.is_clone() {
                 derives.insert("Clone".to_string());
             }
-            derives.extend(injected_derives.iter().cloned());
             if !derives.is_empty() {
                 self.push_str("#[derive(");
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
@@ -2485,9 +2413,8 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
 
         let name = to_upper_camel_case(name);
         self.rustdoc(docs);
-        let (injected_derives, injected_attrs) =
-            Self::split_injected_derives(&self.additional_type_attrs(id));
-        self.push_attrs(&injected_attrs);
+        let selectors = wit_type_selectors(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&selectors);
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
         self.push_str(")]\n");
@@ -2506,14 +2433,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 .into_iter()
                 .map(|s| s.to_string()),
         );
-        derives.extend(injected_derives);
         self.push_str("#[derive(");
         self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
         self.push_str(")]\n");
+        self.push_attrs(&injected_attrs);
         self.push_str(&format!("pub enum {name} {{\n"));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
-            let case_attrs = self.additional_member_attrs(id, &case.name);
+            let case_attrs = self.additional_member_attrs(&selectors, &case.name);
             self.push_attrs(&case_attrs);
             self.push_str(&case.name.to_upper_camel_case());
             self.push_str(",\n");

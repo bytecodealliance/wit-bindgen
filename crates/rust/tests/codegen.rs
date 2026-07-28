@@ -302,9 +302,6 @@ mod merge_structurally_equal_types {
     });
 }
 
-// Injects attributes onto selected types/fields/cases. Compiling plus the `#[test]`
-// proves each attribute lands (on both owned and borrowed forms) and that a package
-// selector does not leak into unsupported kinds like flags (see the `perms` note).
 mod targeted_attributes {
     wit_bindgen::generate!({
         inline: r#"
@@ -313,19 +310,15 @@ mod targeted_attributes {
         interface iface {
             record point { x: u32, y: u32 }
             enum color { red, green, blue }
-            // `a-b` upper-camels to `AB`; a member selector must still match the raw
-            // wit name, not the lossy `AB`.to_kebab_case() == `ab`.
             variant shape { circle(u32), square(point), a-b }
 
-            // used as both return and param, so under `duplicate_if_necessary` it
-            // generates an owned `String` form and a borrowed `&str` form
+            // used as both return and param, so `duplicate_if_necessary` generates
+            // an owned `String` form and a borrowed `&str` form
             record label { text: string }
 
-            // two records sharing a member name, to exercise bare-member fan-out
             record note-a { note: string }
             record note-b { note: u32 }
 
-            // an unsupported kind: attribute injection must skip it (boundary test)
             flags perms { read, write }
 
             paint: func(c: color) -> color;
@@ -344,38 +337,25 @@ mod targeted_attributes {
         "#,
         generate_all,
         ownership: Borrowing { duplicate_if_necessary: true },
-        // wit-bindgen already derives Clone/Debug on records+variants and every
-        // standard trait but Hash on enums; injected derives fold in (see `label`).
         additional_type_attributes: {
-            // cumulative list; the trailing `Hash` also comes from the package
-            // selector below and folds into one derive rather than colliding.
-            "point": [
-                "#[derive(PartialEq, Eq)]",
-                "#[derive(PartialOrd, Ord)]",
-                "#[derive(Hash)]",
-            ],
-            "color": [r#"#[doc = "a primary color"]"#], // enum: a non-derive attribute
-            "shape": ["#[derive(PartialEq)]"],         // variant
-            // `Clone` here overlaps the record's built-in `Clone`: it must fold into
-            // one derive, not collide (E0119). Must fit owned + borrowed forms.
-            "label": ["#[derive(Clone, PartialEq, Eq)]"],
-            // fully-qualified selector against an unversioned package (no `@version`)
-            "test:attrs/iface/note-a": ["#[derive(PartialEq, Eq)]"],
-            // Package selector => every record/variant/enum in the package. Doubles as
-            // the flags boundary probe: `perms` already derives `Hash`, so a leak here
-            // would be a conflicting-impl error. It compiles => flags are skipped.
-            "test:attrs": ["#[derive(Hash)]"],
+            "point": [#[derive(PartialEq, Eq)] #[derive(PartialOrd, Ord)]],
+            "color": [#[doc = "a primary color"]],
+            "shape": [#[derive(PartialEq)]],
+            "label": [#[derive(PartialEq, Eq)]],
+            "test:attrs/iface/note-a": [#[derive(PartialEq, Eq)]],
+            // `perms` already derives `Hash`, so if this package selector leaked
+            // into flags it would be a conflicting impl. It compiles => skipped.
+            "test:attrs": [#[derive(Hash)]],
         },
         additional_member_attributes: {
-            "point.x": ["#[allow(dead_code)]"],
-            "red": [r#"#[doc = "the primary color"]"#],      // enum case, bare selector
-            "shape.circle": [r#"#[doc = "a round shape"]"#], // variant case, qualified
-            // lossy-kebab variant case: matches only via the raw wit name (regression
-            // guard: an unmatched selector now trips the unused-selector check).
-            "shape.a-b": ["#[allow(dead_code)]"],
-            "label.text": ["#[allow(dead_code)]"],
-            // bare member selector: fans out to `note` on BOTH note-a and note-b
-            "note": ["#[allow(dead_code)]"],
+            "point.x": [#[allow(dead_code)]],
+            "red": [#[doc = "the primary color"]],
+            "shape.circle": [#[doc = "a round shape"]],
+            // `a-b` upper-camels to `AB`, so this matches only via the raw wit name
+            "shape.a-b": [#[allow(dead_code)]],
+            "label.text": [#[allow(dead_code)]],
+            // bare selector: fans out to `note` on both note-a and note-b
+            "note": [#[allow(dead_code)]],
         },
     });
 
@@ -383,7 +363,6 @@ mod targeted_attributes {
     fn injected_derives_are_usable() {
         use test::attrs::iface::{Color, LabelParam, LabelResult, NoteA, Point, Shape};
 
-        // record got PartialEq/Eq + PartialOrd/Ord (list) + package Hash.
         let a = Point { x: 1, y: 2 };
         assert_eq!(a, a.clone());
         assert!(Point { x: 1, y: 2 } < Point { x: 1, y: 3 });
@@ -391,18 +370,15 @@ mod targeted_attributes {
         set.insert(a);
         assert!(set.contains(&Point { x: 1, y: 2 }));
 
-        // enum got package Hash; PartialEq/Eq are defaults.
         let mut colors = std::collections::HashSet::new();
         colors.insert(Color::Red);
         assert!(colors.contains(&Color::Red));
         assert!(!colors.contains(&Color::Blue));
 
-        // variant got PartialEq (injected) + package Hash + default Clone.
         assert_eq!(Shape::Circle(3), Shape::Circle(3).clone());
         assert_ne!(Shape::Circle(3), Shape::Circle(4));
 
-        // BOTH forms of the both-forms record got the injected PartialEq/Eq (+ package
-        // Hash): the owned `String` form and the borrowed `&str` form.
+        // both the owned `String` form and the borrowed `&str` form got the derives
         assert_eq!(
             LabelResult { text: "hi".into() },
             LabelResult { text: "hi".into() }
@@ -413,15 +389,10 @@ mod targeted_attributes {
         labels.insert(LabelResult { text: "hi".into() });
         assert!(labels.contains(&LabelResult { text: "hi".into() }));
 
-        // note-a got PartialEq/Eq via a fully-qualified selector on an unversioned package.
         assert_eq!(NoteA { note: "n".into() }, NoteA { note: "n".into() });
     }
 }
 
-// Hierarchical selectors against a *versioned* package: each level (package,
-// interface, fully-qualified) injects a different derive, and the qualified forms
-// carry the `@version` as in `with`. The asserts prove each level resolves and that
-// the type-specific selector does not bleed onto its sibling.
 mod hierarchical_selectors {
     wit_bindgen::generate!({
         inline: r#"
@@ -436,15 +407,13 @@ mod hierarchical_selectors {
         "#,
         generate_all,
         additional_type_attributes: {
-            "test:hier@1.2.3": ["#[derive(Hash)]"],                // package => alpha + beta
-            "test:hier/types@1.2.3": ["#[derive(PartialEq, Eq)]"], // interface => alpha + beta
-            "test:hier/types@1.2.3/alpha": ["#[derive(PartialOrd, Ord)]"], // one type => alpha only
+            "test:hier@1.2.3": [#[derive(Hash)]],                // package => alpha + beta
+            "test:hier/types@1.2.3": [#[derive(PartialEq, Eq)]], // interface => alpha + beta
+            "test:hier/types@1.2.3/alpha": [#[derive(PartialOrd, Ord)]], // one type => alpha only
         },
         additional_member_attributes: {
-            "test:hier/types@1.2.3/alpha.x": ["#[allow(dead_code)]"], // qualified member selector
-            // interface-scoped member: `x` on every type in the interface (alpha has it).
-            // Matches via the interface selector key, same grammar as type selectors.
-            "test:hier/types@1.2.3.x": [r#"#[doc = "interface-scoped"]"#],
+            "test:hier/types@1.2.3/alpha.x": [#[allow(dead_code)]],
+            "test:hier/types@1.2.3.x": [#[doc = "interface-scoped"]],
         },
     });
 
@@ -452,15 +421,13 @@ mod hierarchical_selectors {
     fn hierarchical_and_versioned_selectors_resolve() {
         use test::hier::types::{Alpha, Beta};
 
-        // alpha: Hash (package) + PartialEq/Eq (interface) + PartialOrd/Ord (versioned qualified).
         assert_eq!(Alpha { x: 1 }, Alpha { x: 1 });
         assert!(Alpha { x: 1 } < Alpha { x: 2 });
         let mut set = std::collections::HashSet::new();
         set.insert(Alpha { x: 1 });
         assert!(set.contains(&Alpha { x: 1 }));
 
-        // beta: Hash (package) + PartialEq/Eq (interface), but NOT Ord; the qualified
-        // selector named `alpha` only, proving specificity.
+        // beta gets the package and interface derives but not `alpha`'s Ord
         assert_eq!(Beta { y: 7 }, Beta { y: 7 });
         assert_ne!(Beta { y: 7 }, Beta { y: 8 });
         let mut bset = std::collections::HashSet::new();

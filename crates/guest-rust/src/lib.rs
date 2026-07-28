@@ -684,18 +684,13 @@ extern crate std;
 ///
 ///     // Extra attributes to emit on specific generated types (records, variants,
 ///     // and enums), rather than on all types like `additional_derives`. A type is
-///     // selected by its bare kebab name, its package (`my:pkg`), its owning
-///     // interface (`my:pkg/types`), or its fully-qualified name; the qualified
-///     // forms written as in `with`, carrying the `@version` when versioned. An
-///     // injected `#[derive(...)]` folds into the generated derive (deduped); other
-///     // attributes are emitted verbatim, on every form including the borrowed one
-///     // under `Borrowing` (so owned-only derives fail there). See the CLI docs for
-///     // the full grammar.
+///     // selected by its bare name, its package, its interface, or its fully
+///     // qualified name, the qualified forms written as in `with`.
 ///     //
 ///     // By default this map is empty.
 ///     additional_type_attributes: {
-///         "my-record": [r#"#[derive(serde::Serialize)]"#],   // one type, by bare name
-///         "my:pkg/types": [r#"#[derive(Clone)]"#],           // every type in an interface
+///         "my-record": [#[derive(serde::Serialize)]],  // one type, by bare name
+///         "my:pkg/types": [#[derive(Hash)]],           // every type in an interface
 ///     },
 ///
 ///     // Like `additional_type_attributes`, but for generated record fields and
@@ -704,7 +699,7 @@ extern crate std;
 ///     //
 ///     // By default this map is empty.
 ///     additional_member_attributes: {
-///         "my-record.my-field": [r#"#[serde(rename = "mf")]"#],
+///         "my-record.my-field": [#[serde(rename = "mf")]],
 ///     },
 ///
 ///     // When generating bindings for interfaces that are not defined in the

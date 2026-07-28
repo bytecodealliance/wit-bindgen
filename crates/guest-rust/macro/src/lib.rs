@@ -629,16 +629,17 @@ impl Parse for Opt {
     }
 }
 
-// Parse one `"selector": ["#[attr]", ...]` entry into a (selector, attribute) pair
-// per attribute.
+// Parse one `"selector": [#[attr] ...]` entry into a pair per attribute.
 fn attr_map_field_parse(input: ParseStream<'_>) -> Result<Vec<(String, String)>> {
     let selector = input.parse::<syn::LitStr>()?;
     input.parse::<Token![:]>()?;
     let contents;
     let bracket = syn::bracketed!(contents in input);
-    let attrs = Punctuated::<syn::LitStr, Token![,]>::parse_terminated(&contents)?;
-    // An empty list would otherwise flatten away silently and escape the
-    // unused-selector check in the generator.
+    let attrs = contents.call(syn::Attribute::parse_outer)?;
+    if !contents.is_empty() {
+        return Err(contents.error("expected an outer attribute, `#[...]`"));
+    }
+    // An empty list would flatten away and escape the unused-selector check.
     if attrs.is_empty() {
         return Err(Error::new(
             bracket.span.join(),
@@ -648,7 +649,7 @@ fn attr_map_field_parse(input: ParseStream<'_>) -> Result<Vec<(String, String)>>
     let selector = selector.value();
     Ok(attrs
         .into_iter()
-        .map(|a| (selector.clone(), a.value()))
+        .map(|a| (selector.clone(), a.to_token_stream().to_string()))
         .collect())
 }
 
