@@ -23,7 +23,7 @@ interface to-test {
     bytes: list<u8>,
     unsigned-shorts: list<u16>,
     signed-shorts: list<s16>,
-    words: list<u32>,
+    booleans: list<bool>,
   }
   canonical-list-params: func(
     bytes: list<u8>,

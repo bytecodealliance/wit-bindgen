@@ -44,7 +44,7 @@ pub fn run() -> Unit {
     bytes: [5, 6, 7],
     unsigned_shorts: [300, 400],
     signed_shorts: [-30, 40],
-    words: [40, 50],
+    booleans: [false, true, false],
   }
   let r8 = @to-test.canonical_list_params(
     bytes,

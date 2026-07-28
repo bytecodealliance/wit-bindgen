@@ -120,6 +120,13 @@ extern "wasm" fn mbt_ffi_ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] =
   #| local.get 0)
 "#;
 
+pub(crate) const BOOL_ARRAY2PTR: &str = r#"
+///|
+#owned(array)
+extern "wasm" fn mbt_ffi_bool_array2ptr(array : FixedArray[Bool]) -> Int =
+  #|(func (param i32) (result i32) local.get 0)
+"#;
+
 pub(crate) const UINT_ARRAY2PTR: &str = r#"
 ///|
 #owned(array)
@@ -174,6 +181,15 @@ pub(crate) const DOUBLE_ARRAY2PTR: &str = r#"
 #owned(array)
 extern "wasm" fn mbt_ffi_double_array2ptr(array : FixedArray[Double]) -> Int =
   #|(func (param i32) (result i32) local.get 0)
+"#;
+
+pub(crate) const PTR2BOOL_ARRAY: &str = r#"
+///|
+extern "wasm" fn mbt_ffi_ptr2bool_array(ptr : Int, len : Int) -> FixedArray[Bool] =
+  #|(func (param i32) (param i32) (result i32)
+  #| local.get 0
+  #| local.get 1 call $moonbit.init_array8
+  #| local.get 0)
 "#;
 
 pub(crate) const PTR2UINT_ARRAY: &str = r#"

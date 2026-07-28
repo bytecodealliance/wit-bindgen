@@ -31,6 +31,7 @@ mod pkg;
 
 #[derive(Clone, Copy)]
 pub(crate) enum CanonicalListElement {
+    Bool,
     U8,
     U16,
     U32,
@@ -45,6 +46,7 @@ pub(crate) enum CanonicalListElement {
 impl CanonicalListElement {
     pub(crate) fn fixed_array_type(self) -> &'static str {
         match self {
+            Self::Bool => "FixedArray[Bool]",
             Self::U8 => "FixedArray[Byte]",
             Self::U16 => "FixedArray[UInt16]",
             Self::U32 => "FixedArray[UInt]",
@@ -64,6 +66,7 @@ pub(crate) fn canonical_list_element(resolve: &Resolve, ty: &Type) -> Option<Can
             TypeDefKind::Type(ty) => canonical_list_element(resolve, ty),
             _ => None,
         },
+        Type::Bool => Some(CanonicalListElement::Bool),
         Type::U8 => Some(CanonicalListElement::U8),
         Type::U16 => Some(CanonicalListElement::U16),
         Type::U32 => Some(CanonicalListElement::U32),
@@ -138,7 +141,7 @@ fn collect_direct_canonical_lists(
 // Assumptions:
 // - Data: u8 -> Byte, s8 | s32 -> Int, s16 -> Int16, u16 -> UInt16, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 -> Float, f64 -> Double, address -> Int
 // - Encoding: UTF16
-// - Lift/Lower list<T>: canonically represented numeric elements -> FixedArray[T], otherwise Array[T]
+// - Lift/Lower list<T>: representation-compatible elements -> FixedArray[T], otherwise Array[T]
 // Organization:
 // - one package per interface (export and import are treated as different interfaces)
 // - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
@@ -2194,6 +2197,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                         let ptr = self.locals.tmp("ptr");
                         let (owned_ffi, ty) = match element {
+                            CanonicalListElement::Bool => (ffi::BOOL_ARRAY2PTR, "bool"),
                             CanonicalListElement::U16 => (ffi::UINT16_ARRAY2PTR, "uint16"),
                             CanonicalListElement::U32 => (ffi::UINT_ARRAY2PTR, "uint"),
                             CanonicalListElement::U64 => (ffi::UINT64_ARRAY2PTR, "uint64"),
@@ -2240,6 +2244,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                     element => {
                         let ty = match element {
+                            CanonicalListElement::Bool => {
+                                self.use_ffi(ffi::PTR2BOOL_ARRAY);
+                                "bool"
+                            }
                             CanonicalListElement::U16 => {
                                 self.use_ffi(ffi::PTR2UINT16_ARRAY);
                                 "uint16"
@@ -3735,7 +3743,7 @@ mod tests {
 
         assert!(
             top.contains(
-                "wasmImportSend(bytes, unsigned_shorts, signed_shorts, words, (envelope).words,"
+                "wasmImportSend(bytes, unsigned_shorts, signed_shorts, words, (envelope).words, booleans"
             ),
             "direct canonical lists must let the FFI supply their lengths: {top}"
         );
@@ -3751,18 +3759,20 @@ mod tests {
                 && !top.contains("unsigned_shorts.length()")
                 && !top.contains("signed_shorts.length()")
                 && !top.contains("words.length()")
-                && !top.contains("(envelope).words.length()"),
+                && !top.contains("(envelope).words.length()")
+                && !top.contains("booleans.length()"),
             "direct canonical list lengths must be supplied by FFI defaults: {top}"
         );
         assert!(!top.contains("mbt_ffi_borrowed_array2ptr"), "{top}");
         assert!(
             ffi.contains(
-                "#unsafe_skip_stub_check\n#borrow(p0, p2, p4, p6, p8)\nfn wasmImportSend(\
+                "#unsafe_skip_stub_check\n#borrow(p0, p2, p4, p6, p8, p10)\nfn wasmImportSend(\
                  p0 : FixedArray[Byte], p1? : Int = p0.length(), \
                  p2 : FixedArray[UInt16], p3? : Int = p2.length(), \
                  p4 : FixedArray[Int16], p5? : Int = p4.length(), \
                  p6 : FixedArray[UInt], p7? : Int = p6.length(), \
-                 p8 : FixedArray[UInt], p9? : Int = p8.length(),"
+                 p8 : FixedArray[UInt], p9? : Int = p8.length(), \
+                 p10 : FixedArray[Bool], p11? : Int = p10.length())"
             ),
             "the imported FFI must derive borrowed array lengths by default: {ffi}"
         );
@@ -3777,9 +3787,38 @@ mod tests {
             "borrowed canonical backing storage must not be freed after the call: {top}"
         );
         assert!(
-            top.contains("mbt_ffi_malloc((booleans).length() * 1)")
-                && top.contains("for index = 0; index < (booleans).length();"),
+            !top.contains("mbt_ffi_malloc((booleans).length() * 1)")
+                && !top.contains("for index = 0; index < (booleans).length();"),
+            "boolean arrays have canonical byte storage and must be borrowed directly: {top}"
+        );
+    }
+
+    #[test]
+    fn imported_noncanonical_lists_retain_generic_lowering() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                send: func(strings: list<string>);
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+        let top = file(&files, "interface/a/b/api/top.mbt");
+        let ffi = file(&files, "interface/a/b/api/ffi.mbt");
+
+        assert!(
+            top.contains("pub fn send(strings : Array[String]) -> Unit")
+                && top.contains("mbt_ffi_malloc((strings).length() * 8)")
+                && top.contains("for index = 0; index < (strings).length();"),
             "non-canonical lists must retain generic lowering: {top}"
+        );
+        assert!(
+            ffi.contains("fn wasmImportSend(p0 : Int, p1 : Int)") && !ffi.contains("#borrow"),
+            "non-canonical list parameters must retain the raw canonical ABI: {ffi}"
         );
     }
 

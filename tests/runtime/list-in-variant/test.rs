@@ -59,7 +59,7 @@ impl exports::test::list_in_variant::to_test::Guest for Component {
         assert_eq!(nested.bytes, [5, 6, 7]);
         assert_eq!(nested.unsigned_shorts, [300, 400]);
         assert_eq!(nested.signed_shorts, [-30, 40]);
-        assert_eq!(nested.words, [40, 50]);
+        assert_eq!(nested.booleans, [false, true, false]);
         172
     }
 }
