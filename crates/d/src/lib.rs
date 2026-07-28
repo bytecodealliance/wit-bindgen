@@ -2634,7 +2634,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 self.push_str(&format!(
                     "auto {list_src} = {};
-                    auto {list} = {}.malloc({list_src}.length * ({size_str}));\n",
+                    auto {list} = {list_src}.length ? {}.malloc({list_src}.length * ({size_str})) : null;
+                    assert({list_src}.length || {list});\n",
                     operands[0], self.r#gen.r#gen.common_module
                 ));
 
@@ -2655,7 +2656,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 if !matches!(self.r#gen.direction, Some(Direction::Import)) {
                     self.push_str(&format!(
-                        "{}.free({list_src}.ptr);\n",
+                        "if ({list_src}.length) {}.free({list_src}.ptr);\n",
                         self.r#gen.r#gen.common_module
                     ));
                 }
@@ -2714,7 +2715,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("auto {list_src} = {};\n", operands[0]));
                 self.push_str(&format!("auto {list_len} = {};\n", operands[1]));
                 self.push_str(&format!(
-                    "auto {list} = {}.mallocSlice!({elem_type_name})({list_len});\n",
+                    "auto {list} = {list_len} ? {}.mallocSlice!({elem_type_name})({list_len}) : [];
+                    assert({list_len} || {list}.ptr);\n",
                     self.r#gen.r#gen.common_module
                 ));
 
@@ -2735,7 +2737,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 if !matches!(self.r#gen.direction, Some(Direction::Export)) {
                     self.push_str(&format!(
-                        "{}.free({list_src});\n",
+                        "if ({list_len}) {}.free({list_src});\n",
                         self.r#gen.r#gen.common_module
                     ));
                 }

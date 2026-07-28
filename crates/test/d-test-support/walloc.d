@@ -23,7 +23,11 @@ extern(C) @nogc nothrow:
 
 /// MODIFIED FOR wit-bindgen TESTS
 enum MAX_ALLOCATIONS = 32;
-void*[MAX_ALLOCATIONS] activePointers;
+extern(D) void*[MAX_ALLOCATIONS] activePointers;
+extern(D) size_t[MAX_ALLOCATIONS] activeAllocSizes;
+
+// extern(C) to make it "public" for the `lists` test
+extern(C) size_t walloc_allocated_bytes = 0;
 /// END
 
 void* malloc(size_t size) @nogc nothrow @system {
@@ -36,9 +40,11 @@ void* malloc(size_t size) @nogc nothrow @system {
     /// MODIFIED FOR wit-bindgen TESTS
     auto result = (kind == chunk_kind.LARGE_OBJECT) ? allocate_large(size) : allocate_small(kind);
     assert(result !is null);
-    foreach (ref ptr; activePointers) {
+    foreach (i, ref ptr; activePointers) {
         if (ptr !is null) continue;
         ptr = result;
+        activeAllocSizes[i] = size;
+        walloc_allocated_bytes += size;
         return result;
     }
     assert(0);
@@ -51,9 +57,10 @@ void free(void *ptr) @nogc nothrow @system {
     assert(ptr !is null);
 
     bool found = false;
-    foreach (ref existingPtr; activePointers) {
+    foreach (i, ref existingPtr; activePointers) {
         if (ptr !is existingPtr) continue;
         existingPtr = null;
+        walloc_allocated_bytes -= activeAllocSizes[i];
         found = true;
         break;
     }
