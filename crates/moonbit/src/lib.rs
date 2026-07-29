@@ -11,7 +11,7 @@ use wit_bindgen_core::{
     AsyncFilterSet, Direction, Files, InterfaceGenerator as CoreInterfaceGenerator, Ns, Source,
     WorldGenerator,
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
-    uwrite, uwriteln,
+    dealias, uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
         LiftLowerAbi, LiveTypes, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic,
@@ -29,54 +29,23 @@ mod async_support;
 mod ffi;
 mod pkg;
 
-#[derive(Clone, Copy)]
-pub(crate) enum CanonicalListElement {
-    Bool,
-    U8,
-    U16,
-    U32,
-    U64,
-    S16,
-    S32,
-    S64,
-    F32,
-    F64,
-}
-
-impl CanonicalListElement {
-    pub(crate) fn fixed_array_type(self) -> &'static str {
-        match self {
-            Self::Bool => "FixedArray[Bool]",
-            Self::U8 => "FixedArray[Byte]",
-            Self::U16 => "FixedArray[UInt16]",
-            Self::U32 => "FixedArray[UInt]",
-            Self::U64 => "FixedArray[UInt64]",
-            Self::S16 => "FixedArray[Int16]",
-            Self::S32 => "FixedArray[Int]",
-            Self::S64 => "FixedArray[Int64]",
-            Self::F32 => "FixedArray[Float]",
-            Self::F64 => "FixedArray[Double]",
-        }
-    }
-}
-
-pub(crate) fn canonical_list_element(resolve: &Resolve, ty: &Type) -> Option<CanonicalListElement> {
-    match ty {
-        Type::Id(id) => match &resolve.types[*id].kind {
-            TypeDefKind::Type(ty) => canonical_list_element(resolve, ty),
-            _ => None,
+pub(crate) fn is_list_canonical(resolve: &Resolve, element: &Type) -> bool {
+    match element {
+        Type::Bool
+        | Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::S16
+        | Type::S32
+        | Type::S64
+        | Type::F32
+        | Type::F64 => true,
+        Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
+            TypeDefKind::Type(element) => is_list_canonical(resolve, element),
+            _ => false,
         },
-        Type::Bool => Some(CanonicalListElement::Bool),
-        Type::U8 => Some(CanonicalListElement::U8),
-        Type::U16 => Some(CanonicalListElement::U16),
-        Type::U32 => Some(CanonicalListElement::U32),
-        Type::U64 => Some(CanonicalListElement::U64),
-        Type::S16 => Some(CanonicalListElement::S16),
-        Type::S32 => Some(CanonicalListElement::S32),
-        Type::S64 => Some(CanonicalListElement::S64),
-        Type::F32 => Some(CanonicalListElement::F32),
-        Type::F64 => Some(CanonicalListElement::F64),
-        _ => None,
+        _ => false,
     }
 }
 
@@ -86,7 +55,7 @@ fn collect_direct_canonical_lists(
     expression: String,
     wasm_param: usize,
     expressions: &mut HashSet<String>,
-    wasm_params: &mut BTreeMap<usize, &'static str>,
+    wasm_params: &mut BTreeMap<usize, Type>,
 ) {
     let Type::Id(id) = ty else {
         return;
@@ -101,9 +70,9 @@ fn collect_direct_canonical_lists(
             wasm_params,
         ),
         TypeDefKind::List(element) => {
-            if let Some(element) = canonical_list_element(resolve, element) {
+            if is_list_canonical(resolve, element) {
                 expressions.insert(expression);
-                wasm_params.insert(wasm_param, element.fixed_array_type());
+                wasm_params.insert(wasm_param, *element);
             }
         }
         TypeDefKind::Record(record) => {
@@ -791,8 +760,9 @@ impl InterfaceGenerator<'_> {
             .iter()
             .enumerate()
             .map(|(i, param)| {
-                if let Some(array_type) = direct_canonical_wasm_params.get(&i) {
-                    format!("p{i} : {array_type}")
+                if let Some(element) = direct_canonical_wasm_params.get(&i) {
+                    let element = self.world_gen.pkg_resolver.type_name(self.name, element);
+                    format!("p{i} : FixedArray[{element}]")
                 } else if i > 0 && direct_canonical_wasm_params.contains_key(&(i - 1)) {
                     format!("p{i}? : Int = p{}.length()", i - 1)
                 } else {
@@ -2165,9 +2135,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             )),
 
             Instruction::ListCanonLower { element, realloc } => {
-                let element = canonical_list_element(resolve, element).unwrap();
+                let element: &Type = element;
+                let element = match element {
+                    Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
+                        TypeDefKind::Type(element) => element,
+                        _ => unreachable!("unsupported list element type"),
+                    },
+                    _ => element,
+                };
                 match element {
-                    CanonicalListElement::U8 => {
+                    Type::U8 => {
                         let op = &operands[0];
                         if realloc.is_none() && self.direct_canonical_list_params.contains(op) {
                             results.push(op.clone());
@@ -2188,7 +2165,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             self.cleanup.push(Cleanup { address: ptr });
                         }
                     }
-                    element => {
+                    Type::Bool
+                    | Type::U16
+                    | Type::U32
+                    | Type::U64
+                    | Type::S16
+                    | Type::S32
+                    | Type::S64
+                    | Type::F32
+                    | Type::F64 => {
                         let op = &operands[0];
                         if realloc.is_none() && self.direct_canonical_list_params.contains(op) {
                             results.push(op.clone());
@@ -2197,16 +2182,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                         let ptr = self.locals.tmp("ptr");
                         let (owned_ffi, ty) = match element {
-                            CanonicalListElement::Bool => (ffi::BOOL_ARRAY2PTR, "bool"),
-                            CanonicalListElement::U16 => (ffi::UINT16_ARRAY2PTR, "uint16"),
-                            CanonicalListElement::U32 => (ffi::UINT_ARRAY2PTR, "uint"),
-                            CanonicalListElement::U64 => (ffi::UINT64_ARRAY2PTR, "uint64"),
-                            CanonicalListElement::S16 => (ffi::INT16_ARRAY2PTR, "int16"),
-                            CanonicalListElement::S32 => (ffi::INT_ARRAY2PTR, "int"),
-                            CanonicalListElement::S64 => (ffi::INT64_ARRAY2PTR, "int64"),
-                            CanonicalListElement::F32 => (ffi::FLOAT_ARRAY2PTR, "float"),
-                            CanonicalListElement::F64 => (ffi::DOUBLE_ARRAY2PTR, "double"),
-                            CanonicalListElement::U8 => unreachable!(),
+                            Type::Bool => (ffi::BOOL_ARRAY2PTR, "bool"),
+                            Type::U16 => (ffi::UINT16_ARRAY2PTR, "uint16"),
+                            Type::U32 => (ffi::UINT_ARRAY2PTR, "uint"),
+                            Type::U64 => (ffi::UINT64_ARRAY2PTR, "uint64"),
+                            Type::S16 => (ffi::INT16_ARRAY2PTR, "int16"),
+                            Type::S32 => (ffi::INT_ARRAY2PTR, "int"),
+                            Type::S64 => (ffi::INT64_ARRAY2PTR, "int64"),
+                            Type::F32 => (ffi::FLOAT_ARRAY2PTR, "float"),
+                            Type::F64 => (ffi::DOUBLE_ARRAY2PTR, "double"),
+                            _ => unreachable!(),
                         };
                         self.use_ffi(owned_ffi);
 
@@ -2222,13 +2207,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             self.cleanup.push(Cleanup { address: ptr });
                         }
                     }
+                    _ => unreachable!("unsupported list element type"),
                 }
             }
 
             Instruction::ListCanonLift { element, .. } => {
-                let element = canonical_list_element(resolve, element).unwrap();
+                let element: &Type = element;
+                let element = match element {
+                    Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
+                        TypeDefKind::Type(element) => element,
+                        _ => unreachable!("unsupported list element type"),
+                    },
+                    _ => element,
+                };
                 match element {
-                    CanonicalListElement::U8 => {
+                    Type::U8 => {
                         let result = self.locals.tmp("result");
                         let address = &operands[0];
                         let length = &operands[1];
@@ -2242,45 +2235,53 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         results.push(result);
                     }
-                    element => {
+                    Type::Bool
+                    | Type::U16
+                    | Type::U32
+                    | Type::U64
+                    | Type::S16
+                    | Type::S32
+                    | Type::S64
+                    | Type::F32
+                    | Type::F64 => {
                         let ty = match element {
-                            CanonicalListElement::Bool => {
+                            Type::Bool => {
                                 self.use_ffi(ffi::PTR2BOOL_ARRAY);
                                 "bool"
                             }
-                            CanonicalListElement::U16 => {
+                            Type::U16 => {
                                 self.use_ffi(ffi::PTR2UINT16_ARRAY);
                                 "uint16"
                             }
-                            CanonicalListElement::U32 => {
+                            Type::U32 => {
                                 self.use_ffi(ffi::PTR2UINT_ARRAY);
                                 "uint"
                             }
-                            CanonicalListElement::U64 => {
+                            Type::U64 => {
                                 self.use_ffi(ffi::PTR2UINT64_ARRAY);
                                 "uint64"
                             }
-                            CanonicalListElement::S16 => {
+                            Type::S16 => {
                                 self.use_ffi(ffi::PTR2INT16_ARRAY);
                                 "int16"
                             }
-                            CanonicalListElement::S32 => {
+                            Type::S32 => {
                                 self.use_ffi(ffi::PTR2INT_ARRAY);
                                 "int"
                             }
-                            CanonicalListElement::S64 => {
+                            Type::S64 => {
                                 self.use_ffi(ffi::PTR2INT64_ARRAY);
                                 "int64"
                             }
-                            CanonicalListElement::F32 => {
+                            Type::F32 => {
                                 self.use_ffi(ffi::PTR2FLOAT_ARRAY);
                                 "float"
                             }
-                            CanonicalListElement::F64 => {
+                            Type::F64 => {
                                 self.use_ffi(ffi::PTR2DOUBLE_ARRAY);
                                 "double"
                             }
-                            CanonicalListElement::U8 => unreachable!(),
+                            _ => unreachable!(),
                         };
 
                         let result = self.locals.tmp("result");
@@ -2296,6 +2297,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         results.push(result);
                     }
+                    _ => unreachable!("unsupported list element type"),
                 }
             }
 
@@ -3073,7 +3075,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn is_list_canonical(&self, resolve: &Resolve, element: &Type) -> bool {
-        canonical_list_element(resolve, element).is_some()
+        crate::is_list_canonical(resolve, element)
     }
 }
 

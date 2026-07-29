@@ -192,8 +192,8 @@ impl PkgResolver {
                 match ty.kind {
                     TypeDefKind::Type(ty) => self.type_name(this, &ty),
                     TypeDefKind::List(ty) => {
-                        if let Some(element) = crate::canonical_list_element(&self.resolve, &ty) {
-                            element.fixed_array_type().to_string()
+                        if crate::is_list_canonical(&self.resolve, &ty) {
+                            format!("FixedArray[{}]", self.type_name(this, &ty))
                         } else {
                             format!("Array[{}]", self.type_name(this, &ty))
                         }
