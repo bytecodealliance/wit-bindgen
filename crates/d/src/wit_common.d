@@ -499,7 +499,12 @@ struct DeallocateBuffer {
     }
 }
 
-version (CRuntime_WASI) {}
+version (CRuntime_WASI) {
+    version (WASIp1) {}
+    else version = LibcDefinesCABIRealloc;
+}
+
+version (LibcDefinesCABIRealloc) {}
 else
 @wasmExport!("cabi_realloc")
 void* cabi_realloc(void *ptr, size_t oldSize, size_t alignment, size_t newSize) {

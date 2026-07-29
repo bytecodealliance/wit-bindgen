@@ -2638,7 +2638,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 if matches!(self.r#gen.direction, Some(Direction::Import)) {
                     self.needs_deallocate = true;
-                    self.push_str(&format!("deallocate ~= {list};\n"));
+                    self.push_str(&format!("if ({list_src}.length) deallocate ~= {list};\n"));
                 }
 
                 self.push_str(&format!(
@@ -2671,11 +2671,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = tempname("_len", tmp);
 
                 self.push_str(&format!(
-                    "auto {ptr} = cast({elem_name}*)({});
-                    auto {len} = {};
+                    "auto {len} = {};
+                    auto {ptr} = {len} ? cast({elem_name}*)({}) : null;
                     ",
-                    operands[0], operands[1]
+                    operands[1], operands[0]
                 ));
+
+                if matches!(self.r#gen.direction, Some(Direction::Export)) {
+                    self.needs_deallocate = true;
+                    self.push_str(&format!("if ({len}) deallocate ~= cast(){ptr};\n"));
+                }
 
                 results.push(format!("{list_name}({ptr}[0..{len}])"));
             }
@@ -2686,11 +2691,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = tempname("_len", tmp);
 
                 self.push_str(&format!(
-                    "auto {ptr} = cast(char*)({});
-                    auto {len} = {};
+                    "auto {len} = {};
+                    auto {ptr} = {len} ? cast(char*)({}) : null;
                     ",
-                    operands[0], operands[1]
+                    operands[1], operands[0]
                 ));
+
+                if matches!(self.r#gen.direction, Some(Direction::Export)) {
+                    self.needs_deallocate = true;
+                    self.push_str(&format!("if ({len}) deallocate ~= cast(){ptr};\n"));
+                }
 
                 results.push(format!("WitString({ptr}[0..{len}])"));
             }
@@ -2719,7 +2729,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 if matches!(self.r#gen.direction, Some(Direction::Export)) {
                     self.needs_deallocate = true;
-                    self.push_str(&format!("deallocate ~= cast(void*){list}.ptr;\n"));
+                    self.push_str(&format!(
+                        "if ({list_len}) deallocate ~= cast(void*){list}.ptr;\n"
+                    ));
                 }
 
                 self.push_str(&format!(
@@ -2732,11 +2744,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("{block_element} = {};", block_results[0]));
                 self.push_str("\n}\n");
 
-                if !matches!(self.r#gen.direction, Some(Direction::Export)) {
+                if matches!(self.r#gen.direction, Some(Direction::Import)) {
                     self.push_str(&format!(
                         "if ({list_len}) {}.free({list_src});\n",
                         self.r#gen.r#gen.common_module
                     ));
+                } else {
+                    self.needs_deallocate = true;
+                    self.push_str(&format!("if ({list_len}) deallocate ~= {list_src};\n"));
                 }
 
                 let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);

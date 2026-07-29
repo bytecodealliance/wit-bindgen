@@ -22,7 +22,7 @@ import ldc.intrinsics :
 extern(C) @nogc nothrow:
 
 /// MODIFIED FOR wit-bindgen TESTS
-enum MAX_ALLOCATIONS = 32;
+enum MAX_ALLOCATIONS = 2048;
 extern(D) void*[MAX_ALLOCATIONS] activePointers;
 extern(D) size_t[MAX_ALLOCATIONS] activeAllocSizes;
 
