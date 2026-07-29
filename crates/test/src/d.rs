@@ -34,9 +34,6 @@ impl LanguageMethods for D {
         config.async_ || config.error_context || name == "map.wit" || name == "issue1642.wit"
     }
 
-    fn default_bindgen_args(&self) -> &[&str] {
-        &["--self-contained"]
-    }
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
         &["--emit-export-stubs"]
     }

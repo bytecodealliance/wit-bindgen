@@ -75,6 +75,8 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "STRING"))]
     pub root_package: Option<String>,
 
+    // TODO: find new home for wit_common; dub package?
+    /*
     /// Whether the generated bindings should be self-contained
     ///
     /// Instead of relying on DRuntime (and wasi-libc) to define
@@ -82,7 +84,7 @@ pub struct Opts {
     /// emitted alongside the bindings.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub self_contained: bool,
-
+    */
     /// A series of D versions that all the generated bindings
     /// will be gated behind.
     #[cfg_attr(feature = "clap", arg(long, value_name = "VERSION"))]
@@ -381,11 +383,7 @@ impl WorldGenerator for D {
 
     fn preprocess(&mut self, resolve: &Resolve, world_id: WorldId) -> Result<()> {
         self.root_pkg = self.opts.root_package.as_deref().unwrap_or("wit").into();
-        self.common_module = if self.opts.self_contained {
-            format!("{}.common", self.root_pkg)
-        } else {
-            "core.sys.wasi.wit_common".into()
-        };
+        self.common_module = format!("{}.common", self.root_pkg);
 
         self.world_fqn = get_world_fqn(&self.root_pkg, world_id, resolve);
         self.world_id = Some(world_id);
@@ -937,11 +935,10 @@ impl WorldGenerator for D {
 
         files.push(world_filepath.to_str().unwrap(), world_src.as_bytes());
 
-        if self.opts.self_contained {
-            let mut wit_common_file = format!("module {};\n\n", self.common_module).into_bytes();
-            wit_common_file.extend_from_slice(include_bytes!("wit_common.d").as_slice());
-            files.push("wit/common.d", &wit_common_file);
-        }
+        let mut wit_common_file = format!("module {};\n\n", self.common_module).into_bytes();
+        wit_common_file.extend_from_slice(include_bytes!("wit_common.d").as_slice());
+        files.push("wit/common.d", &wit_common_file);
+
         Ok(())
     }
 }
@@ -2635,7 +2632,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!(
                     "auto {list_src} = {};
                     auto {list} = {list_src}.length ? {}.malloc({list_src}.length * ({size_str})) : null;
-                    assert({list_src}.length || {list});\n",
+                    assert(!{list_src}.length || {list});\n",
                     operands[0], self.r#gen.r#gen.common_module
                 ));
 
@@ -2716,7 +2713,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.push_str(&format!("auto {list_len} = {};\n", operands[1]));
                 self.push_str(&format!(
                     "auto {list} = {list_len} ? {}.mallocSlice!({elem_type_name})({list_len}) : [];
-                    assert({list_len} || {list}.ptr);\n",
+                    assert(!{list_len} || {list}.ptr);\n",
                     self.r#gen.r#gen.common_module
                 ));
 
@@ -2962,7 +2959,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     if let Some(ty) = case.ty.as_ref() {
                         let ty_name = self.r#gen.type_name(ty, self.r#gen.fqn);
                         self.push_str(&format!(
-                            "const ref {ty_name} {payload} = {}.get{upper_escaped_name}();\n",
+                            "{}ref {ty_name} {payload} = {}.get{upper_escaped_name}();\n",
+                            if matches!(self.r#gen.direction, Some(Direction::Import)) {
+                                "const "
+                            } else {
+                                ""
+                            },
                             operands[0],
                         ));
                     }

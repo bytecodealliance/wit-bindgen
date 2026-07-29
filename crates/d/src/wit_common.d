@@ -311,7 +311,7 @@ void witFree(T : Tuple!U, U...)(scope ref T val) {
     }
 }
 T witClone(T : Tuple!U, U...)(in T val) {
-    T clone;
+    T clone = void;
     static foreach (F; T.tupleof) {
         __traits(child, clone, F) = __traits(child, val, F).witClone;
     }
@@ -499,6 +499,8 @@ struct DeallocateBuffer {
     }
 }
 
+version (CRuntime_WASI) {}
+else
 @wasmExport!("cabi_realloc")
 void* cabi_realloc(void *ptr, size_t oldSize, size_t alignment, size_t newSize) {
     if (newSize == 0) return cast(void*)alignment;
