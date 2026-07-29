@@ -6,7 +6,8 @@ use crate::{
 };
 use anyhow::Result;
 use heck::*;
-use std::collections::{BTreeMap, BTreeSet};
+use indexmap::IndexSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
@@ -2086,6 +2087,46 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         result
     }
 
+    /// Matching attributes, deduped in configured order. Selectors that matched
+    /// are recorded in `used` so `finish` can report the ones that did not.
+    fn matching_attrs(
+        entries: &[(String, String)],
+        used: &mut HashSet<String>,
+        matches: impl Fn(&str) -> bool,
+    ) -> Vec<String> {
+        let mut attrs = IndexSet::new();
+        for (sel, attr) in entries.iter().filter(|(sel, _)| matches(sel)) {
+            attrs.insert(attr.clone());
+            used.insert(sel.clone());
+        }
+        attrs.into_iter().collect()
+    }
+
+    fn additional_type_attrs(&mut self, type_name: &str) -> Vec<String> {
+        Self::matching_attrs(
+            &self.r#gen.opts.additional_type_attributes,
+            &mut self.r#gen.used_type_attr_selectors,
+            |sel| sel == type_name,
+        )
+    }
+
+    /// `member` is a record field or an enum/variant case, selected by
+    /// `<type-name>.<member>`. Member names contain no `.`, so the last one
+    /// separates the two halves.
+    fn additional_member_attrs(&mut self, type_name: &str, member: &str) -> Vec<String> {
+        Self::matching_attrs(
+            &self.r#gen.opts.additional_member_attributes,
+            &mut self.r#gen.used_member_attr_selectors,
+            |sel| sel.rsplit_once('.') == Some((type_name, member)),
+        )
+    }
+
+    fn push_attrs(&mut self, attrs: &[String]) {
+        for attr in attrs {
+            uwriteln!(self.src, "{attr}");
+        }
+    }
+
     fn print_typedef_record(&mut self, id: TypeId, record: &Record, docs: &Docs) {
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and we have a stable order
@@ -2095,6 +2136,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .additional_derive_attributes
             .iter()
             .cloned()
+            .collect();
+        // Computed once, then emitted on every ownership mode below.
+        let type_name = full_wit_type_name(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&type_name);
+        let field_attrs: Vec<Vec<String>> = record
+            .fields
+            .iter()
+            .map(|f| self.additional_member_attrs(&type_name, &f.name))
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
@@ -2118,11 +2167,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
                 self.push_str(")]\n")
             }
+            self.push_attrs(&injected_attrs);
             self.push_str(&format!("pub struct {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" {\n");
-            for field in record.fields.iter() {
+            for (field, attrs) in record.fields.iter().zip(&field_attrs) {
                 self.rustdoc(&field.docs);
+                self.push_attrs(attrs);
                 self.push_str("pub ");
                 self.push_str(&to_rust_ident(&field.name));
                 self.push_str(": ");
@@ -2185,7 +2236,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             variant
                 .cases
                 .iter()
-                .map(|c| (c.name.to_upper_camel_case(), &c.docs, c.ty.as_ref())),
+                .map(|c| (c.name.clone(), &c.docs, c.ty.as_ref())),
             docs,
         );
     }
@@ -2206,6 +2257,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .additional_derive_attributes
             .iter()
             .cloned()
+            .collect();
+        let type_name = full_wit_type_name(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&type_name);
+        let case_attrs: Vec<Vec<String>> = cases
+            .clone()
+            .into_iter()
+            .map(|(case_name, _, _)| self.additional_member_attrs(&type_name, &case_name))
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
@@ -2228,12 +2286,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
                 self.push_str(")]\n")
             }
+            self.push_attrs(&injected_attrs);
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" {\n");
-            for (case_name, docs, payload) in cases.clone() {
+            for ((case_name, docs, payload), attrs) in cases.clone().into_iter().zip(&case_attrs) {
                 self.rustdoc(docs);
-                self.push_str(&case_name);
+                self.push_attrs(attrs);
+                self.push_str(&case_name.to_upper_camel_case());
                 if let Some(ty) = payload {
                     self.push_str("(");
                     let mode = self.filter_mode(ty, mode);
@@ -2250,7 +2310,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 cases
                     .clone()
                     .into_iter()
-                    .map(|(name, _docs, ty)| (name, ty)),
+                    .map(|(name, _docs, ty)| (name.to_upper_camel_case(), ty)),
             );
 
             if info.error {
@@ -2343,24 +2403,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    fn print_typedef_enum(
-        &mut self,
-        id: TypeId,
-        name: &str,
-        enum_: &Enum,
-        docs: &Docs,
-        attrs: &[String],
-        case_attr: Box<dyn Fn(&EnumCase) -> String>,
-    ) where
-        Self: Sized,
-    {
+    fn print_typedef_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let info = self.info(id);
 
         let name = to_upper_camel_case(name);
         self.rustdoc(docs);
-        for attr in attrs {
-            self.push_str(&format!("{attr}\n"));
-        }
+        let type_name = full_wit_type_name(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&type_name);
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
         self.push_str(")]\n");
@@ -2382,10 +2431,12 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         self.push_str("#[derive(");
         self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
         self.push_str(")]\n");
+        self.push_attrs(&injected_attrs);
         self.push_str(&format!("pub enum {name} {{\n"));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
-            self.push_str(&case_attr(case));
+            let case_attrs = self.additional_member_attrs(&type_name, &case.name);
+            self.push_attrs(&case_attrs);
             self.push_str(&case.name.to_upper_camel_case());
             self.push_str(",\n");
         }
@@ -2967,7 +3018,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_typedef_enum(id, name, enum_, docs, &[], Box::new(|_| String::new()));
+        self.print_typedef_enum(id, name, enum_, docs);
 
         let name = to_upper_camel_case(name);
         let mut cases = String::new();

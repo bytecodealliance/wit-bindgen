@@ -301,3 +301,105 @@ mod merge_structurally_equal_types {
         merge_structurally_equal_types: true
     });
 }
+
+mod targeted_attributes {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:attrs;
+
+        interface iface {
+            record point { x: u32, y: u32 }
+            enum color { red, green, blue }
+            variant shape { circle(u32), square(point), a-b }
+
+            // used as both return and param, so `duplicate_if_necessary` generates
+            // an owned `String` form and a borrowed `&str` form
+            record label { text: string }
+
+            paint: func(c: color) -> color;
+            draw: func(s: shape) -> shape;
+            round: func(p: point) -> point;
+            make-label: func() -> label;
+            use-label: func(l: label) -> u32;
+        }
+
+        world test {
+            import iface;
+        }
+        "#,
+        generate_all,
+        ownership: Borrowing { duplicate_if_necessary: true },
+        additional_type_attributes: {
+            // two entries for one selector, both apply
+            "test:attrs/iface/point": [#[derive(PartialEq, Eq)] #[derive(Hash)]],
+            "test:attrs/iface/color": [#[doc = "a primary color"] #[derive(Hash)]],
+            "test:attrs/iface/shape": [#[derive(PartialEq)]],
+            "test:attrs/iface/label": [#[derive(PartialEq, Eq)]],
+        },
+        additional_member_attributes: {
+            "test:attrs/iface/point.x": [#[allow(dead_code)]],
+            "test:attrs/iface/color.red": [#[doc = "the primary color"]],
+            "test:attrs/iface/shape.circle": [#[doc = "a round shape"]],
+            // `a-b` upper-camels to `AB`, so this matches only via the raw wit name
+            "test:attrs/iface/shape.a-b": [#[allow(dead_code)]],
+            "test:attrs/iface/label.text": [#[allow(dead_code)]],
+        },
+    });
+
+    #[test]
+    fn injected_derives_are_usable() {
+        use test::attrs::iface::{Color, LabelParam, LabelResult, Point, Shape};
+
+        let a = Point { x: 1, y: 2 };
+        assert_eq!(a, a.clone());
+        let mut set = std::collections::HashSet::new();
+        set.insert(a);
+        assert!(set.contains(&Point { x: 1, y: 2 }));
+
+        let mut colors = std::collections::HashSet::new();
+        colors.insert(Color::Red);
+        assert!(colors.contains(&Color::Red));
+        assert!(!colors.contains(&Color::Blue));
+
+        assert_eq!(Shape::Circle(3), Shape::Circle(3).clone());
+        assert_ne!(Shape::Circle(3), Shape::Circle(4));
+
+        // both the owned `String` form and the borrowed `&str` form got the derives
+        assert_eq!(
+            LabelResult { text: "hi".into() },
+            LabelResult { text: "hi".into() }
+        );
+        assert_eq!(LabelParam { text: "hi" }, LabelParam { text: "hi" });
+        assert_ne!(LabelParam { text: "hi" }, LabelParam { text: "bye" });
+    }
+}
+
+// Guards where `@version` lands in a qualified selector: after the interface,
+// before the type.
+mod versioned_selectors {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:hier@1.2.3;
+        interface types {
+            record alpha { x: u32 }
+            get-alpha: func() -> alpha;
+        }
+        world w { import types; }
+        "#,
+        generate_all,
+        additional_type_attributes: {
+            "test:hier/types@1.2.3/alpha": [#[derive(PartialEq, Eq)] #[derive(PartialOrd, Ord)]],
+        },
+        additional_member_attributes: {
+            "test:hier/types@1.2.3/alpha.x": [#[allow(dead_code)]],
+        },
+    });
+
+    #[test]
+    fn versioned_selectors_resolve() {
+        use test::hier::types::Alpha;
+
+        assert_eq!(Alpha { x: 1 }, Alpha { x: 1 });
+        assert!(Alpha { x: 1 } < Alpha { x: 2 });
+    }
+}

@@ -42,6 +42,9 @@ pub struct RustWasm {
     // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
     // are required to be used.
     generated_types: HashSet<String>,
+    // Attribute selectors that matched something, so `finish` can reject the rest.
+    used_type_attr_selectors: HashSet<String>,
+    used_member_attr_selectors: HashSet<String>,
     world: Option<WorldId>,
 
     rt_module: IndexSet<RuntimeItem>,
@@ -139,6 +142,19 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
     Ok((k.to_string(), v))
 }
 
+// Split on the first `=` only, so the attribute may itself contain `=`.
+#[cfg(feature = "clap")]
+fn parse_attribute(s: &str) -> Result<(String, String), String> {
+    let (sel, attr) = s
+        .split_once('=')
+        .ok_or_else(|| format!("expected string of form `<selector>=<attribute>`; got `{s}`"))?;
+    // An empty attribute would mark the selector used and escape the unused check.
+    if attr.trim().is_empty() {
+        return Err(format!("attribute must not be empty; got `{s}`"));
+    }
+    Ok((sel.to_string(), attr.to_string()))
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Parser))]
 #[cfg_attr(
@@ -233,6 +249,34 @@ pub struct Opts {
     ///
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub additional_derive_ignore: Vec<String>,
+
+    /// Extra attributes to emit on specific generated types, rather than on all
+    /// types like `additional_derive_attributes`.
+    ///
+    /// Each entry pairs a selector with an attribute. A selector is a type's
+    /// fully qualified name, written as in `with`, so `my:pkg/types/point`,
+    /// carrying `@version` when the package is versioned. A selector matching
+    /// nothing is an error, as with `with`.
+    ///
+    /// Only records, variants, and enums are covered. Attributes are emitted
+    /// verbatim on every form of the type, including the borrowed form under
+    /// `ownership: Borrowing`, so an owned-only derive fails to compile there.
+    ///
+    /// In a CLI, this flag can be specified multiple times as
+    /// `selector=attribute`.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "SELECTOR=ATTR", value_parser = parse_attribute))]
+    pub additional_type_attributes: Vec<(String, String)>,
+
+    /// Extra attributes to emit on specific generated record fields and
+    /// enum/variant cases.
+    ///
+    /// As `additional_type_attributes`, except the selector is a type's fully
+    /// qualified name, a `.`, and the member name.
+    ///
+    /// In a CLI, this flag can be specified multiple times as
+    /// `selector=attribute`.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "SELECTOR=ATTR", value_parser = parse_attribute))]
+    pub additional_member_attributes: Vec<(String, String)>,
 
     /// Remapping of wit import interface and type names to Rust module names
     /// and types.
@@ -1128,6 +1172,18 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_ignore
             );
         }
+        for (selector, attr) in self.opts.additional_type_attributes.iter() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional type attribute {selector:?} = {attr:?}"
+            );
+        }
+        for (selector, attr) in self.opts.additional_member_attributes.iter() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional member attribute {selector:?} = {attr:?}"
+            );
+        }
         for (k, v) in self.opts.with.iter() {
             uwriteln!(self.src_preamble, "//   * with {k:?} = {v}");
         }
@@ -1532,6 +1588,29 @@ impl WorldGenerator for RustWasm {
 
         if !unused_keys.is_empty() {
             bail!("unused remappings provided via `with`: {unused_keys:?}");
+        }
+
+        let mut unused_selectors = self
+            .opts
+            .additional_type_attributes
+            .iter()
+            .map(|(sel, _)| sel)
+            .filter(|sel| !self.used_type_attr_selectors.contains(*sel))
+            .chain(
+                self.opts
+                    .additional_member_attributes
+                    .iter()
+                    .map(|(sel, _)| sel)
+                    .filter(|sel| !self.used_member_attr_selectors.contains(*sel)),
+            )
+            .collect::<Vec<_>>();
+        unused_selectors.sort();
+        unused_selectors.dedup();
+        if !unused_selectors.is_empty() {
+            bail!(
+                "unused selectors provided via `additional_type_attributes` / \
+                 `additional_member_attributes`: {unused_selectors:?}"
+            );
         }
 
         // Error about unused async configuration to help catch configuration
