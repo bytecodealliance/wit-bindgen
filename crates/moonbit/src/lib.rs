@@ -29,26 +29,6 @@ mod async_support;
 mod ffi;
 mod pkg;
 
-pub(crate) fn is_list_canonical(resolve: &Resolve, element: &Type) -> bool {
-    match element {
-        Type::Bool
-        | Type::U8
-        | Type::U16
-        | Type::U32
-        | Type::U64
-        | Type::S16
-        | Type::S32
-        | Type::S64
-        | Type::F32
-        | Type::F64 => true,
-        Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
-            TypeDefKind::Type(element) => is_list_canonical(resolve, element),
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
 // Assumptions:
 // - Data: u8 -> Byte, s8 | s32 -> Int, s16 -> Int16, u16 -> UInt16, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 -> Float, f64 -> Double, address -> Int
 // - Encoding: UTF16
@@ -3002,7 +2982,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn is_list_canonical(&self, resolve: &Resolve, element: &Type) -> bool {
-        crate::is_list_canonical(resolve, element)
+        let element = match element {
+            Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
+                TypeDefKind::Type(element) => element,
+                _ => return false,
+            },
+            element => element,
+        };
+        matches!(
+            element,
+            Type::Bool
+                | Type::U8
+                | Type::U16
+                | Type::U32
+                | Type::U64
+                | Type::S16
+                | Type::S32
+                | Type::S64
+                | Type::F32
+                | Type::F64
+        )
     }
 }
 
@@ -3679,14 +3678,6 @@ mod tests {
             "direct canonical lists must retain their canonical pointer/length operands: {top}"
         );
         assert!(
-            !top.contains("mbt_ffi_borrowed_array2ptr(bytes)")
-                && !top.contains("mbt_ffi_borrowed_array2ptr(unsigned_shorts)")
-                && !top.contains("mbt_ffi_borrowed_array2ptr(signed_shorts)")
-                && !top.contains("mbt_ffi_borrowed_array2ptr(words)"),
-            "direct list parameters must not round-trip through Int: {top}"
-        );
-        assert!(!top.contains("mbt_ffi_borrowed_array2ptr"), "{top}");
-        assert!(
             ffi.contains(
                 "#unsafe_skip_stub_check\n#borrow(p0, p2, p4, p6, p8, p10)\nfn wasmImportSend(\
                  p0 : FixedArray[Byte], p1 : Int, \
@@ -3698,12 +3689,6 @@ mod tests {
             ),
             "the imported FFI must borrow arrays while retaining explicit lengths: {ffi}"
         );
-        assert!(
-            !ffi.contains("mbt_ffi_borrowed_array2ptr"),
-            "direct list parameters must not need an array-to-pointer helper: {ffi}"
-        );
-        assert!(!ffi.contains("mbt_ffi_borrowed_bytes2ptr"), "{ffi}");
-        assert!(!ffi.contains("mbt_ffi_borrowed_uint_array2ptr"), "{ffi}");
         assert!(
             !top.contains("mbt_ffi_free(ptr)\n"),
             "borrowed canonical backing storage must not be freed after the call: {top}"

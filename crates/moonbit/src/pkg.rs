@@ -192,7 +192,28 @@ impl PkgResolver {
                 match ty.kind {
                     TypeDefKind::Type(ty) => self.type_name(this, &ty),
                     TypeDefKind::List(ty) => {
-                        if crate::is_list_canonical(&self.resolve, &ty) {
+                        let element = match &ty {
+                            Type::Id(id) => {
+                                match &self.resolve.types[dealias(&self.resolve, *id)].kind {
+                                    TypeDefKind::Type(element) => element,
+                                    _ => &ty,
+                                }
+                            }
+                            element => element,
+                        };
+                        if matches!(
+                            element,
+                            Type::Bool
+                                | Type::U8
+                                | Type::U16
+                                | Type::U32
+                                | Type::U64
+                                | Type::S16
+                                | Type::S32
+                                | Type::S64
+                                | Type::F32
+                                | Type::F64
+                        ) {
                             format!("FixedArray[{}]", self.type_name(this, &ty))
                         } else {
                             format!("Array[{}]", self.type_name(this, &ty))
