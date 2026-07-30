@@ -145,11 +145,11 @@ private:
         _value = value;
     }
 public:
-    static inout(Option) some(inout T value) @safe @nogc nothrow {
+    static inout(Option) makeSome(inout T value) @safe @nogc nothrow {
         return inout Option(true, value);
     }
 
-    static Option none() @safe @nogc nothrow {
+    static Option makeNone() @safe @nogc nothrow {
         return Option(false, T.init);
     }
 
@@ -169,11 +169,11 @@ public:
 }
 
 auto some(T)(inout T value) @safe @nogc nothrow {
-    return Option!T.some(value);
+    return Option!T.makeSome(value);
 }
 
 auto none(T)() @safe @nogc nothrow {
-    return Option!T.none;
+    return Option!T.makeNone;
 }
 
 /// Based on Rust's Result
@@ -256,12 +256,12 @@ void witFree(T : Option!U, U)(scope ref T val) {
 T witClone(T : Option!U, U)(in T val) {
     if (val.isSome) {
         static if (!is(U == void)) {
-            return T.some(val.unwrap.witClone);
+            return T.makeSome(val.unwrap.witClone);
         } else {
-            return T.some;
+            return T.makeSome;
         }
     } else {
-        return T.none;
+        return T.makeNone;
     }
 }
 

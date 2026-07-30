@@ -1280,7 +1280,7 @@ impl<'a> DInterfaceGenerator<'a> {
             self.src.push_str("static ");
         }
         self.src.push_str(&format!(
-            "{} {}({}) @nogc nothrow {{\n",
+            "{} {}({}) @trusted nothrow {{\n",
             d_sig.result,
             d_sig.name,
             d_sig
@@ -1353,7 +1353,7 @@ impl<'a> DInterfaceGenerator<'a> {
             self.src.push_str("static ");
         }
         self.src.push_str(&format!(
-            "private extern(C) {} __import_{}({}) @nogc nothrow;\n",
+            "private extern(C) {} __import_{}({}) nothrow;\n",
             match wasm_sig.results.len() {
                 0 => "void",
                 1 => wasm_type(wasm_sig.results[0]),
@@ -1727,11 +1727,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                 self.src.push_str(&format!(
                     "struct {escaped_name} {{
-    @nogc nothrow:
-
     package({}) uint __handle = 0;
 
-    package({0}) this(uint handle) {{
+    package({0}) this(uint handle) @safe @nogc nothrow {{
         __handle = handle;
     }}
 
@@ -1782,8 +1780,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     }
                 }
 
-                self.src
-                    .push_str("\nvoid drop() {\n__import_drop(__handle);\n}\n");
+                self.src.push_str(
+                    "\nvoid drop() @trusted @nogc nothrow {\n__import_drop(__handle);\n}\n",
+                );
                 self.src.push_str(&format!(
                     "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
                     self.wasm_import_module.unwrap(),
@@ -1797,8 +1796,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         .replace("-", "_"),
                     name.replace("-", "_")
                 ));
-                self.src
-                    .push_str("static private extern(C) void __import_drop(uint);\n\n");
+                self.src.push_str(
+                    "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
+                );
                 self.src.push_str("alias witFree = drop;\n");
 
                 self.src.push_str(&format!(
@@ -1808,18 +1808,16 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
     alias borrow this;
 
     struct Borrow {{
-    @nogc nothrow:
-
     package({}) uint __handle = 0;
 
-    package({0}) this(uint handle) {{
+    package({0}) this(uint handle) @safe @nogc nothrow {{
         __handle = handle;
     }}
 
     @disable this();
 
-    void witFree() {{}}
-    Borrow witClone() const {{ return Borrow(__handle); }}
+    void witFree() @safe @nogc nothrow {{}}
+    Borrow witClone() const @safe @nogc nothrow {{ return Borrow(__handle); }}
                 ",
                     self.r#gen.root_pkg
                 ));
@@ -1883,11 +1881,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
 
                     self.src.push_str(&format!(
                         "struct {escaped_name} {{
-        @nogc nothrow:
-
         package({}) uint __handle = 0;
 
-        package({0}) this(uint handle) {{
+        package({0}) this(uint handle) @safe @nogc nothrow {{
             __handle = handle;
         }}
 
@@ -1899,6 +1895,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     self.src.push_str(&format!(
                         "
                         static {escaped_name} makeNew(T)(scope void delegate(out T) dg) if (is(T == struct)) {{
+                        if (dg is null) return {escaped_name}.init;
+
                         auto ptr = cast(T*)malloc(T.sizeof);
                         if (ptr is null) return {escaped_name}.init;
 
@@ -1908,7 +1906,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         ",
                     ));
                     self.src.push_str(&format!(
-                        "@wasmImport!(\"{}\", \"[resource-new]{}\")\n",
+                        "@wasmImport!(\"[export]{}\", \"[resource-new]{}\")\n",
                         self.wasm_import_module.unwrap(),
                         name
                     ));
@@ -1924,9 +1922,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         .push_str("static private extern(C) uint __import_makeNew(void*);\n\n");
 
                     self.src
-                        .push_str("T* rep(T)() if (is(T == struct)) {\nreturn cast(T*)__import_rep(__handle);\n}\n");
+                        .push_str("T* rep(T)() @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__import_rep(__handle);\n}\n");
                     self.src.push_str(&format!(
-                        "@wasmImport!(\"{}\", \"[resource-rep]{}\")\n",
+                        "@wasmImport!(\"[export]{}\", \"[resource-rep]{}\")\n",
                         self.wasm_import_module.unwrap(),
                         name
                     ));
@@ -1941,10 +1939,11 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     self.src
                         .push_str("static private extern(C) void __import_rep(uint);\n\n");
 
-                    self.src
-                        .push_str("void drop() {\n__import_drop(__handle);\n}\n");
+                    self.src.push_str(
+                        "void drop() @trusted @nogc nothrow {\n__import_drop(__handle);\n}\n",
+                    );
                     self.src.push_str(&format!(
-                        "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
+                        "@wasmImport!(\"[export]{}\", \"[resource-drop]{}\")\n",
                         self.wasm_import_module.unwrap(),
                         name
                     ));
@@ -1956,28 +1955,27 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                             .replace("-", "_"),
                         name.replace("-", "_")
                     ));
-                    self.src
-                        .push_str("static private extern(C) void __import_drop(uint);\n\n");
+                    self.src.push_str(
+                        "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
+                    );
                     self.src.push_str("alias witFree = drop;\n");
 
                     self.src.push_str(&format!(
                         "// TODO: make RAII? disable copy for the own
-        Borrow borrow() => Borrow(__handle);
+        Borrow borrow() @safe @nogc nothrow => Borrow(__handle);
         alias borrow this;
 
         struct Borrow {{
-            @nogc nothrow:
-
             package({}) uint __handle = 0;
 
-            package({0}) this(uint handle) {{
+            package({0}) this(uint handle) @safe @nogc nothrow {{
                 __handle = handle;
             }}
 
             @disable this();
 
-            void witFree() {{}}
-            Borrow witClone() const {{ return Borrow(__handle); }}
+            void witFree() @safe @nogc nothrow {{}}
+            Borrow witClone() const @safe @nogc nothrow {{ return Borrow(__handle); }}
 
                         ",
                         self.r#gen.root_pkg
@@ -3106,9 +3104,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     bool {is_some} = ({op0}) != 0;
                     if ({is_some}) {{
                         {some}
-                        {resultname} = {type_name}.some({some_value});
+                        {resultname} = {type_name}.makeSome({some_value});
                     }} else {{
-                        {resultname} = {type_name}.none;
+                        {resultname} = {type_name}.makeNone;
                     }}
                     "
                 ));
