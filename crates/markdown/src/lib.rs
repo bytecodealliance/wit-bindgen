@@ -444,7 +444,7 @@ impl InterfaceGenerator<'_> {
             None => "\n",
         };
         for line in docs.lines() {
-            self.push_str(line.trim());
+            self.r#gen.src.push_str_literal(line.trim());
             self.push_str("\n");
         }
     }
