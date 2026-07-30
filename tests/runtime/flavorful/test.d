@@ -63,10 +63,10 @@ Tuple!(ListTypedef2, ListTypedef3) listTypedefs(in ListTypedef a, in ListTypedef
         cast(WitString)"typedef4".witList
     ];
 
-    return (const Tuple!(ListTypedef2, ListTypedef3)(
+    return tuple(
         (cast(immutable ubyte[])"typedef3").witList,
         strings[].witList
-    )).witClone;
+    ).witClone;
 }
 
 
@@ -85,11 +85,11 @@ Tuple!(WitList!bool, WitList!(Result!()), WitList!MyErrno) listOfVariants(in Wit
     static immutable bool[] boolsOut = [false, true];
     static immutable Result!(void)[] resultsOut = [Result!().err, Result!().ok];
     static immutable MyErrno[] enumsOut = [MyErrno.a, MyErrno.b];
-    return (const Tuple!(WitList!bool, WitList!(Result!()), WitList!MyErrno)(
+    return tuple(
         boolsOut.witList,
         resultsOut.witList,
         enumsOut.witList
-    )).witClone;
+    ).witClone;
 }
 
 alias Exports = wit.test.flavorful.test.Exports!(
