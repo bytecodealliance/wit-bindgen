@@ -50,6 +50,8 @@ struct Tuple(Types...) if (is(Types)) {
     alias expand this;
 }
 
+inout(Tuple!Types) tuple(Types...)(inout Types vals) => inout Tuple!Types(vals);
+
 mixin template WitFlags(T) if (__traits(isUnsigned, T)) {
     private alias F = typeof(this);
 
