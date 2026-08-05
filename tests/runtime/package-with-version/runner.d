@@ -3,7 +3,7 @@ import wit.common;
 
 @witExport("$root", "run")
 void run() {
-    Bar.makeNew().drop;
+    Bar.makeNew().witDrop;
 }
 
 alias Exports = wit.my.inline.runner.Exports!(

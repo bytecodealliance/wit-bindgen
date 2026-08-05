@@ -18,7 +18,6 @@ struct DSig {
     arguments: Vec<(String, DType)>,
     name: String,
     implicit_self: bool,
-    post_return: bool,
 }
 
 #[derive(Default)]
@@ -238,7 +237,6 @@ fn escape_d_identifier(name: &str) -> &str {
         "Result" => "Result_",
         "bits" => "bits_",               // part of WitFlags
         "borrow" => "borrow_",           // part of the expansion of `resource`
-        "drop" => "drop_",               // part of the expansion of `resource`
         "rep" => "rep_",                 // part of the expansion of `resource`
         "makeNew" => "makeNew_",         // part of the expansion of `resource`
         "constructor" => "constructor_", // part of the expansion of `resource`
@@ -1210,9 +1208,6 @@ impl<'a> DInterfaceGenerator<'a> {
             _ => false,
         };
 
-        res.post_return = self.direction == Some(Direction::Export)
-            && abi::guest_export_needs_post_return(self.resolve, func);
-
         res.result
             .push_str(&(self.optional_type_name(func.result.as_ref(), self.fqn)));
 
@@ -1237,7 +1232,11 @@ impl<'a> DInterfaceGenerator<'a> {
             let escaped_param_name = escape_d_identifier(&lower_param_name);
 
             let needs_in_qualifier = match param {
-                Type::ErrorContext | Type::String | Type::Id(_) => true,
+                Type::ErrorContext | Type::String => true,
+                Type::Id(id) => match &self.resolve.types[*id].kind {
+                    TypeDefKind::Handle(_) | TypeDefKind::Enum(_) | TypeDefKind::Flags(_) => false,
+                    _ => true,
+                },
                 _ => false,
             };
 
@@ -1611,20 +1610,24 @@ impl<'a> DInterfaceGenerator<'a> {
             Type::String => true,
             Type::Id(id) => {
                 let typeinfo = &self.r#gen.types.get(id);
-                typeinfo.has_list || typeinfo.has_resource
+                typeinfo.has_list
             }
             _ => false,
         }
     }
 
-    fn can_have_wit_clone(&self, ty: Type) -> bool {
+    fn needs_wit_drop(&self, ty: Type) -> bool {
         match ty {
             Type::Id(id) => {
                 let typeinfo = &self.r#gen.types.get(id);
-                !typeinfo.has_own_handle
+                typeinfo.has_resource
             }
-            _ => true,
+            _ => false,
         }
+    }
+
+    fn can_have_wit_clone(&self, _ty: Type) -> bool {
+        true
     }
 }
 
@@ -1690,6 +1693,17 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         }
         self.src.push_str("}\n");
 
+        self.src.push_str("\nvoid witDrop() @nogc nothrow {\n");
+        for field in &record.fields {
+            let lower_name = field.name.to_lower_camel_case();
+            let escaped_name = escape_d_identifier(&lower_name);
+
+            if self.needs_wit_drop(field.ty) {
+                self.src.push_str(&format!("{escaped_name}.witDrop;\n"));
+            }
+        }
+        self.src.push_str("}\n");
+
         if self.can_have_wit_clone(Type::Id(id)) {
             self.src.push_str(&format!(
                 "\n{escaped_name} witClone() const @nogc nothrow {{\n"
@@ -1732,8 +1746,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
     package({0}) this(uint handle) @safe @nogc nothrow {{
         __handle = handle;
     }}
-
-    @disable this();
 
     ",
                     self.r#gen.root_pkg
@@ -1781,7 +1793,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 }
 
                 self.src.push_str(
-                    "\nvoid drop() @trusted @nogc nothrow {\n__import_drop(__handle);\n}\n",
+                    "\nvoid witDrop() @trusted @nogc nothrow {\nif (!__handle) return; __import_drop(__handle); __handle = 0;\n}\n",
                 );
                 self.src.push_str(&format!(
                     "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
@@ -1799,7 +1811,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 self.src.push_str(
                     "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
                 );
-                self.src.push_str("alias witFree = drop;\n");
+                self.src.push_str("void witFree() @safe @nogc nothrow {}\n");
+
+                self.src.push_str("typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
 
                 self.src.push_str(&format!(
                     "// TODO: make RAII? disable copy for the own
@@ -1814,9 +1828,10 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         __handle = handle;
     }}
 
-    @disable this();
-
     void witFree() @safe @nogc nothrow {{}}
+    void witDrop() @trusted @nogc nothrow {{
+        if (!__handle) return; __import_drop(__handle); __handle = 0;
+    }}
     Borrow witClone() const @safe @nogc nothrow {{ return Borrow(__handle); }}
                 ",
                     self.r#gen.root_pkg
@@ -1887,7 +1902,6 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             __handle = handle;
         }}
 
-        @disable this();
 ",
                         self.r#gen.root_pkg
                     ));
@@ -1911,7 +1925,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         name
                     ));
                     self.src.push_str(&format!(
-                        "pragma(mangle, \"__wit_import_{}__:resource_new:{}\")\n",
+                        "pragma(mangle, \"__wit_import_:export:{}__:resource_new:{}\")\n",
                         self.wasm_import_module
                             .unwrap()
                             .replace("/", "__")
@@ -1922,25 +1936,26 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         .push_str("static private extern(C) uint __import_makeNew(void*);\n\n");
 
                     self.src
-                        .push_str("T* rep(T)() @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__import_rep(__handle);\n}\n");
+                        .push_str("T* rep(T)() const @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__import_rep(__handle);\n}\n");
                     self.src.push_str(&format!(
                         "@wasmImport!(\"[export]{}\", \"[resource-rep]{}\")\n",
                         self.wasm_import_module.unwrap(),
                         name
                     ));
                     self.src.push_str(&format!(
-                        "pragma(mangle, \"__wit_import_{}__:resource_rep:{}\")\n",
+                        "pragma(mangle, \"__wit_import_:export:{}__:resource_rep:{}\")\n",
                         self.wasm_import_module
                             .unwrap()
                             .replace("/", "__")
                             .replace("-", "_"),
                         name.replace("-", "_")
                     ));
-                    self.src
-                        .push_str("static private extern(C) void __import_rep(uint);\n\n");
+                    self.src.push_str(
+                        "static private extern(C) void* __import_rep(uint) @nogc nothrow;\n\n",
+                    );
 
                     self.src.push_str(
-                        "void drop() @trusted @nogc nothrow {\n__import_drop(__handle);\n}\n",
+                        "void witDrop() @trusted @nogc nothrow {\nif (!__handle) return; __import_drop(__handle); __handle = 0;\n}\n",
                     );
                     self.src.push_str(&format!(
                         "@wasmImport!(\"[export]{}\", \"[resource-drop]{}\")\n",
@@ -1948,7 +1963,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         name
                     ));
                     self.src.push_str(&format!(
-                        "pragma(mangle, \"__wit_import_{}__:resource_drop:{}\")\n",
+                        "pragma(mangle, \"__wit_import_:export:{}__:resource_drop:{}\")\n",
                         self.wasm_import_module
                             .unwrap()
                             .replace("/", "__")
@@ -1958,28 +1973,36 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     self.src.push_str(
                         "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
                     );
-                    self.src.push_str("alias witFree = drop;\n");
+                    self.src.push_str("void witFree() @safe @nogc nothrow {}\n");
+
+                    self.src.push_str("typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
 
                     self.src.push_str(&format!(
                         "// TODO: make RAII? disable copy for the own
-        Borrow borrow() @safe @nogc nothrow => Borrow(__handle);
-        alias borrow this;
+        Borrow borrow() const @trusted @nogc nothrow => Borrow(__import_rep(__handle));
+        //alias borrow this;
 
         struct Borrow {{
-            package({}) uint __handle = 0;
+            package({}) void* __handle = null;
 
-            package({0}) this(uint handle) @safe @nogc nothrow {{
+            package({0}) this(void* handle) @safe @nogc nothrow {{
                 __handle = handle;
             }}
 
-            @disable this();
+            package({0}) this(uint handle) @safe @nogc nothrow {{
+                __handle = cast(void*)handle;
+            }}
 
             void witFree() @safe @nogc nothrow {{}}
-            Borrow witClone() const @safe @nogc nothrow {{ return Borrow(__handle); }}
+            void witDrop() @safe @nogc nothrow {{}}
+            Borrow witClone() const @trusted @nogc nothrow {{ return Borrow(cast(void*)__handle); }}
 
                         ",
                         self.r#gen.root_pkg
                     ));
+
+                    self.src
+                        .push_str("T* rep(T)() const @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__handle;\n}\n");
 
                     self.src.push_str("}\n");
 
@@ -2157,6 +2180,24 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 if case.ty.is_some() && self.needs_wit_free(case.ty.unwrap()) {
                     self.src.push_str(&format!(
                         "case {escaped_lower_case_name}: _get!(Tag.{escaped_lower_case_name}).witFree; break;\n",
+                    ));
+                }
+            }
+            self.src.push_str("default: break;\n");
+            self.src.push_str("}\n");
+        }
+        self.src.push_str("}\n");
+
+        self.src.push_str("\nvoid witDrop() @nogc nothrow {\n");
+        if self.needs_wit_drop(Type::Id(id)) {
+            self.src.push_str("switch (_tag) with (Tag) {\n");
+            for case in &variant.cases {
+                let lower_case_name = case.name.to_lower_camel_case();
+                let escaped_lower_case_name = escape_d_identifier(&lower_case_name);
+
+                if case.ty.is_some() && self.needs_wit_drop(case.ty.unwrap()) {
+                    self.src.push_str(&format!(
+                        "case {escaped_lower_case_name}: _get!(Tag.{escaped_lower_case_name}).witDrop; break;\n",
                     ));
                 }
             }

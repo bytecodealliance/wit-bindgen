@@ -246,12 +246,18 @@ public:
 void witFree(T)(scope ref T val) if (__traits(isArithmetic, T)) {
     // no-op
 }
+void witDrop(T)(scope ref T val) if (__traits(isArithmetic, T)) {
+    // no-op
+}
 T witClone(T)(in T val) if (__traits(isArithmetic, T)) {
     return val;
 }
 
 void witFree(T : Option!U, U)(scope ref T val) {
     static if (!is(U == void)) if (val.isSome) val.unwrap.witFree;
+}
+void witDrop(T : Option!U, U)(scope ref T val) {
+    static if (!is(U == void)) if (val.isSome) val.unwrap.witDrop;
 }
 T witClone(T : Option!U, U)(in T val) {
     if (val.isSome) {
@@ -270,6 +276,13 @@ void witFree(T : Result!(U, V), U, V)(scope ref T val) {
         static if (!is(V == void)) val.unwrapErr.witFree;
     } else {
         static if (!is(U == void)) val.unwrap.witFree;
+    }
+}
+void witDrop(T : Result!(U, V), U, V)(scope ref T val) {
+    if (val.isErr) {
+        static if (!is(V == void)) val.unwrapErr.witDrop;
+    } else {
+        static if (!is(U == void)) val.unwrap.witDrop;
     }
 }
 T witClone(T : Result!(U, V), U, V)(in T val) {
@@ -295,6 +308,12 @@ void witFree(T : WitList!U, U)(scope ref T val) {
     if (val.ptr && val.length) free(val.ptr);
     val = null;
 }
+void witDrop(T : WitList!U, U)(scope ref T val) {
+    foreach (ref e; val) {
+        e.witDrop;
+    }
+    val = null;
+}
 T witClone(T : WitList!U, U)(in T val) {
     if (val.ptr == null || val.length == 0) return T(null);
 
@@ -312,6 +331,11 @@ void witFree(T : Tuple!U, U...)(scope ref T val) {
         __traits(child, val, F).witFree;
     }
 }
+void witDrop(T : Tuple!U, U...)(scope ref T val) {
+    static foreach (F; T.tupleof) {
+        __traits(child, val, F).witDrop;
+    }
+}
 T witClone(T : Tuple!U, U...)(in T val) {
     T clone = void;
     static foreach (F; T.tupleof) {
@@ -324,6 +348,11 @@ T witClone(T : Tuple!U, U...)(in T val) {
 void witFree(T : U[L], U, size_t L)(scope ref T val) {
     foreach (ref e; val) {
         e.witFree;
+    }
+}
+void witDrop(T : U[L], U, size_t L)(scope ref T val) {
+    foreach (ref e; val) {
+        e.witDrop;
     }
 }
 T witClone(T : U[L], U, size_t L)(in T val) {

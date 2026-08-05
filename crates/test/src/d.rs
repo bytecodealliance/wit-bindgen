@@ -131,6 +131,7 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
         .arg("-L--no-export-dynamic") // important to make sure unused symbols don't get linked
         .arg("--checkaction=halt") // to trap instead of using libc __assert
         .arg("-g") // debug info
+        .arg("--preview=in") // `in` is more restricting with this on; test it
         .arg("-of")
         .arg(&output)
         .arg(compile.artifacts_dir.join("runtime.d"))
@@ -159,6 +160,7 @@ fn verify(runner: &Runner, verify: &Verify<'_>, compiler: PathBuf) -> Result<()>
         .arg("-c") // compile only
         .arg("--de") // deperecations are errors
         .arg("-w") // warnigns are errors
+        .arg("--preview=in")
         .arg("-of")
         .arg(verify.artifacts_dir.join("tmp.o"));
     runner.run_command(&mut cmd)

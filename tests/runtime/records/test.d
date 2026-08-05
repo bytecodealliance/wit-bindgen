@@ -14,17 +14,17 @@ Tuple!(uint, ubyte) swapTuple(in Tuple!(ubyte, uint) a) {
 }
 
 @witExport("test:records/to-test", "roundtrip-flags1")
-F1 roundtripFlags1(in F1 a) {
+F1 roundtripFlags1(F1 a) {
     return a;
 }
 
 @witExport("test:records/to-test", "roundtrip-flags2")
-F2 roundtripFlags2(in F2 a) {
+F2 roundtripFlags2(F2 a) {
     return a;
 }
 
 @witExport("test:records/to-test", "roundtrip-flags3")
-Tuple!(Flag8, Flag16, Flag32) roundtripFlags3(in Flag8 a, in Flag16 b, in Flag32 c) {
+Tuple!(Flag8, Flag16, Flag32) roundtripFlags3(Flag8 a, Flag16 b, Flag32 c) {
     return tuple(a, b, c);
 }
 
