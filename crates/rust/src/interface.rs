@@ -2324,7 +2324,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.rustdoc(docs);
             self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
-            self.push_str("= Option<");
+            self.push_str("= ::core::option::Option<");
             self.print_ty(payload, mode);
             self.push_str(">;\n");
         }
@@ -2335,7 +2335,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.rustdoc(docs);
             self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
-            self.push_str("= Result<");
+            self.push_str("= ::core::result::Result<");
             self.print_optional_ty(result.ok.as_ref(), mode);
             self.push_str(",");
             self.print_optional_ty(result.err.as_ref(), mode);
@@ -3144,14 +3144,14 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_option(&mut self, _id: TypeId, t: &Type, _docs: &Docs) {
-        self.interface.push_str("Option<");
+        self.interface.push_str("::core::option::Option<");
         let mode = self.interface.filter_mode_preserve_top(t, self.mode);
         self.interface.print_ty(t, mode);
         self.interface.push_str(">");
     }
 
     fn anonymous_type_result(&mut self, _id: TypeId, r: &Result_, _docs: &Docs) {
-        self.interface.push_str("Result<");
+        self.interface.push_str("::core::result::Result<");
         self.interface.print_optional_ty(r.ok.as_ref(), self.mode);
         self.interface.push_str(",");
         self.interface.print_optional_ty(r.err.as_ref(), self.mode);
