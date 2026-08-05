@@ -1,0 +1,18 @@
+package the:test;
+
+interface i {
+  type %result = bool;
+  type %option = bool;
+
+  no-clobber: func(faux-result: %result, faux-option: %option) -> result<_, option<bool>>;
+}
+
+world runner {
+  import i;
+
+  export run: func();
+}
+
+world test {
+  export i;
+}
