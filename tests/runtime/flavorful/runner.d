@@ -32,7 +32,7 @@ void run() {
         );
     }
 
-    fListInVariant1(some("foo".witList), Result!(void, WitString).err("bar".witList));
+    fListInVariant1(some("foo".witList), err!void("bar".witList));
 
     {
         auto result = fListInVariant2();
@@ -73,14 +73,14 @@ void run() {
 
     {
         static immutable bool[] input1 = [true, false];
-        static immutable Result!()[] input2 = [Result!().ok, Result!().err];
+        static immutable Result!()[] input2 = [ok!void, err!void];
         static immutable MyErrno[] input3 = [MyErrno.success, MyErrno.a];
 
         auto result = listOfVariants(input1[].witList, input2[].witList, input3[].witList);
         scope(exit) result.witFree;
 
         static immutable bool[] output1 = [false, true];
-        static immutable Result!()[] output2 = [Result!().err, Result!().ok];
+        static immutable Result!()[] output2 = [err!void, ok!void];
         static immutable MyErrno[] output3 = [MyErrno.a, MyErrno.b];
         assert(result[0] == output1);
         assert(result[1] == output2);

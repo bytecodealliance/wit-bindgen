@@ -199,20 +199,20 @@ private:
 
 public:
     static if (is(T == void)) {
-        static Result ok() @safe @nogc nothrow => Result(false, Storage.init);
+        static Result makeOk() @safe @nogc nothrow => Result(false, Storage.init);
     } else {
-        static Result ok(inout(T) value) @trusted @nogc nothrow {
+        static inout(Result) makeOk(inout(T) value) @trusted @nogc nothrow {
             Storage newStorage = Storage.init;
             newStorage.value = cast(T)value;
 
-            return Result(false, cast(inout Storage)newStorage);
+            return inout Result(false, cast(inout Storage)newStorage);
         }
     }
 
     static if (is(E == void)) {
-        static Result err() @safe @nogc nothrow => Result(true, Storage.init);
+        static Result makeErr() @safe @nogc nothrow => Result(true, Storage.init);
     } else {
-        static inout(Result) err(inout(E) error) @trusted @nogc nothrow {
+        static inout(Result) makeErr(inout(E) error) @trusted @nogc nothrow {
             Storage newStorage = Storage.init;
             newStorage.error = cast(E)error;
 
@@ -242,6 +242,19 @@ public:
     }
 }
 
+auto ok(E, T)(inout T value) @safe @nogc nothrow {
+    return Result!(T, E).makeOk(value);
+}
+auto ok(E)() @safe @nogc nothrow {
+    return Result!(void, E).makeOk();
+}
+
+auto err(T, E)(inout E value) @safe @nogc nothrow {
+    return Result!(T, E).makeErr(value);
+}
+auto err(T)() @safe @nogc nothrow {
+    return Result!(T, void).makeErr();
+}
 
 void witFree(T)(scope ref T val) if (__traits(isArithmetic, T)) {
     // no-op
@@ -288,15 +301,15 @@ void witDrop(T : Result!(U, V), U, V)(scope ref T val) {
 T witClone(T : Result!(U, V), U, V)(in T val) {
     if (val.isErr) {
         static if (!is(V == void)) {
-            return T.err(val.unwrapErr.witClone);
+            return T.makeErr(val.unwrapErr.witClone);
         } else {
-            return T.err;
+            return T.makeErr;
         }
     } else {
         static if (!is(U == void)) {
-            return T.ok(val.unwrap.witClone);
+            return T.makeOk(val.unwrap.witClone);
         } else {
-            return T.ok;
+            return T.makeOk;
         }
     }
 }

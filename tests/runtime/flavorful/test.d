@@ -46,9 +46,9 @@ Result!(void, MyErrno) errnoResult() {
 
     if (first) {
         first = false;
-        return Result!(void, MyErrno).err(MyErrno.b);
+        return MyErrno.b.err!void;
     } else {
-        return Result!(void, MyErrno).ok();
+        return ok!MyErrno;
     }
 }
 
@@ -76,14 +76,14 @@ Tuple!(WitList!bool, WitList!(Result!()), WitList!MyErrno) listOfVariants(in Wit
     static immutable bool[] boolsCmp = [true, false];
     assert(bools == boolsCmp[]);
 
-    static immutable Result!()[] resultsCmp = [Result!().ok, Result!().err];
+    static immutable Result!()[] resultsCmp = [ok!void, err!void];
     assert(results == resultsCmp[]);
 
     static immutable MyErrno[] enumsCmp = [MyErrno.success, MyErrno.a];
     assert(enums == enumsCmp[]);
 
     static immutable bool[] boolsOut = [false, true];
-    static immutable Result!(void)[] resultsOut = [Result!().err, Result!().ok];
+    static immutable Result!(void)[] resultsOut = [err!void, ok!void];
     static immutable MyErrno[] enumsOut = [MyErrno.a, MyErrno.b];
     return tuple(
         boolsOut.witList,

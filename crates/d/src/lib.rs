@@ -1231,22 +1231,32 @@ impl<'a> DInterfaceGenerator<'a> {
             let lower_param_name = name.to_lower_camel_case();
             let escaped_param_name = escape_d_identifier(&lower_param_name);
 
-            let needs_in_qualifier = match param {
-                Type::ErrorContext | Type::String => true,
+            let qualifier = match param {
+                Type::ErrorContext => todo!(),
+                Type::String => "in ".to_owned(),
                 Type::Id(id) => match &self.resolve.types[*id].kind {
-                    TypeDefKind::Handle(_) | TypeDefKind::Enum(_) | TypeDefKind::Flags(_) => false,
-                    _ => true,
+                    TypeDefKind::Enum(_) | TypeDefKind::Flags(_) | TypeDefKind::Handle(_) => {
+                        "".to_owned()
+                    }
+                    TypeDefKind::Future(_) | TypeDefKind::Map(_, _) | TypeDefKind::Stream(_) => {
+                        todo!()
+                    }
+                    _ => {
+                        if matches!(self.direction, Some(Direction::Export))
+                            && self.r#gen.types.get(*id).has_resource
+                        {
+                            "scope ref ".to_owned()
+                        } else {
+                            "in ".to_owned()
+                        }
+                    }
                 },
-                _ => false,
+                _ => "".to_owned(),
             };
 
             res.arguments.push((
                 escaped_param_name.into(),
-                if needs_in_qualifier {
-                    "in ".to_owned()
-                } else {
-                    "".to_owned()
-                } + &self.type_name(&param, self.fqn),
+                qualifier + &self.type_name(&param, self.fqn),
             ));
         }
 
@@ -2721,7 +2731,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("if ({len}) deallocate ~= cast(){ptr};\n"));
                 }
 
-                results.push(format!("{list_name}({ptr}[0..{len}])"));
+                let result = format!("{list_name}({ptr}[0..{len}])");
+
+                let tmpvar = tempname("_list", self.tmp());
+                self.push_str(&format!("auto {tmpvar} = {result};\n"));
+                results.push(tmpvar);
             }
             abi::Instruction::StringLift => {
                 let tmp = self.tmp();
@@ -2741,7 +2755,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("if ({len}) deallocate ~= cast(){ptr};\n"));
                 }
 
-                results.push(format!("WitString({ptr}[0..{len}])"));
+                let result = format!("WitString({ptr}[0..{len}])");
+
+                let tmpvar = tempname("_list", self.tmp());
+                self.push_str(&format!("auto {tmpvar} = {result};\n"));
+                results.push(tmpvar);
             }
             abi::Instruction::ListLift { ty, element, .. } => {
                 let Block {
@@ -2794,7 +2812,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
 
                 let list_name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
-                results.push(format!("{list_name}({list})"));
+                let result = format!("{list_name}({list})");
+
+                let tmpvar = tempname("_witList", self.tmp());
+                self.push_str(&format!("auto {tmpvar} = {result};\n"));
+                results.push(tmpvar);
             }
 
             abi::Instruction::FixedLengthListLift { size, id, .. } => {
@@ -2900,7 +2922,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::HandleLift { ty, .. } => {
                 let name = self.r#gen.type_name(&Type::Id(*ty), self.r#gen.fqn);
-                results.push(format!("{name}({})", operands[0]));
+                let result = format!("{name}({})", operands[0]);
+
+                if matches!(self.r#gen.direction, Some(Direction::Export)) && operands[0] == "this"
+                {
+                    results.push(result);
+                } else {
+                    let tmpvar = tempname("_handle", self.tmp());
+                    self.push_str(&format!("auto {tmpvar} = {result};\n"));
+                    results.push(tmpvar);
+                }
             }
 
             abi::Instruction::TupleLower { tuple, .. } => {
@@ -3246,10 +3277,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     bool {is_err} = ({op0}) != 0;
                     if ({is_err}) {{
                         {err}
-                        {resultname} = {full_type}.err({err_value});
+                        {resultname} = {full_type}.makeErr({err_value});
                     }} else {{
                         {ok}
-                        {resultname} = {full_type}.ok({ok_value});
+                        {resultname} = {full_type}.makeOk({ok_value});
                     }}\n"
                 ));
                 results.push(resultname);
