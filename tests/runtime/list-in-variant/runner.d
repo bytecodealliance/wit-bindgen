@@ -5,7 +5,7 @@ import wit.common;
 void run() {
     const WitString[2] hw = ["hello".witList, "world".witList];
     {
-        auto result = listInOption(some(hw[].witList));
+        auto result = listInOption(hw[].witList.some);
         scope(exit) result.witFree;
 
         assert(result == "hello,world");
@@ -34,20 +34,20 @@ void run() {
 
     const WitString[3] abc = ["a".witList, "b".witList, "c".witList];
     {
-        auto result = listInResult(Result!(WitList!WitString, WitString).ok(abc[].witList));
+        auto result = listInResult(abc[].witList.ok!WitString);
         scope(exit) result.witFree;
 
         assert(result == "a,b,c");
     }
     {
-        auto result = listInResult(Result!(WitList!WitString, WitString).err("oops".witList));
+        auto result = listInResult("oops".witList.err!(WitList!WitString));
         scope(exit) result.witFree;
 
         assert(result == "err:oops");
     }
 
     const WitString[2] hw2 = ["hello".witList, "world".witList];
-    auto s1 = listInOptionWithReturn(some(hw2.witList));
+    auto s1 = listInOptionWithReturn(hw2.witList.some);
     {
         auto result = s1.count;
         scope(exit) result.witFree;
