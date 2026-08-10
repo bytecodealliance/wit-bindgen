@@ -1166,6 +1166,32 @@ impl<'a> DInterfaceGenerator<'a> {
         type_info.has_resource
     }
 
+    fn param_qualifier_for_type(&self, param_type: &Type) -> String {
+        match param_type {
+            Type::ErrorContext => todo!(),
+            Type::String => "in ".to_owned(),
+            Type::Id(id) => match &self.resolve.types[*id].kind {
+                TypeDefKind::Enum(_) | TypeDefKind::Flags(_) | TypeDefKind::Handle(_) => {
+                    "".to_owned()
+                }
+                TypeDefKind::Future(_) | TypeDefKind::Map(_, _) | TypeDefKind::Stream(_) => {
+                    todo!()
+                }
+                TypeDefKind::Type(r#type) => self.param_qualifier_for_type(r#type),
+                _ => {
+                    if matches!(self.direction, Some(Direction::Export))
+                        && self.r#gen.types.get(*id).has_resource
+                    {
+                        "scope ref ".to_owned()
+                    } else {
+                        "in ".to_owned()
+                    }
+                }
+            },
+            _ => "".to_owned(),
+        }
+    }
+
     fn get_d_signature(&mut self, func: &Function) -> DSig {
         match &func.kind {
             FunctionKind::Freestanding
@@ -1231,28 +1257,7 @@ impl<'a> DInterfaceGenerator<'a> {
             let lower_param_name = name.to_lower_camel_case();
             let escaped_param_name = escape_d_identifier(&lower_param_name);
 
-            let qualifier = match param {
-                Type::ErrorContext => todo!(),
-                Type::String => "in ".to_owned(),
-                Type::Id(id) => match &self.resolve.types[*id].kind {
-                    TypeDefKind::Enum(_) | TypeDefKind::Flags(_) | TypeDefKind::Handle(_) => {
-                        "".to_owned()
-                    }
-                    TypeDefKind::Future(_) | TypeDefKind::Map(_, _) | TypeDefKind::Stream(_) => {
-                        todo!()
-                    }
-                    _ => {
-                        if matches!(self.direction, Some(Direction::Export))
-                            && self.r#gen.types.get(*id).has_resource
-                        {
-                            "scope ref ".to_owned()
-                        } else {
-                            "in ".to_owned()
-                        }
-                    }
-                },
-                _ => "".to_owned(),
-            };
+            let qualifier = self.param_qualifier_for_type(param);
 
             res.arguments.push((
                 escaped_param_name.into(),
