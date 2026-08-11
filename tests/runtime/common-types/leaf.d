@@ -2,7 +2,7 @@ import wit.test.common.leaf;
 import wit.common;
 
 @witExport("test:common/to-test", "wrap")
-R1 wrap(in F1 flag) {
+R1 wrap(F1 flag) {
     switch (flag.bits) with (F1) {
         case a.bits:
             return R1(1, flag);

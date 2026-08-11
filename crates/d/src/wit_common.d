@@ -166,6 +166,19 @@ public:
     T unwrapOrElse(D)(scope D fallback)
     if (is(D R == return) && is(R : T) && is(D == __parameters))
     { return _present ? _value : fallback(); }
+
+    bool opEquals(in Option rhs) const {
+        if (isSome != rhs.isSome) return false;
+
+        if (isSome) return unwrap == rhs.unwrap;
+        else return true;
+    }
+
+    size_t toHash() const @safe pure nothrow
+    {
+        if (isSome) return this.unwrap.hashOf(true.hashOf);
+        return false.hashOf;
+    }
 }
 
 auto some(T)(inout T value) @safe @nogc nothrow {
@@ -239,6 +252,29 @@ public:
     static if (!is(E == void)) {
         ref inout(E) unwrapErr() inout @trusted @nogc nothrow return
         in (isErr) do { return _storage.error; }
+    }
+
+    bool opEquals(in Result rhs) const {
+        if (isErr != rhs.isErr) return false;
+
+        if (isErr) {
+            static if (!is(E == void)) return unwrapErr == rhs.unwrapErr;
+            else return true;
+        }
+
+        static if (!is(T == void)) return unwrap == rhs.unwrap;
+        else return true;
+    }
+
+    size_t toHash() const @safe pure nothrow
+    {
+        if (isErr) {
+            static if (!is(E == void)) return this.unwrapErr.hashOf(true.hashOf);
+            return true.hashOf;
+        }
+
+        static if (!is(T == void)) return this.unwrap.hashOf(false.hashOf);
+        else return false.hashOf;
     }
 }
 
