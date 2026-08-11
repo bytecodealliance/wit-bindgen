@@ -48,17 +48,16 @@ struct RustConfig {
 
 #[derive(Deserialize)]
 #[serde(tag = "reason", rename_all = "kebab-case")]
-enum CargoMessage<'a> {
+enum CargoMessage {
     CompilerArtifact {
-        #[serde(borrow)]
-        target: CargoTarget<'a>,
-        filenames: Vec<&'a str>,
+        target: CargoTarget,
+        filenames: Vec<String>,
     },
 }
 
 #[derive(Deserialize, Debug)]
-struct CargoTarget<'a> {
-    name: &'a str,
+struct CargoTarget {
+    name: String,
 }
 
 impl LanguageMethods for Rust {
@@ -173,14 +172,14 @@ path = 'lib.rs'
             };
             match msg {
                 CargoMessage::CompilerArtifact { target, filenames } => {
-                    let lib = *filenames.iter().find(|f| !f.ends_with(".rmeta")).unwrap();
+                    let lib = filenames.iter().find(|f| !f.ends_with(".rmeta")).unwrap();
                     if target.name == "futures" {
-                        futures_rlib = Some(lib);
+                        futures_rlib = Some(lib.clone());
                     } else if target.name == "wit_bindgen" {
-                        wit_bindgen_rlib = Some(lib);
+                        wit_bindgen_rlib = Some(lib.clone());
                     }
-                    let dir = Path::new(lib).parent().unwrap();
-                    if deps_seen.insert(dir) {
+                    let dir = Path::new(&lib).parent().unwrap();
+                    if deps_seen.insert(dir.to_path_buf()) {
                         wit_bindgen_deps.push(dir.to_path_buf());
                     }
                 }
