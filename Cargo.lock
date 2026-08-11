@@ -1528,6 +1528,7 @@ dependencies = [
  "log",
  "regex",
  "serde",
+ "serde_json",
  "toml",
  "wac-graph",
  "wac-parser",

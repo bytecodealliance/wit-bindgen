@@ -190,7 +190,8 @@ func main() {}
                 .arg(verify.artifacts_dir.join("tmp.wasm"))
                 .arg("-buildmode=c-shared")
                 .arg("-ldflags=-checklinkname=0"),
-        )
+        )?;
+        Ok(())
     }
 }
 

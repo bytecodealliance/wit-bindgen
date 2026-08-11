@@ -1049,7 +1049,7 @@ impl Runner {
 
     /// Helper to execute an external process and generate a helpful error
     /// message on failure.
-    fn run_command(&self, cmd: &mut Command) -> Result<()> {
+    fn run_command(&self, cmd: &mut Command) -> Result<String> {
         if self.opts.inherit_stderr {
             cmd.stderr(Stdio::inherit());
         }
@@ -1057,7 +1057,7 @@ impl Runner {
             .output()
             .with_context(|| format!("failed to spawn {cmd:?}"))?;
         if output.status.success() {
-            return Ok(());
+            return Ok(String::from_utf8_lossy(&output.stdout).into());
         }
 
         let mut error = format!(
@@ -1256,7 +1256,8 @@ trait LanguageMethods {
             cmd.arg(arg);
         }
 
-        runner.run_command(&mut cmd)
+        runner.run_command(&mut cmd)?;
+        Ok(())
     }
 
     /// Returns the default set of arguments that will be passed to
