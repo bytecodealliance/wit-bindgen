@@ -45,12 +45,24 @@ fn remote_pkg(name: &str) -> String {
 }
 
 /// The version of github.com/bytecodealliance/go-pkg that's being used
-const REMOTE_PKG_VERSION: &str = "v0.2.2";
+const REMOTE_PKG_VERSION: &str = "v0.2.3";
 
 /// If a user specifies the `pkg_name` flag, the required version for the
 /// shared remote package isn't recorded. This enables downstream users to retrieve the version programmatically.
 pub fn remote_pkg_version() -> String {
     format!("go.bytecodealliance.org/pkg {REMOTE_PKG_VERSION}")
+}
+
+/// Appends `_` to `name` if it collides with a Go keyword.
+/// Source: https://go.dev/ref/spec#Keywords
+fn escape_go_keyword(name: String) -> String {
+    match name.as_str() {
+        "break" | "case" | "chan" | "const" | "continue" | "default" | "defer" | "else"
+        | "fallthrough" | "for" | "func" | "go" | "goto" | "if" | "import" | "interface"
+        | "map" | "package" | "range" | "return" | "select" | "struct" | "switch" | "type"
+        | "var" => format!("{name}_"),
+        _ => name,
+    }
 }
 
 #[derive(Default, Debug, Copy, Clone)]
@@ -225,6 +237,8 @@ struct Go {
     types: HashSet<(String, TypeId)>,
     resources: HashMap<TypeId, Direction>,
     futures_and_streams: HashMap<(TypeId, bool), Option<WorldKey>>,
+    // Tracks which `future`/`stream` declarations have already been generated.
+    generated_futures_and_streams: HashSet<FutureStreamDedup>,
 }
 
 impl Go {
@@ -571,16 +585,16 @@ func wasm_{kind}_drop_writable_{snake}(handle int32)
 {lower}
 
 var wasm_{kind}_vtable_{snake} = witTypes.{upper_kind}Vtable[{payload}]{{
-	{size},
-	{align},
-	wasm_{kind}_read_{snake},
-	wasm_{kind}_write_{snake},
-	nil,
-	nil,
-	wasm_{kind}_drop_readable_{snake},
-	wasm_{kind}_drop_writable_{snake},
-	{lift_name},
-	{lower_name},
+	Size: {size},
+	Align: {align},
+	Read: wasm_{kind}_read_{snake},
+	Write: wasm_{kind}_write_{snake},
+	CancelRead: nil,
+	CancelWrite: nil,
+	DropReadable: wasm_{kind}_drop_readable_{snake},
+	DropWritable: wasm_{kind}_drop_writable_{snake},
+	Lift: {lift_name},
+	Lower: {lower_name},
 }}
 
 func Make{upper_kind}{camel}() (*witTypes.{upper_kind}Writer[{payload}], *witTypes.{upper_kind}Reader[{payload}]) {{
@@ -1062,7 +1076,7 @@ impl Go {
                 func.params
                     .iter()
                     .skip(if has_self { 1 } else { 0 })
-                    .map(|Param { name, .. }| name.to_lower_camel_case()),
+                    .map(|Param { name, .. }| escape_go_keyword(name.to_lower_camel_case())),
             )
             .collect::<Vec<_>>();
 
@@ -1422,7 +1436,7 @@ func wasm_export_{name}({params}) {results} {{
             .iter()
             .skip(if has_self { 1 } else { 0 })
             .map(|Param { name, ty, .. }| {
-                let name = name.to_lower_camel_case();
+                let name = escape_go_keyword(name.to_lower_camel_case());
                 let ty = self.type_name(resolve, *ty, interface, in_import, imports);
                 format!("{prefix}{name} {ty}")
             })
@@ -1488,6 +1502,36 @@ func wasm_export_{name}({params}) {results} {{
             if let hash_map::Entry::Vacant(e) = self.futures_and_streams.entry((ty, exported)) {
                 e.insert(interface.cloned());
 
+                let name = self.go_package_name(resolve, interface);
+
+                // Distinct `future`/`stream` types may share a
+                // payload type (e.g. when one payload is a type alias of the
+                // other, or when two anonymous payloads are structurally
+                // identical).  Since the names of the generated declarations
+                // are derived from the payload type, generating code for each
+                // of them would produce duplicate declarations, so dedupe on
+                // the mangled payload name instead.
+                let kind = match &resolve.types[ty].kind {
+                    TypeDefKind::Future(_) => "future",
+                    TypeDefKind::Stream(_) => "stream",
+                    _ => unreachable!(),
+                };
+                let snake = payload_type
+                    .map(|ty| self.mangle_name(resolve, ty, interface))
+                    .unwrap_or_else(|| "unit".into());
+
+                if !self
+                    .generated_futures_and_streams
+                    .insert(FutureStreamDedup {
+                        in_import,
+                        is_exported: exported,
+                        pkg_name: name.clone(),
+                        mangled_name: format!("{kind}_{snake}"),
+                    })
+                {
+                    continue;
+                }
+
                 let data = self.future_or_stream(
                     resolve,
                     ty,
@@ -1498,7 +1542,6 @@ func wasm_export_{name}({params}) {results} {{
                     &func.name,
                 );
 
-                let name = self.go_package_name(resolve, interface);
                 if in_import || !exported {
                     &mut self.interfaces
                 } else {
@@ -1525,7 +1568,7 @@ func wasm_export_{name}({params}) {results} {{
     }
 
     fn go_package_name(&self, resolve: &Resolve, interface: Option<&WorldKey>) -> String {
-        match interface {
+        let name = match interface {
             Some(WorldKey::Name(name)) => name.to_snake_case(),
             Some(WorldKey::Interface(id)) => {
                 let interface = &resolve.interfaces[*id];
@@ -1550,7 +1593,9 @@ func wasm_export_{name}({params}) {results} {{
                 format!("{namespace}_{package}_{version}{interface}")
             }
             None => "wit_world".into(),
-        }
+        };
+
+        escape_go_keyword(name)
     }
 
     fn func_name(
@@ -1897,11 +1942,16 @@ for index := 0; index < int({length}); index++ {{
                         self.generator.tuples.insert(count);
                         self.imports.insert(remote_pkg("types"));
 
-                        let results = (0..count)
+                        let names = (0..count)
                             .map(|_| self.locals.tmp("result"))
+                            .collect::<Vec<_>>();
+                        let bindings = names.join(", ");
+                        let fields = names
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, name)| format!("F{idx}: {name}"))
                             .collect::<Vec<_>>()
                             .join(", ");
-
                         let types = tuple
                             .types
                             .iter()
@@ -1911,8 +1961,8 @@ for index := 0; index < int({length}); index++ {{
 
                         uwriteln!(
                             self.src,
-                            "{results} := {call}
-{result} := witTypes.Tuple{count}[{types}]{{{results}}}"
+                            "{bindings} := {call}
+{result} := witTypes.Tuple{count}[{types}]{{{fields}}}"
                         );
                     } else {
                         uwriteln!(self.src, "{result} := {call}");
@@ -2088,7 +2138,12 @@ if {value} {{
                     .map(|&ty| self.type_name(resolve, ty))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let fields = operands.join(", ");
+                let fields = operands
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, val)| format!("F{idx}: {val}"))
+                    .collect::<Vec<String>>()
+                    .join(", ");
                 self.imports.insert(remote_pkg("types"));
                 results.push(format!("witTypes.Tuple{count}[{types}]{{{fields}}}"));
             }
@@ -2108,9 +2163,15 @@ if {value} {{
                     results.push(format!("({op}).{field}"));
                 }
             }
-            Instruction::RecordLift { ty, .. } => {
+            Instruction::RecordLift { record, ty, .. } => {
                 let name = self.type_name(resolve, Type::Id(*ty));
-                let fields = operands.join(", ");
+                let fields = record
+                    .fields
+                    .iter()
+                    .zip(operands.iter())
+                    .map(|(field, op)| format!("{}: {op}", field.name.to_upper_camel_case()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 results.push(format!("{name}{{{fields}}}"));
             }
             Instruction::OptionLower {
@@ -3285,4 +3346,12 @@ fn maybe_gofmt<'a>(format: Format, code: &'a [u8]) -> Cow<'a, [u8]> {
 
         Cow::Borrowed(code)
     })
+}
+
+#[derive(Eq, PartialEq, Hash)]
+struct FutureStreamDedup {
+    in_import: bool,
+    is_exported: bool,
+    pkg_name: String,
+    mangled_name: String,
 }

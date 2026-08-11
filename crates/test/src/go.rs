@@ -180,6 +180,16 @@ func main() {}
     fn verify(&self, runner: &Runner, verify: &Verify<'_>) -> Result<()> {
         replace_bindings_go_mod(runner, verify.bindings_dir)?;
 
+        // `go vet`
+        runner.run_command(
+            Command::new("go")
+                .current_dir(&verify.bindings_dir)
+                .arg("vet")
+                .arg("-unsafeptr=false")
+                .arg("./..."),
+        )?;
+
+        // `go build`
         runner.run_command(
             Command::new("go")
                 .current_dir(verify.bindings_dir)
