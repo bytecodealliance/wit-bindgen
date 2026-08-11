@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -43,6 +44,21 @@ struct RustConfig {
     /// main crate.
     #[serde(default)]
     externs: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "reason", rename_all = "kebab-case")]
+enum CargoMessage<'a> {
+    CompilerArtifact {
+        #[serde(borrow)]
+        target: CargoTarget<'a>,
+        filenames: Vec<&'a str>,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+struct CargoTarget<'a> {
+    name: &'a str,
 }
 
 impl LanguageMethods for Rust {
@@ -136,30 +152,45 @@ path = 'lib.rs'
         super::write_if_different(&wit_bindgen.join("lib.rs"), "")?;
 
         println!("Building `wit-bindgen` from crates.io...");
-        runner.run_command(
+        let json = runner.run_command(
             Command::new("cargo")
                 .current_dir(&wit_bindgen)
                 .arg("build")
                 .arg("-pwit-bindgen")
                 .arg("-pfutures")
                 .arg("--target")
-                .arg(&opts.rust_target),
+                .arg(&opts.rust_target)
+                .arg("--message-format=json"),
         )?;
+        let mut wit_bindgen_rlib = None;
+        let mut futures_rlib = None;
+        let mut wit_bindgen_deps = Vec::new();
+        let mut deps_seen = HashSet::new();
 
-        let target_out_dir = wit_bindgen
-            .join("target")
-            .join(&opts.rust_target)
-            .join("debug");
-        let host_out_dir = wit_bindgen.join("target/debug");
-        let wit_bindgen_rlib = target_out_dir.join("libwit_bindgen.rlib");
-        let futures_rlib = target_out_dir.join("libfutures.rlib");
-        assert!(wit_bindgen_rlib.exists());
-        assert!(futures_rlib.exists());
+        for line in json.lines() {
+            let Ok(msg) = serde_json::from_str(line) else {
+                continue;
+            };
+            match msg {
+                CargoMessage::CompilerArtifact { target, filenames } => {
+                    let lib = *filenames.iter().find(|f| !f.ends_with(".rmeta")).unwrap();
+                    if target.name == "futures" {
+                        futures_rlib = Some(lib);
+                    } else if target.name == "wit_bindgen" {
+                        wit_bindgen_rlib = Some(lib);
+                    }
+                    let dir = Path::new(lib).parent().unwrap();
+                    if deps_seen.insert(dir) {
+                        wit_bindgen_deps.push(dir.to_path_buf());
+                    }
+                }
+            }
+        }
 
         runner.rust_state = Some(State {
-            wit_bindgen_rlib,
-            futures_rlib,
-            wit_bindgen_deps: vec![target_out_dir.join("deps"), host_out_dir.join("deps")],
+            wit_bindgen_rlib: wit_bindgen_rlib.unwrap().into(),
+            futures_rlib: futures_rlib.unwrap().into(),
+            wit_bindgen_deps,
         });
         Ok(())
     }

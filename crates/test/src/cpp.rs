@@ -207,6 +207,7 @@ impl LanguageMethods for Cpp {
         .arg("-c")
         .arg("-o")
         .arg(verify.artifacts_dir.join("tmp.o"));
-        runner.run_command(&mut cmd)
+        runner.run_command(&mut cmd)?;
+        Ok(())
     }
 }
