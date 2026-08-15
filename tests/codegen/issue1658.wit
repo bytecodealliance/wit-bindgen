@@ -1,0 +1,15 @@
+package foo:bar;
+
+interface my-interface {
+  record options {
+    name: string,
+  }
+
+  resource my-resource {
+    constructor(o: options);
+  }
+}
+
+world my-world {
+  export my-interface;
+}
