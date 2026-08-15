@@ -2,7 +2,7 @@ use anyhow::Result;
 use core::panic;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Write,
     mem,
     ops::Deref,
@@ -11,7 +11,7 @@ use wit_bindgen_core::{
     AsyncFilterSet, Direction, Files, InterfaceGenerator as CoreInterfaceGenerator, Ns, Source,
     WorldGenerator,
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
-    uwrite, uwriteln,
+    dealias, uwrite, uwriteln,
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
         LiftLowerAbi, LiveTypes, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic,
@@ -30,9 +30,9 @@ mod ffi;
 mod pkg;
 
 // Assumptions:
-// - Data: u8 -> Byte, s8 | s16 | s32 -> Int, u16 | u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
+// - Data: u8 -> Byte, s8 | s32 -> Int, s16 -> Int16, u16 -> UInt16, u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 -> Float, f64 -> Double, address -> Int
 // - Encoding: UTF16
-// - Lift/Lower list<T>: T == Int/UInt/Int64/UInt64/Float/Double -> FixedArray[T], T == Byte -> Bytes, T == Char -> String
+// - Lift/Lower list<T>: representation-compatible elements -> FixedArray[T], otherwise Array[T]
 // Organization:
 // - one package per interface (export and import are treated as different interfaces)
 // - ffi utils are under `./ffi`, and the project entrance (package as link target) is under `./gen`
@@ -607,9 +607,16 @@ impl InterfaceGenerator<'_> {
         let endpoint_plan = self.import_async_function_plan(self.interface, func);
         let wasm_sig = self.resolve.wasm_signature(variant, func);
         let mbt_sig = self.world_gen.pkg_resolver.mbt_sig(self.name, func, false);
-        let (src, needs_cleanup_list, endpoint_state) = if async_plan.is_async() {
+        let (src, needs_cleanup_list, endpoint_state, direct_canonical_wasm_params) = if async_plan
+            .is_async()
+        {
             let body = self.generate_async_import_body(&endpoint_plan, func, &mbt_sig, &wasm_sig);
-            (body.src, body.needs_cleanup_list, body.state)
+            (
+                body.src,
+                body.needs_cleanup_list,
+                body.state,
+                BTreeMap::new(),
+            )
         } else {
             let mut bindgen = FunctionBindgen::new(
                 self,
@@ -618,6 +625,7 @@ impl InterfaceGenerator<'_> {
                     .map(|Param { name, .. }| name.to_moonbit_ident())
                     .collect(),
             )
+            .with_direct_list_borrows(!wasm_sig.indirect_params)
             .with_async_state(endpoint_plan.state());
             if endpoint_plan.has_endpoints() {
                 bindgen = bindgen.with_sync_import_commit(
@@ -633,7 +641,12 @@ impl InterfaceGenerator<'_> {
                 &mut bindgen,
                 false,
             );
-            (bindgen.src, bindgen.needs_cleanup_list, bindgen.async_state)
+            (
+                bindgen.src,
+                bindgen.needs_cleanup_list,
+                bindgen.async_state,
+                bindgen.direct_canonical_wasm_params,
+            )
         };
 
         let cleanup_list = if needs_cleanup_list {
@@ -658,14 +671,33 @@ impl InterfaceGenerator<'_> {
             .params
             .iter()
             .enumerate()
-            .map(|(i, param)| format!("p{i} : {}", wasm_type(*param)))
+            .map(|(i, param)| {
+                if let Some(element) = direct_canonical_wasm_params.get(&i) {
+                    let element = self.world_gen.pkg_resolver.type_name(self.name, element);
+                    format!("p{i} : FixedArray[{element}]")
+                } else {
+                    format!("p{i} : {}", wasm_type(*param))
+                }
+            })
             .collect::<Vec<_>>()
             .join(", ");
+        let direct_borrows = direct_canonical_wasm_params
+            .keys()
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>();
+        let direct_borrow_attributes = if direct_borrows.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "#unsafe_skip_stub_check\n#borrow({})\n",
+                direct_borrows.join(", ")
+            )
+        };
         let ffi_import_name = format!("wasmImport{}", func.name.to_upper_camel_case());
         uwriteln!(
             self.ffi,
             r#"
-            fn {ffi_import_name}({params}) {result_type} = "{import_module}" "{import_name}"
+            {direct_borrow_attributes}fn {ffi_import_name}({params}) {result_type} = "{import_module}" "{import_name}"
             "#
         );
 
@@ -1415,6 +1447,9 @@ struct FunctionBindgen<'a, 'b> {
     sync_endpoint_drop: bool,
     commit_endpoints: bool,
     sync_import_argument_types: Option<Vec<Type>>,
+    direct_list_borrows: bool,
+    direct_list_borrow_candidates: HashMap<String, (String, Type)>,
+    direct_canonical_wasm_params: BTreeMap<usize, Type>,
     async_state: AsyncFunctionState,
 }
 
@@ -1445,8 +1480,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             sync_endpoint_drop: false,
             commit_endpoints: false,
             sync_import_argument_types: None,
+            direct_list_borrows: false,
+            direct_list_borrow_candidates: HashMap::new(),
+            direct_canonical_wasm_params: BTreeMap::new(),
             async_state: AsyncFunctionState::default(),
         }
+    }
+
+    fn with_direct_list_borrows(mut self, enabled: bool) -> Self {
+        self.direct_list_borrows = enabled;
+        self
     }
 
     fn lower_variant(
@@ -1640,7 +1683,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
     fn emit(
         &mut self,
-        _resolve: &Resolve,
+        resolve: &Resolve,
         inst: &Instruction<'_>,
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
@@ -1683,9 +1726,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32FromChar => results.push(format!("({}).to_int()", operands[0])),
 
             Instruction::I32FromU8 => results.push(format!("({}).to_int()", operands[0])),
-            Instruction::I32FromU16 => {
-                results.push(format!("({}).reinterpret_as_int()", operands[0]))
-            }
+            Instruction::I32FromU16 => results.push(format!("({}).to_int()", operands[0])),
             Instruction::U8FromI32 => results.push(format!("({}).to_byte()", operands[0])),
 
             Instruction::I32FromS8 => {
@@ -1693,15 +1734,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("mbt_ffi_extend8({})", operands[0]))
             }
             Instruction::S8FromI32 => results.push(format!("({} - 0x100)", operands[0])),
-            Instruction::S16FromI32 => results.push(format!("({} - 0x10000)", operands[0])),
-            Instruction::I32FromS16 => {
-                self.use_ffi(ffi::EXTEND16);
-                results.push(format!("mbt_ffi_extend16({})", operands[0]))
-            }
-            Instruction::U16FromI32 => results.push(format!(
-                "({}.land(0xFFFF).reinterpret_as_uint())",
-                operands[0]
-            )),
+            Instruction::S16FromI32 => results.push(format!("Int16::from_int({})", operands[0])),
+            Instruction::I32FromS16 => results.push(format!("({}).to_int()", operands[0])),
+            Instruction::U16FromI32 => results.push(format!("({}).to_uint16()", operands[0])),
             Instruction::U32FromI32 => {
                 results.push(format!("({}).reinterpret_as_uint()", operands[0]))
             }
@@ -2006,128 +2041,173 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 operands[0]
             )),
 
-            Instruction::ListCanonLower { element, realloc } => match element {
-                Type::U8 => {
-                    let op = &operands[0];
-                    let ptr = self.locals.tmp("ptr");
-                    self.use_ffi(ffi::BYTES2PTR);
-                    uwriteln!(
-                        self.src,
-                        "
+            Instruction::ListCanonLower { element, realloc } => {
+                let original_element: &Type = element;
+                let element = match original_element {
+                    Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
+                        TypeDefKind::Type(element) => element,
+                        _ => unreachable!("unsupported list element type"),
+                    },
+                    _ => original_element,
+                };
+                let op = &operands[0];
+                // A canonical list can be passed as a typed borrow only when its
+                // pointer and length flow directly to the Wasm call. Lists lowered
+                // inside blocks are merged into variants or written into enclosing
+                // list storage, so those still need their integer pointer.
+                if self.direct_list_borrows && realloc.is_none() && self.block_storage.is_empty() {
+                    let length = format!("{op}.length()");
+                    self.direct_list_borrow_candidates
+                        .insert(op.clone(), (length.clone(), *original_element));
+                    results.push(op.clone());
+                    results.push(length);
+                    return;
+                }
+                match element {
+                    Type::U8 => {
+                        let ptr = self.locals.tmp("ptr");
+                        self.use_ffi(ffi::BYTES2PTR);
+                        uwriteln!(
+                            self.src,
+                            "
                         let {ptr} = mbt_ffi_bytes2ptr({op})
                         ",
-                    );
-                    results.push(ptr.clone());
-                    results.push(format!("{op}.length()"));
-                    if realloc.is_none() {
-                        self.cleanup.push(Cleanup { address: ptr });
+                        );
+                        results.push(ptr.clone());
+                        results.push(format!("{op}.length()"));
+                        if realloc.is_none() {
+                            self.cleanup.push(Cleanup { address: ptr });
+                        }
                     }
-                }
-                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
-                    let op = &operands[0];
-                    let ptr = self.locals.tmp("ptr");
-                    let ty = match element {
-                        Type::U32 => {
-                            self.use_ffi(ffi::UINT_ARRAY2PTR);
-                            "uint"
-                        }
-                        Type::U64 => {
-                            self.use_ffi(ffi::UINT64_ARRAY2PTR);
-                            "uint64"
-                        }
-                        Type::S32 => {
-                            self.use_ffi(ffi::INT_ARRAY2PTR);
-                            "int"
-                        }
-                        Type::S64 => {
-                            self.use_ffi(ffi::INT64_ARRAY2PTR);
-                            "int64"
-                        }
-                        Type::F32 => {
-                            self.use_ffi(ffi::FLOAT_ARRAY2PTR);
-                            "float"
-                        }
-                        Type::F64 => {
-                            self.use_ffi(ffi::DOUBLE_ARRAY2PTR);
-                            "double"
-                        }
-                        _ => unreachable!(),
-                    };
+                    Type::Bool
+                    | Type::U16
+                    | Type::U32
+                    | Type::U64
+                    | Type::S16
+                    | Type::S32
+                    | Type::S64
+                    | Type::F32
+                    | Type::F64 => {
+                        let ptr = self.locals.tmp("ptr");
+                        let (owned_ffi, ty) = match element {
+                            Type::Bool => (ffi::BOOL_ARRAY2PTR, "bool"),
+                            Type::U16 => (ffi::UINT16_ARRAY2PTR, "uint16"),
+                            Type::U32 => (ffi::UINT_ARRAY2PTR, "uint"),
+                            Type::U64 => (ffi::UINT64_ARRAY2PTR, "uint64"),
+                            Type::S16 => (ffi::INT16_ARRAY2PTR, "int16"),
+                            Type::S32 => (ffi::INT_ARRAY2PTR, "int"),
+                            Type::S64 => (ffi::INT64_ARRAY2PTR, "int64"),
+                            Type::F32 => (ffi::FLOAT_ARRAY2PTR, "float"),
+                            Type::F64 => (ffi::DOUBLE_ARRAY2PTR, "double"),
+                            _ => unreachable!(),
+                        };
+                        self.use_ffi(owned_ffi);
 
-                    uwriteln!(
-                        self.src,
-                        "
+                        uwriteln!(
+                            self.src,
+                            "
                         let {ptr} = mbt_ffi_{ty}_array2ptr({op})
                         ",
-                    );
-                    results.push(ptr.clone());
-                    results.push(format!("{op}.length()"));
-                    if realloc.is_none() {
-                        self.cleanup.push(Cleanup { address: ptr });
+                        );
+                        results.push(ptr.clone());
+                        results.push(format!("{op}.length()"));
+                        if realloc.is_none() {
+                            self.cleanup.push(Cleanup { address: ptr });
+                        }
                     }
+                    _ => unreachable!("unsupported list element type"),
                 }
-                _ => unreachable!("unsupported list element type"),
-            },
+            }
 
-            Instruction::ListCanonLift { element, .. } => match element {
-                Type::U8 => {
-                    let result = self.locals.tmp("result");
-                    let address = &operands[0];
-                    let length = &operands[1];
-                    self.use_ffi(ffi::PTR2BYTES);
-                    uwrite!(
-                        self.src,
-                        "
+            Instruction::ListCanonLift { element, .. } => {
+                let element: &Type = element;
+                let element = match element {
+                    Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
+                        TypeDefKind::Type(element) => element,
+                        _ => unreachable!("unsupported list element type"),
+                    },
+                    _ => element,
+                };
+                match element {
+                    Type::U8 => {
+                        let result = self.locals.tmp("result");
+                        let address = &operands[0];
+                        let length = &operands[1];
+                        self.use_ffi(ffi::PTR2BYTES);
+                        uwrite!(
+                            self.src,
+                            "
                         let {result} = mbt_ffi_ptr2bytes({address}, {length})
                         ",
-                    );
+                        );
 
-                    results.push(result);
-                }
-                Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64 => {
-                    let ty = match element {
-                        Type::U32 => {
-                            self.use_ffi(ffi::PTR2UINT_ARRAY);
-                            "uint"
-                        }
-                        Type::U64 => {
-                            self.use_ffi(ffi::PTR2UINT64_ARRAY);
-                            "uint64"
-                        }
-                        Type::S32 => {
-                            self.use_ffi(ffi::PTR2INT_ARRAY);
-                            "int"
-                        }
-                        Type::S64 => {
-                            self.use_ffi(ffi::PTR2INT64_ARRAY);
-                            "int64"
-                        }
-                        Type::F32 => {
-                            self.use_ffi(ffi::PTR2FLOAT_ARRAY);
-                            "float"
-                        }
-                        Type::F64 => {
-                            self.use_ffi(ffi::PTR2DOUBLE_ARRAY);
-                            "double"
-                        }
-                        _ => unreachable!(),
-                    };
+                        results.push(result);
+                    }
+                    Type::Bool
+                    | Type::U16
+                    | Type::U32
+                    | Type::U64
+                    | Type::S16
+                    | Type::S32
+                    | Type::S64
+                    | Type::F32
+                    | Type::F64 => {
+                        let ty = match element {
+                            Type::Bool => {
+                                self.use_ffi(ffi::PTR2BOOL_ARRAY);
+                                "bool"
+                            }
+                            Type::U16 => {
+                                self.use_ffi(ffi::PTR2UINT16_ARRAY);
+                                "uint16"
+                            }
+                            Type::U32 => {
+                                self.use_ffi(ffi::PTR2UINT_ARRAY);
+                                "uint"
+                            }
+                            Type::U64 => {
+                                self.use_ffi(ffi::PTR2UINT64_ARRAY);
+                                "uint64"
+                            }
+                            Type::S16 => {
+                                self.use_ffi(ffi::PTR2INT16_ARRAY);
+                                "int16"
+                            }
+                            Type::S32 => {
+                                self.use_ffi(ffi::PTR2INT_ARRAY);
+                                "int"
+                            }
+                            Type::S64 => {
+                                self.use_ffi(ffi::PTR2INT64_ARRAY);
+                                "int64"
+                            }
+                            Type::F32 => {
+                                self.use_ffi(ffi::PTR2FLOAT_ARRAY);
+                                "float"
+                            }
+                            Type::F64 => {
+                                self.use_ffi(ffi::PTR2DOUBLE_ARRAY);
+                                "double"
+                            }
+                            _ => unreachable!(),
+                        };
 
-                    let result = self.locals.tmp("result");
-                    let address = &operands[0];
-                    let length = &operands[1];
+                        let result = self.locals.tmp("result");
+                        let address = &operands[0];
+                        let length = &operands[1];
 
-                    uwrite!(
-                        self.src,
-                        "
+                        uwrite!(
+                            self.src,
+                            "
                         let {result} = mbt_ffi_ptr2{ty}_array({address}, {length})
                         ",
-                    );
+                        );
 
-                    results.push(result);
+                        results.push(result);
+                    }
+                    _ => unreachable!("unsupported list element type"),
                 }
-                _ => unreachable!("unsupported list element type"),
-            },
+            }
 
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
@@ -2269,6 +2349,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
 
                 let func_name = name.to_upper_camel_case();
+                for (index, operand) in operands.iter().enumerate() {
+                    if let Some((length, element)) = self.direct_list_borrow_candidates.get(operand)
+                    {
+                        assert_eq!(operands.get(index + 1), Some(length));
+                        self.direct_canonical_wasm_params.insert(index, *element);
+                    }
+                }
                 let call_operands = if self.sync_import_argument_types.is_some() {
                     operands
                         .iter()
@@ -2894,10 +2981,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         &self.interface_gen.world_gen.sizes
     }
 
-    fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
+    fn is_list_canonical(&self, resolve: &Resolve, element: &Type) -> bool {
+        let element = match element {
+            Type::Id(id) => match &resolve.types[dealias(resolve, *id)].kind {
+                TypeDefKind::Type(element) => element,
+                _ => return false,
+            },
+            element => element,
+        };
         matches!(
             element,
-            Type::U8 | Type::U32 | Type::U64 | Type::S32 | Type::S64 | Type::F32 | Type::F64
+            Type::Bool
+                | Type::U8
+                | Type::U16
+                | Type::U32
+                | Type::U64
+                | Type::S16
+                | Type::S32
+                | Type::S64
+                | Type::F32
+                | Type::F64
         )
     }
 }
@@ -3513,6 +3616,185 @@ mod tests {
         assert!(sink.contains("FixedArray::from_array(data[:length])"));
         assert!(sink.contains("data[:length].to_fixedarray()"));
         assert!(!sink.contains("FixedArray::makei"));
+    }
+
+    #[test]
+    fn sixteen_bit_integers_use_width_preserving_moonbit_types() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                roundtrip: func(unsigned: u16, signed: s16) -> tuple<u16, s16>;
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+        let top = file(&files, "interface/a/b/api/top.mbt");
+
+        assert!(
+            top.contains("pub fn roundtrip(unsigned : UInt16, signed : Int16) -> (UInt16, Int16)"),
+            "u16 and s16 must preserve their public element widths: {top}"
+        );
+    }
+
+    #[test]
+    fn imported_canonical_lists_borrow_backing_storage_until_the_call_returns() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                type unsigned-short = u16;
+                type signed-short = s16;
+                record envelope {
+                    words: list<u32>,
+                }
+                send: func(
+                    bytes: list<u8>,
+                    unsigned-shorts: list<unsigned-short>,
+                    signed-shorts: list<signed-short>,
+                    words: list<u32>,
+                    envelope: envelope,
+                    booleans: list<bool>,
+                );
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+        let top = file(&files, "interface/a/b/api/top.mbt");
+        let ffi = file(&files, "interface/a/b/api/ffi.mbt");
+
+        assert!(
+            top.contains(
+                "wasmImportSend(bytes, bytes.length(), unsigned_shorts, unsigned_shorts.length(), \
+                 signed_shorts, signed_shorts.length(), words, words.length(), \
+                 (envelope).words, (envelope).words.length(), booleans, booleans.length())"
+            ),
+            "direct canonical lists must retain their canonical pointer/length operands: {top}"
+        );
+        assert!(
+            ffi.contains(
+                "#unsafe_skip_stub_check\n#borrow(p0, p2, p4, p6, p8, p10)\nfn wasmImportSend(\
+                 p0 : FixedArray[Byte], p1 : Int, \
+                 p2 : FixedArray[UInt16], p3 : Int, \
+                 p4 : FixedArray[Int16], p5 : Int, \
+                 p6 : FixedArray[UInt], p7 : Int, \
+                 p8 : FixedArray[UInt], p9 : Int, \
+                 p10 : FixedArray[Bool], p11 : Int)"
+            ),
+            "the imported FFI must borrow arrays while retaining explicit lengths: {ffi}"
+        );
+        assert!(
+            !top.contains("mbt_ffi_free(ptr)\n"),
+            "borrowed canonical backing storage must not be freed after the call: {top}"
+        );
+        assert!(
+            !top.contains("mbt_ffi_malloc((booleans).length() * 1)")
+                && !top.contains("for index = 0; index < (booleans).length();"),
+            "boolean arrays have canonical byte storage and must be borrowed directly: {top}"
+        );
+    }
+
+    #[test]
+    fn imported_noncanonical_lists_retain_generic_lowering() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                send: func(strings: list<string>);
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+        let top = file(&files, "interface/a/b/api/top.mbt");
+        let ffi = file(&files, "interface/a/b/api/ffi.mbt");
+
+        assert!(
+            top.contains("pub fn send(strings : Array[String]) -> Unit")
+                && top.contains("mbt_ffi_malloc((strings).length() * 8)")
+                && top.contains("for index = 0; index < (strings).length();"),
+            "non-canonical lists must retain generic lowering: {top}"
+        );
+        assert!(
+            ffi.contains("fn wasmImportSend(p0 : Int, p1 : Int)") && !ffi.contains("#borrow"),
+            "non-canonical list parameters must retain the raw canonical ABI: {ffi}"
+        );
+    }
+
+    #[test]
+    fn imported_conditional_canonical_lists_retain_pointer_lowering() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                variant optional-bytes {
+                    none,
+                    some(list<u8>),
+                }
+                send: func(bytes: optional-bytes);
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+        let top = file(&files, "interface/a/b/api/top.mbt");
+        let ffi = file(&files, "interface/a/b/api/ffi.mbt");
+
+        assert!(
+            top.contains("mbt_ffi_bytes2ptr"),
+            "conditional list pointers must be lowered before merging variant cases: {top}"
+        );
+        assert!(
+            !ffi.contains("#borrow"),
+            "a conditionally occupied pointer parameter cannot be a typed borrow: {ffi}"
+        );
+    }
+
+    #[test]
+    fn imported_indirect_canonical_lists_retain_pointer_lowering() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                send: func(
+                    a: list<u8>,
+                    b: list<u8>,
+                    c: list<u8>,
+                    d: list<u8>,
+                    e: list<u8>,
+                    f: list<u8>,
+                    g: list<u8>,
+                    h: list<u8>,
+                    i: list<u8>,
+                );
+            }
+
+            world client { import api; }
+            "#,
+            "client",
+        );
+        let top = file(&files, "interface/a/b/api/top.mbt");
+        let ffi = file(&files, "interface/a/b/api/ffi.mbt");
+
+        assert!(
+            top.contains("mbt_ffi_bytes2ptr(a)"),
+            "lists stored in an indirect argument area still need integer pointers: {top}"
+        );
+        assert!(
+            ffi.contains("fn wasmImportSend(p0 : Int)") && !ffi.contains("#borrow"),
+            "an indirect import receives only its argument-area pointer: {ffi}"
+        );
     }
 
     #[test]

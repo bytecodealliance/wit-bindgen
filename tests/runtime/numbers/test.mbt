@@ -12,12 +12,12 @@ pub fn roundtrip_s8(a : Int) -> Int {
 }
 
 ///|
-pub fn roundtrip_u16(a : UInt) -> UInt {
+pub fn roundtrip_u16(a : UInt16) -> UInt16 {
   a
 }
 
 ///|
-pub fn roundtrip_s16(a : Int) -> Int {
+pub fn roundtrip_s16(a : Int16) -> Int16 {
   a
 }
 
