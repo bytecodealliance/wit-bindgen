@@ -129,6 +129,14 @@ struct Common {
     /// This enables using `@unstable` annotations in WIT files.
     #[clap(long)]
     all_features: bool,
+
+    /// Use canonical version matching when resolving package dependencies.
+    ///
+    /// When enabled, packages with the same semver-compatible version track
+    /// (e.g., `foo:bar@1.2.0` and `foo:bar@1.3.0`) are treated as the same
+    /// package during resolution, with the larger version winning.
+    #[clap(long)]
+    use_canonical_names: bool,
 }
 
 fn main() -> Result<()> {
@@ -217,6 +225,7 @@ fn gen_world(
 ) -> Result<()> {
     let mut resolve = Resolve::default();
     resolve.all_features = opts.all_features;
+    resolve.use_canonical_names = opts.use_canonical_names;
     for features in opts.features.iter() {
         for feature in features
             .split(',')

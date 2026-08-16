@@ -403,3 +403,15 @@ mod versioned_selectors {
         assert!(Alpha { x: 1 } < Alpha { x: 2 });
     }
 }
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod canonical_version {
+    // The dep provides my:dep@1.1.0 but the world imports my:dep/api@1.0.0.
+    // With use_canonical_names, these are on the same compat track (1.x)
+    // and should resolve successfully.
+    wit_bindgen::generate!({
+        path: "tests/wit/canonical-version",
+        generate_all,
+        use_canonical_names: true,
+    });
+}

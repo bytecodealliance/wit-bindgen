@@ -1,0 +1,9 @@
+package my:dep@1.1.0;
+
+interface api {
+  record point {
+    x: s32,
+    y: s32,
+  }
+  get-origin: func() -> point;
+}
