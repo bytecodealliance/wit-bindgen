@@ -132,7 +132,7 @@ struct Common {
 
     /// Use canonical version matching when resolving package dependencies.
     ///
-    /// When enabled, packages with the same semver-compatible version track
+    /// When enabled, packages with the same canonical version
     /// (e.g., `foo:bar@1.2.0` and `foo:bar@1.3.0`) are treated as the same
     /// package during resolution, with the larger version winning.
     #[clap(long)]
