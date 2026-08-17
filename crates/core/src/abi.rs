@@ -332,20 +332,12 @@ def_instruction! {
             ty: TypeId,
         } : [2] => [1],
 
-        /// Pops all fields for a fixed list off the stack and then composes them
-        /// into an array.
-        FixedLengthListLift {
+        /// Pops a canonical array off the stack, pushes borrow address to elements.
+        FixedLengthListCanonLower {
             element: &'a Type,
             size: u32,
             id: TypeId,
-        } : [*size as usize] => [1],
-
-        /// Pops an array off the stack, decomposes the elements and then pushes them onto the stack.
-        FixedLengthListLower {
-            element: &'a Type,
-            size: u32,
-            id: TypeId,
-        } : [1] => [*size as usize],
+        } : [1] => [1],
 
         /// Pops an array and an address off the stack, passes each element to a block storing it
         FixedLengthListLowerToMemory {
@@ -1642,19 +1634,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedLengthList(ty, size) => {
-                    self.emit(&FixedLengthListLower {
+                    self.emit(&FixedLengthListCanonLower {
                         element: ty,
                         size: *size,
                         id,
                     });
-                    let mut values = self
-                        .stack
-                        .drain(self.stack.len() - (*size as usize)..)
-                        .collect::<Vec<_>>();
-                    for value in values.drain(..) {
-                        self.stack.push(value);
-                        self.lower(ty);
-                    }
                 }
                 TypeDefKind::Map(key, value) => {
                     let realloc = self.list_realloc();
@@ -1858,18 +1842,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Unknown => unreachable!(),
                 TypeDefKind::FixedLengthList(ty, size) => {
-                    let temp = flat_types(self.resolve, ty, None).unwrap();
-                    let flat_per_elem = temp.to_vec().len();
-                    let flatsize = flat_per_elem * (*size as usize);
-                    let mut lowered_args = self
-                        .stack
-                        .drain(self.stack.len() - flatsize..)
-                        .collect::<Vec<_>>();
-                    for _ in 0..*size {
-                        self.stack.extend(lowered_args.drain(..flat_per_elem));
-                        self.lift(ty);
-                    }
-                    self.emit(&FixedLengthListLift {
+                    self.push_block();
+                    self.emit(&IterBasePointer);
+                    let elemaddr = self.stack.pop().unwrap();
+                    self.read_from_memory(ty, elemaddr, Default::default());
+                    self.finish_block(1);
+                    self.emit(&FixedLengthListLiftFromMemory {
                         element: ty,
                         size: *size,
                         id,

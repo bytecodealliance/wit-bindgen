@@ -48,13 +48,13 @@ syn = { version = "2.0.89", features = ["printing"] }
 futures = "0.3.31"
 macro-string = "0.2.0"
 
-wat = "1.254.0"
-wasmparser = "0.254.0"
-wasm-encoder = "0.254.0"
-wasm-metadata = { version = "0.254.0", default-features = false }
-wit-parser = "0.254.0"
-wit-component = "0.254.0"
-wasm-compose = "0.254.0"
+wat = { git = "https://github.com/cpetig/wasm-tools", branch = "fixed-lenght-640" }
+wasmparser = { git = "https://github.com/cpetig/wasm-tools", branch = "fixed-lenght-640" }
+wasm-encoder = { git = "https://github.com/cpetig/wasm-tools", branch = "fixed-lenght-640" }
+wasm-metadata = { git = "https://github.com/cpetig/wasm-tools", branch = "fixed-lenght-640", default-features = false }
+wit-parser = { git = "https://github.com/cpetig/wasm-tools", branch = "fixed-lenght-640" }
+wit-component = { git = "https://github.com/cpetig/wasm-tools", branch = "fixed-lenght-640" }
+wasm-compose = { git = "https://github.com/cpetig/wasm-tools", branch = "fixed-lenght-640" }
 
 wit-bindgen-core = { path = 'crates/core', version = '0.60.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.60.0' }
