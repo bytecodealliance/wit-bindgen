@@ -189,9 +189,8 @@ impl Parse for Config {
                 )]));
             }
         }
-        let (resolve, main_packages, files) =
-            parse_source(&source, &features, use_canonical_names)
-                .map_err(|err| anyhow_to_syn(call_site, err))?;
+        let (resolve, main_packages, files) = parse_source(&source, &features, use_canonical_names)
+            .map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = resolve
             .select_world(&main_packages, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
