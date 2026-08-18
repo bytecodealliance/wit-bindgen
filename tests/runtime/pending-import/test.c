@@ -9,6 +9,26 @@ struct my_task {
   exports_test_future_void_t future;
 };
 
+#ifdef __wasm_libcall_thread_context__
+static _Thread_local struct my_task *current_task = NULL;
+
+static void set_task(struct my_task *task) {
+  current_task = task;
+}
+
+static struct my_task *get_task(void) {
+  return current_task;
+}
+#else
+static void set_task(struct my_task *task) {
+  test_context_set_0(task);
+}
+
+static struct my_task *get_task(void) {
+  return test_context_get_0();
+}
+#endif
+
 test_callback_code_t exports_test_pending_import(exports_test_future_void_t x) {
   struct my_task *task = (struct my_task*) malloc(sizeof(struct my_task));
   assert(task != NULL);
@@ -18,12 +38,13 @@ test_callback_code_t exports_test_pending_import(exports_test_future_void_t x) {
   task->set = test_waitable_set_new();
   test_waitable_join(task->future, task->set);
 
-  test_context_set_0(task);
+  set_task(task);
   return TEST_CALLBACK_CODE_WAIT(task->set);
 }
 
 test_callback_code_t exports_test_pending_import_callback(test_event_t *event) {
-  struct my_task *task = (struct my_task*) test_context_get_0();
+  struct my_task *task = get_task();
+  set_task(NULL);
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == task->future);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);

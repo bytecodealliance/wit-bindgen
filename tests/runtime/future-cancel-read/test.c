@@ -40,6 +40,26 @@ struct start_read_then_cancel_state {
   uint32_t result;
 };
 
+#ifdef __wasm_libcall_thread_context__
+static _Thread_local struct start_read_then_cancel_state *current_state = NULL;
+
+static void set_state(struct start_read_then_cancel_state *state) {
+  current_state = state;
+}
+
+static struct start_read_then_cancel_state *get_state(void) {
+  return current_state;
+}
+#else
+static void set_state(struct start_read_then_cancel_state *state) {
+  test_context_set_0(state);
+}
+
+static struct start_read_then_cancel_state *get_state(void) {
+  return test_context_get_0();
+}
+#endif
+
 test_callback_code_t exports_test_start_read_then_cancel(
   exports_test_future_u32_t data,
   exports_test_future_void_t signal
@@ -58,13 +78,13 @@ test_callback_code_t exports_test_start_read_then_cancel(
 
   test_waitable_join(signal, state->set);
 
-  test_context_set_0(state);
+  set_state(state);
   return TEST_CALLBACK_CODE_WAIT(state->set);
 }
 
 test_callback_code_t exports_test_start_read_then_cancel_callback(test_event_t *event) {
-  struct start_read_then_cancel_state *state =
-    (struct start_read_then_cancel_state*) test_context_get_0();
+  struct start_read_then_cancel_state *state = get_state();
+  set_state(NULL);
   assert(event->event == TEST_EVENT_FUTURE_READ);
   assert(event->waitable == state->signal);
   assert(TEST_WAITABLE_STATE(event->code) == TEST_WAITABLE_COMPLETED);

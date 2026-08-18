@@ -1,22 +1,20 @@
 include!(env!("BINDINGS"));
 
 use crate::exports::a::b::the_test::Guest;
-use std::cell::Cell;
+use std::sync::Mutex;
 use wit_bindgen::rt::async_support::FutureReader;
 
 struct Component;
 
 export!(Component);
 
-std::thread_local!(
-    static SLOT: Cell<Option<FutureReader<()>>> = const { Cell::new(None) };
-);
+static SLOT: Mutex<Option<FutureReader<()>>> = Mutex::new(None);
 
 impl Guest for Component {
     fn set(future: FutureReader<()>) {
-        SLOT.with(|s| s.set(Some(future)));
+        *SLOT.lock().unwrap() = Some(future);
     }
     fn get() -> FutureReader<()> {
-        SLOT.with(|s| s.replace(None).unwrap())
+        SLOT.lock().unwrap().take().unwrap()
     }
 }
