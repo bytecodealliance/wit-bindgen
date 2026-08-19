@@ -1,6 +1,6 @@
 use anyhow::Result;
 use heck::*;
-use pulldown_cmark::{Event, LinkType, Parser, Tag, html};
+use pulldown_cmark::{Event, LinkType, Parser, Tag, TagEnd, html};
 use std::collections::HashMap;
 use std::fmt::Write;
 use wit_bindgen_core::{
@@ -207,20 +207,30 @@ impl WorldGenerator for Markdown {
         let world = &resolve.worlds[world];
         let parser = Parser::new(&self.src);
         let mut events = Vec::new();
+        // Named types are already written as links by `print_ty`, so track
+        // whether we're inside one: wrapping that code span again would nest
+        // an `<a>` inside an `<a>`, which isn't valid html. Markdown links
+        // can't nest, so a bool is enough here.
+        let mut in_link = false;
         for event in parser {
-            if let Event::Code(code) = &event {
-                if let Some(dst) = self.hrefs.get(code.as_ref()) {
-                    let tag = Tag::Link {
-                        link_type: LinkType::Inline,
-                        dest_url: dst.as_str().into(),
-                        title: "".into(),
-                        id: "".into(),
-                    };
-                    events.push(Event::Start(tag.clone()));
-                    events.push(event.clone());
-                    events.push(Event::End(tag.into()));
-                    continue;
+            match &event {
+                Event::Start(Tag::Link { .. }) => in_link = true,
+                Event::End(TagEnd::Link) => in_link = false,
+                Event::Code(code) if !in_link => {
+                    if let Some(dst) = self.hrefs.get(code.as_ref()) {
+                        let tag = Tag::Link {
+                            link_type: LinkType::Inline,
+                            dest_url: dst.as_str().into(),
+                            title: "".into(),
+                            id: "".into(),
+                        };
+                        events.push(Event::Start(tag.clone()));
+                        events.push(event.clone());
+                        events.push(Event::End(tag.into()));
+                        continue;
+                    }
                 }
+                _ => {}
             }
             events.push(event);
         }
