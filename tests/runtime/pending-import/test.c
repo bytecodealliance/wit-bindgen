@@ -25,7 +25,7 @@ static void set_task(struct my_task *task) {
 }
 
 static struct my_task *get_task(void) {
-  return test_context_get_0();
+  return (struct my_task*) test_context_get_0();
 }
 #endif
 

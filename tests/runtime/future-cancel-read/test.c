@@ -56,7 +56,7 @@ static void set_state(struct start_read_then_cancel_state *state) {
 }
 
 static struct start_read_then_cancel_state *get_state(void) {
-  return test_context_get_0();
+  return (struct start_read_then_cancel_state*) test_context_get_0();
 }
 #endif
 

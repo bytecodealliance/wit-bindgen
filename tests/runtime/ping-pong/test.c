@@ -17,6 +17,12 @@ struct ping_task {
   exports_test_future_string_writer_t writer;
 };
 
+struct pong_task {
+  test_string_t read_result;
+  exports_test_future_string_t future;
+  test_waitable_set_t set;
+};
+
 #ifdef __wasm_libcall_thread_context__
 static _Thread_local struct ping_task *current_ping = NULL;
 static _Thread_local struct pong_task *current_pong = NULL;
@@ -42,7 +48,7 @@ static void set_ping_task(struct ping_task *task) {
 }
 
 static struct ping_task *get_ping_task(void) {
-  return test_context_get_0();
+  return (struct ping_task*) test_context_get_0();
 }
 
 static void set_pong_task(struct pong_task *task) {
@@ -50,7 +56,7 @@ static void set_pong_task(struct pong_task *task) {
 }
 
 static struct pong_task *get_pong_task(void) {
-  return test_context_get_0();
+  return (struct pong_task*) test_context_get_0();
 }
 #endif
 
@@ -144,12 +150,6 @@ test_callback_code_t exports_test_ping_callback(test_event_t *event) {
   }
 
 }
-
-struct pong_task {
-  test_string_t read_result;
-  exports_test_future_string_t future;
-  test_waitable_set_t set;
-};
 
 test_callback_code_t exports_test_pong(exports_test_future_string_t x) {
   struct pong_task *task = (struct pong_task*) malloc(sizeof(struct pong_task));
