@@ -15,6 +15,7 @@ use wit_component::{ComponentEncoder, StringEncoding};
 mod c;
 mod config;
 mod cpp;
+#[cfg(feature = "csharp")]
 mod csharp;
 mod custom;
 mod go;
@@ -226,6 +227,7 @@ enum Language {
     C,
     Cpp,
     Wat,
+    #[cfg(feature = "csharp")]
     Csharp,
     MoonBit,
     Go,
@@ -448,6 +450,7 @@ impl Runner {
             "c" => Language::C,
             "cpp" => Language::Cpp,
             "wat" => Language::Wat,
+            #[cfg(feature = "csharp")]
             "cs" => Language::Csharp,
             "mbt" => Language::MoonBit,
             "go" => Language::Go,
@@ -1320,6 +1323,7 @@ impl Language {
         Language::C,
         Language::Cpp,
         Language::Wat,
+        #[cfg(feature = "csharp")]
         Language::Csharp,
         Language::MoonBit,
         Language::Go,
@@ -1331,6 +1335,7 @@ impl Language {
             Language::C => &c::C,
             Language::Cpp => &cpp::Cpp,
             Language::Wat => &wat::Wat,
+            #[cfg(feature = "csharp")]
             Language::Csharp => &csharp::Csharp,
             Language::MoonBit => &moonbit::MoonBit,
             Language::Go => &go::Go,

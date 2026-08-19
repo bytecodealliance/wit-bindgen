@@ -38,5 +38,9 @@ wasmparser = { workspace = true, features = ["features"] }
 wat = { workspace = true }
 wit-component = { workspace = true }
 wit-parser = { workspace = true }
-wit-bindgen-csharp = { workspace = true }
+wit-bindgen-csharp = { workspace = true, optional = true }
 libtest-mimic = "0.8.1"
+
+[features]
+default = ['csharp']
+csharp = ['dep:wit-bindgen-csharp']
