@@ -67,6 +67,7 @@ impl Parse for Config {
         let mut features = Vec::new();
         let mut async_configured = false;
         let mut debug = false;
+        let mut use_canonical_names = false;
 
         if input.peek(token::Brace) {
             let content;
@@ -175,6 +176,9 @@ impl Parse for Config {
                     Opt::MergeStructurallyEqualTypes(enable) => {
                         opts.merge_structurally_equal_types = Some(Some(enable.value()))
                     }
+                    Opt::UseCanonicalNames(enable) => {
+                        use_canonical_names = enable.value();
+                    }
                 }
             }
         } else {
@@ -185,8 +189,8 @@ impl Parse for Config {
                 )]));
             }
         }
-        let (resolve, main_packages, files) =
-            parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
+        let (resolve, main_packages, files) = parse_source(&source, &features, use_canonical_names)
+            .map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = resolve
             .select_world(&main_packages, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
@@ -204,9 +208,11 @@ impl Parse for Config {
 fn parse_source(
     source: &Option<Source>,
     features: &[String],
+    use_canonical_names: bool,
 ) -> anyhow::Result<(Resolve, Vec<PackageId>, Vec<PathBuf>)> {
     let mut resolve = Resolve::default();
     resolve.features.extend(features.iter().cloned());
+    resolve.use_canonical_names = use_canonical_names;
     let mut files = Vec::new();
     let mut pkgs = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -332,6 +338,7 @@ mod kw {
     syn::custom_keyword!(debug);
     syn::custom_keyword!(enable_method_chaining);
     syn::custom_keyword!(merge_structurally_equal_types);
+    syn::custom_keyword!(use_canonical_names);
 }
 
 #[derive(Clone)]
@@ -416,6 +423,7 @@ enum Opt {
     Debug(syn::LitBool),
     EnableMethodChaining(syn::LitBool),
     MergeStructurallyEqualTypes(syn::LitBool),
+    UseCanonicalNames(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -623,6 +631,10 @@ impl Parse for Opt {
             input.parse::<kw::merge_structurally_equal_types>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::MergeStructurallyEqualTypes(input.parse()?))
+        } else if l.peek(kw::use_canonical_names) {
+            input.parse::<kw::use_canonical_names>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::UseCanonicalNames(input.parse()?))
         } else {
             Err(l.error())
         }
