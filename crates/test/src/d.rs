@@ -163,5 +163,6 @@ fn verify(runner: &Runner, verify: &Verify<'_>, compiler: PathBuf) -> Result<()>
         .arg("--preview=in")
         .arg("-of")
         .arg(verify.artifacts_dir.join("tmp.o"));
-    runner.run_command(&mut cmd)
+    runner.run_command(&mut cmd)?;
+    Ok(())
 }
