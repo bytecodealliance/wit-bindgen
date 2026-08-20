@@ -28,8 +28,8 @@ pub struct Rust;
 
 #[derive(Default)]
 pub struct State {
-    wit_bindgen_rlib: PathBuf,
-    futures_rlib: PathBuf,
+    wit_bindgen_files: Vec<String>,
+    futures_files: Vec<String>,
     wit_bindgen_deps: Vec<PathBuf>,
 }
 
@@ -52,6 +52,9 @@ enum CargoMessage {
     CompilerArtifact {
         target: CargoTarget,
         filenames: Vec<String>,
+    },
+    BuildScriptExecuted {
+        linked_paths: Vec<String>,
     },
 }
 
@@ -161,8 +164,8 @@ path = 'lib.rs'
                 .arg(&opts.rust_target)
                 .arg("--message-format=json"),
         )?;
-        let mut wit_bindgen_rlib = None;
-        let mut futures_rlib = None;
+        let mut wit_bindgen_files = None;
+        let mut futures_files = None;
         let mut wit_bindgen_deps = Vec::new();
         let mut deps_seen = HashSet::new();
 
@@ -172,23 +175,32 @@ path = 'lib.rs'
             };
             match msg {
                 CargoMessage::CompilerArtifact { target, filenames } => {
-                    let lib = filenames.iter().find(|f| !f.ends_with(".rmeta")).unwrap();
                     if target.name == "futures" {
-                        futures_rlib = Some(lib.clone());
+                        futures_files = Some(filenames.clone());
                     } else if target.name == "wit_bindgen" {
-                        wit_bindgen_rlib = Some(lib.clone());
+                        wit_bindgen_files = Some(filenames.clone());
                     }
-                    let dir = Path::new(&lib).parent().unwrap();
-                    if deps_seen.insert(dir.to_path_buf()) {
-                        wit_bindgen_deps.push(dir.to_path_buf());
+                    for file in &filenames {
+                        let dir = Path::new(file).parent().unwrap();
+                        if deps_seen.insert(dir.to_path_buf()) {
+                            wit_bindgen_deps.push(dir.to_path_buf());
+                        }
+                    }
+                }
+                CargoMessage::BuildScriptExecuted { linked_paths } => {
+                    for path in linked_paths {
+                        let path = PathBuf::from(path);
+                        if deps_seen.insert(path.clone()) {
+                            wit_bindgen_deps.push(path);
+                        }
                     }
                 }
             }
         }
 
         runner.rust_state = Some(State {
-            wit_bindgen_rlib: wit_bindgen_rlib.unwrap().into(),
-            futures_rlib: futures_rlib.unwrap().into(),
+            wit_bindgen_files: wit_bindgen_files.unwrap().into(),
+            futures_files: futures_files.unwrap().into(),
             wit_bindgen_deps,
         });
         Ok(())
@@ -313,20 +325,25 @@ impl Runner {
             Edition::E2021 => "--edition=2021",
             Edition::E2024 => "--edition=2024",
         })
-        .arg(&format!(
-            "--extern=wit_bindgen={}",
-            state.wit_bindgen_rlib.display()
-        ))
-        .arg(&format!(
-            "--extern=futures={}",
-            state.futures_rlib.display()
-        ))
         .arg("--target")
         .arg(&opts.rust_target)
         .arg("-Dwarnings")
         .arg("-Cdebuginfo=1");
         for dep in state.wit_bindgen_deps.iter() {
-            cmd.arg(&format!("-Ldependency={}", dep.display()));
+            let dep = dep.display();
+            if dep.to_string().contains('=') {
+                cmd.arg(&format!("-L{dep}"));
+            } else {
+                cmd.arg(&format!("-Ldependency={dep}"));
+            }
+        }
+        for (name, files) in [
+            ("wit_bindgen", &state.wit_bindgen_files),
+            ("futures", &state.futures_files),
+        ] {
+            for file in files {
+                cmd.arg(&format!("--extern={name}={file}",));
+            }
         }
         cmd
     }
