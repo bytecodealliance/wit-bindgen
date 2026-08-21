@@ -12,7 +12,8 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    AnonymousTypeGenerator, Source, TypeInfo, dealias, uwrite, uwriteln, wit_parser::*,
+    AnonymousTypeGenerator, ChainingMode, Source, TypeInfo, dealias, uwrite, uwriteln,
+    wit_parser::*,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -839,7 +840,7 @@ pub mod vtable{ordinal} {{
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -851,7 +852,7 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -863,13 +864,13 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
         format!("unsafe {{ {}\n{result} }}", String::from(f.src))
     }
@@ -879,7 +880,7 @@ pub mod vtable{ordinal} {{
         module: &str,
         func: &Function,
         params: Vec<String>,
-        should_return_self: bool,
+        should_return_self: Option<ChainingMode>,
     ) {
         let mut f = FunctionBindgen::new(self, params, module, false, should_return_self);
         abi::call(
@@ -922,7 +923,7 @@ pub mod vtable{ordinal} {{
         module: &str,
         func: &Function,
         mut params: Vec<String>,
-        should_return_self: bool,
+        should_return_self: Option<ChainingMode>,
     ) {
         let param_tys = func
             .params
@@ -1105,7 +1106,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             }
             lowers.push("ParamsLower(_ptr,)".to_string());
         } else {
-            let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+            let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
             let mut results = Vec::new();
             for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let name = format!("_lower{i}");
@@ -1153,7 +1154,11 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.src,
             "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await{}",
             params.join(" "),
-            if should_return_self { ";\nself" } else { "" }
+            if should_return_self.is_some() {
+                ";\nself"
+            } else {
+                ""
+            }
         );
     }
 
@@ -1195,7 +1200,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
+        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, None);
         let variant = if async_ {
             AbiVariant::GuestExportAsync
         } else {
@@ -1265,7 +1270,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             let params = self.print_post_return_sig(func);
             self.src.push_str("{ unsafe {\n");
 
-            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
+            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, None);
             abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
@@ -1520,7 +1525,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
-        should_return_self: bool,
+        should_return_self: Option<ChainingMode>,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(func, params_owned, sig, should_return_self);
         self.push_str(" -> ");
@@ -1536,11 +1541,11 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 }
             }
         } else {
-            if should_return_self {
-                self.push_str("Self");
-            } else {
-                self.print_result_type(&func.result);
-            }
+            match should_return_self {
+                Some(ChainingMode::Owning) => self.push_str("Self"),
+                Some(ChainingMode::Borrowing) => self.push_str("&Self"),
+                None => self.print_result_type(&func.result),
+            };
         }
         params
     }
@@ -1550,7 +1555,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
-        should_return_self: bool,
+        should_return_self: Option<ChainingMode>,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -1598,11 +1603,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         ) in func.params.iter().enumerate()
         {
             if i == 0 && sig.self_is_first_param {
-                params.push(if should_return_self {
-                    "&self".to_string()
-                } else {
-                    "self".to_string()
-                });
+                params.push(
+                    match should_return_self {
+                        Some(ChainingMode::Owning) => "&self",
+                        _ => "self",
+                    }
+                    .to_string(),
+                );
                 continue;
             }
             let name = to_rust_ident(name);

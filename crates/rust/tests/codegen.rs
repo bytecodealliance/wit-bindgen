@@ -218,7 +218,7 @@ mod retyped_list {
 }
 
 #[allow(unused, reason = "testing codegen, not functionality")]
-mod method_chaining {
+mod owning_method_chaining {
     wit_bindgen::generate!({
         inline: r#"
         package test:method-chaining;
@@ -233,6 +233,25 @@ mod method_chaining {
         "#,
         generate_all,
         chainable_methods: ["all"]
+    });
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod borrowing_method_chaining {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:method-chaining;
+        world test {
+            resource a {
+                constructor();
+                set-a: func(arg: u32);
+                set-b: func(arg: bool);
+                do: func();
+            }
+        }
+        "#,
+        generate_all,
+        chainable_methods: ["&all"]
     });
 }
 

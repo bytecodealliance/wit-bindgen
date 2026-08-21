@@ -19,9 +19,16 @@ pub struct ChainableMethodFilterSet {
     /// passed here can be one of:
     ///
     /// - `all` - all applicable methods will be chainable
-    /// - `-all` - no methods will be chainable
     /// - `foo:bar/baz#my-resource` - enable chaining for all methods in a resource
     /// - `foo:bar/baz#my-resource.some-method` - enable chaining for particular method
+    ///
+    /// Each filter may also have one of two modifier prefixes:
+    /// - `-` - inverts the selection; e.g. `-all` will disable chaining for all
+    /// - `&` - makes the chainable return `&Self` instead of `Self` (borrowing)
+    ///
+    /// For instance, `&foo:bar/baz#my-resource` will make all methods in said resource
+    /// borrowing chainable, while `-foo:bar/baz#my-resource.some-method` will disable it
+    /// for that particular method.
     ///
     /// Options are processed in the order they are passed here, so if a method
     /// matches two directives passed the least-specific one should be last.
@@ -46,13 +53,19 @@ fn parse_chainable_method(s: &str) -> Result<ChainableMethod, String> {
     Ok(ChainableMethod::parse(s))
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum ChainingMode {
+    Owning,
+    Borrowing,
+}
+
 impl ChainableMethodFilterSet {
     /// Returns a set where all functions should be chainable or not depending on
     /// `enable` provided.
-    pub fn all(enable: bool) -> ChainableMethodFilterSet {
+    pub fn all(mode: ChainingMode) -> ChainableMethodFilterSet {
         ChainableMethodFilterSet {
             chainable_methods: vec![ChainableMethod {
-                enabled: enable,
+                mode: Some(mode),
                 filter: ChainableMethodFilter::All,
             }],
             used_options: HashSet::new(),
@@ -66,13 +79,13 @@ impl ChainableMethodFilterSet {
         interface: Option<&WorldKey>,
         func: &Function,
         is_import: bool,
-    ) -> bool {
+    ) -> Option<ChainingMode> {
         if !is_import {
-            return false;
+            return None;
         }
 
         if func.result.is_some() {
-            return false;
+            return None;
         }
 
         match func.kind {
@@ -94,27 +107,27 @@ impl ChainableMethodFilterSet {
                     match &opt.filter {
                         ChainableMethodFilter::All => {
                             self.used_options.insert(i);
-                            return opt.enabled;
+                            return opt.mode;
                         }
                         ChainableMethodFilter::Resource(s) => {
                             if *s == resource_name_to_test {
                                 self.used_options.insert(i);
-                                return opt.enabled;
+                                return opt.mode;
                             }
                         }
                         ChainableMethodFilter::Method(s) => {
                             if *s == method_name_to_test {
                                 self.used_options.insert(i);
-                                return opt.enabled;
+                                return opt.mode;
                             }
                         }
                     };
                 }
 
-                return false;
+                return None;
             }
             _ => {
-                return false;
+                return None;
             }
         }
     }
@@ -149,15 +162,18 @@ impl ChainableMethodFilterSet {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 struct ChainableMethod {
-    enabled: bool,
+    mode: Option<ChainingMode>,
     filter: ChainableMethodFilter,
 }
 
 impl ChainableMethod {
     fn parse(s: &str) -> ChainableMethod {
-        let (s, enabled) = match s.strip_prefix('-') {
-            Some(s) => (s, false),
-            None => (s, true),
+        let (s, mode) = match s.strip_prefix('-') {
+            Some(s) => (s, None),
+            None => match s.strip_prefix('&') {
+                Some(s) => (s, Some(ChainingMode::Borrowing)),
+                None => (s, Some(ChainingMode::Owning)),
+            },
         };
         let filter = match s {
             "all" => ChainableMethodFilter::All,
@@ -169,15 +185,17 @@ impl ChainableMethod {
                 }
             }
         };
-        ChainableMethod { enabled, filter }
+        ChainableMethod { mode, filter }
     }
 }
 
 impl fmt::Display for ChainableMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.enabled {
-            write!(f, "-")?;
-        }
+        match self.mode {
+            Some(ChainingMode::Owning) => {}
+            Some(ChainingMode::Borrowing) => write!(f, "&")?,
+            None => write!(f, "-")?,
+        };
         self.filter.fmt(f)
     }
 }

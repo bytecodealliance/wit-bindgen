@@ -4,7 +4,7 @@
 
 include!(env!("BINDINGS"));
 
-use crate::exports::foo::bar::i::{Guest, GuestA, GuestB};
+use crate::exports::foo::bar::i::{Guest, GuestA, GuestB, GuestC};
 use std::cell::Cell;
 
 struct Component;
@@ -12,6 +12,7 @@ export!(Component);
 impl Guest for Component {
     type A = MyA;
     type B = MyB;
+    type C = MyC;
 }
 
 struct MyA {
@@ -20,6 +21,11 @@ struct MyA {
 }
 
 struct MyB {
+    prop_a: Cell<u32>,
+    prop_b: Cell<bool>,
+}
+
+struct MyC {
     prop_a: Cell<u32>,
     prop_b: Cell<bool>,
 }
@@ -46,6 +52,25 @@ impl GuestA for MyA {
 impl GuestB for MyB {
     fn new() -> MyB {
         MyB {
+            prop_a: Cell::new(0),
+            prop_b: Cell::new(false),
+        }
+    }
+
+    fn set_a(&self, a: u32) {
+        self.prop_a.set(a);
+    }
+
+    fn set_b(&self, b: bool) {
+        self.prop_b.set(b);
+    }
+
+    fn do_(&self) {}
+}
+
+impl GuestC for MyC {
+    fn new() -> MyC {
+        MyC {
             prop_a: Cell::new(0),
             prop_b: Cell::new(false),
         }

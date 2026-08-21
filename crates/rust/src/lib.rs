@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    AsyncFilterSet, ChainableMethodFilterSet, Files, InterfaceGenerator as _, Source, Types,
-    WorldGenerator, dealias, name_package_module, uwrite, uwriteln, wit_parser::*,
+    AsyncFilterSet, ChainableMethodFilterSet, ChainingMode, Files, InterfaceGenerator as _, Source,
+    Types, WorldGenerator, dealias, name_package_module, uwrite, uwriteln, wit_parser::*,
 };
 
 mod bindgen;
@@ -1111,7 +1111,7 @@ macro_rules! __export_{world_name}_impl {{
         interface: Option<&WorldKey>,
         func: &Function,
         is_import: bool,
-    ) -> bool {
+    ) -> Option<ChainingMode> {
         return self
             .opts
             .chainable_methods
@@ -1773,13 +1773,15 @@ struct FnSig {
 }
 
 impl FnSig {
-    fn update_for_func(&mut self, func: &Function, return_self: bool) {
+    fn update_for_func(&mut self, func: &Function, return_self: Option<ChainingMode>) {
         if let FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) = &func.kind {
-            self.self_arg = Some(if return_self {
-                "self".into()
-            } else {
-                "&self".into()
-            });
+            self.self_arg = Some(
+                match return_self {
+                    Some(ChainingMode::Owning) => "self",
+                    _ => "&self",
+                }
+                .into(),
+            );
             self.self_is_first_param = true;
         }
     }
