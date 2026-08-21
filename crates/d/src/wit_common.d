@@ -34,7 +34,7 @@ struct WitList(T) {
     bool opEquals(in T[] other) const => this[] == other;
     size_t toHash() const => this[].hashOf;
 }
-auto witList(T : U[], U)(inout T slice) => inout WitList!U(slice);
+auto witList(T)(inout T[] slice) => inout WitList!T(slice);
 
 // WIT ABI for string matches List,
 // except list<char> in WIT is actually List!(dchar)
@@ -363,7 +363,7 @@ void witDrop(T : WitList!U, U)(scope ref T val) {
     }
     val = null;
 }
-T witClone(T : WitList!U, U)(in T val) {
+T witClone(T : WitList!U, U)(in T val) @trusted {
     if (val.ptr == null || val.length == 0) return T(null);
 
     auto clone = mallocSlice!U(val.length);
@@ -394,18 +394,18 @@ T witClone(T : Tuple!U, U...)(in T val) {
 }
 
 
-void witFree(T : U[L], U, size_t L)(scope ref T val) {
+void witFree(T, size_t L)(scope ref T[L] val) {
     foreach (ref e; val) {
         e.witFree;
     }
 }
-void witDrop(T : U[L], U, size_t L)(scope ref T val) {
+void witDrop(T, size_t L)(scope ref T[L] val) {
     foreach (ref e; val) {
         e.witDrop;
     }
 }
-T witClone(T : U[L], U, size_t L)(in T val) {
-    T clone;
+T[L] witClone(T, size_t L)(in T[L] val) {
+    T[L] clone;
     foreach (i, ref e; clone) {
         e = val[i].witClone;
     }
