@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    AsyncFilterSet, Files, InterfaceGenerator as _, Source, Types, WorldGenerator, dealias,
-    name_package_module, uwrite, uwriteln, wit_parser::*,
+    AsyncFilterSet, ChainableMethodFilterSet, ChainingMode, Files, FilterSet,
+    InterfaceGenerator as _, Source, Types, WorldGenerator, dealias, name_package_module, uwrite,
+    uwriteln, wit_parser::*,
 };
 
 mod bindgen;
@@ -345,9 +346,9 @@ pub struct Opts {
     )]
     pub merge_structurally_equal_types: Option<Option<bool>>,
 
-    /// If true, methods normally returning `()` instead return `&Self`. This applies to both imported and exported methods.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub enable_method_chaining: bool,
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    #[cfg_attr(feature = "serde", serde(flatten))]
+    pub chainable_methods: ChainableMethodFilterSet,
 }
 
 impl Opts {
@@ -1102,13 +1103,20 @@ macro_rules! __export_{world_name}_impl {{
     ) -> bool {
         self.opts
             .async_
-            .is_async(resolve, interface, func, is_import)
+            .apply_rules(resolve, interface, func, is_import)
     }
 
-    fn should_return_self(&self, func: &Function) -> bool {
-        self.opts.enable_method_chaining
-            && func.result.is_none()
-            && matches!(&func.kind, FunctionKind::Method(_))
+    fn should_return_self(
+        &mut self,
+        resolve: &Resolve,
+        interface: Option<&WorldKey>,
+        func: &Function,
+        is_import: bool,
+    ) -> Option<ChainingMode> {
+        return self
+            .opts
+            .chainable_methods
+            .apply_rules(resolve, interface, func, is_import);
     }
 }
 
@@ -1226,6 +1234,9 @@ impl WorldGenerator for RustWasm {
         }
         for opt in self.opts.async_.debug_opts() {
             uwriteln!(self.src_preamble, "//   * async: {opt}");
+        }
+        for opt in self.opts.chainable_methods.debug_opts() {
+            uwriteln!(self.src_preamble, "//   * chainable-methods: {opt}");
         }
         self.types.analyze(resolve);
         self.types.collect_equal_types(resolve, world, &|a| {
@@ -1616,6 +1627,7 @@ impl WorldGenerator for RustWasm {
         // Error about unused async configuration to help catch configuration
         // errors.
         self.opts.async_.ensure_all_used()?;
+        self.opts.chainable_methods.ensure_all_used()?;
 
         Ok(())
     }
@@ -1765,9 +1777,15 @@ struct FnSig {
 }
 
 impl FnSig {
-    fn update_for_func(&mut self, func: &Function) {
+    fn update_for_func(&mut self, func: &Function, return_self: Option<ChainingMode>) {
         if let FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) = &func.kind {
-            self.self_arg = Some("&self".into());
+            self.self_arg = Some(
+                match return_self {
+                    Some(ChainingMode::Owning) => "self",
+                    _ => "&self",
+                }
+                .into(),
+            );
             self.self_is_first_param = true;
         }
     }

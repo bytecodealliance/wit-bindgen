@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{Token, braced, token};
-use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, WorldId};
+use wit_bindgen_core::{AsyncFilterSet, ChainableMethodFilterSet, FilterSet};
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
@@ -66,6 +66,7 @@ impl Parse for Config {
         let mut source = None;
         let mut features = Vec::new();
         let mut async_configured = false;
+        let mut method_chaining_configured = false;
         let mut debug = false;
 
         if input.peek(token::Brace) {
@@ -169,8 +170,15 @@ impl Parse for Config {
                         async_configured = true;
                         opts.async_ = val;
                     }
-                    Opt::EnableMethodChaining(enable) => {
-                        opts.enable_method_chaining = enable.value();
+                    Opt::ChainableMethods(val, span) => {
+                        if method_chaining_configured {
+                            return Err(Error::new(
+                                span,
+                                "cannot specify second method chaining config",
+                            ));
+                        }
+                        method_chaining_configured = true;
+                        opts.chainable_methods = val;
                     }
                     Opt::MergeStructurallyEqualTypes(enable) => {
                         opts.merge_structurally_equal_types = Some(Some(enable.value()))
@@ -330,7 +338,7 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
-    syn::custom_keyword!(enable_method_chaining);
+    syn::custom_keyword!(chainable_methods);
     syn::custom_keyword!(merge_structurally_equal_types);
 }
 
@@ -414,7 +422,7 @@ enum Opt {
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Async(AsyncFilterSet, Span),
     Debug(syn::LitBool),
-    EnableMethodChaining(syn::LitBool),
+    ChainableMethods(ChainableMethodFilterSet, Span),
     MergeStructurallyEqualTypes(syn::LitBool),
 }
 
@@ -600,10 +608,17 @@ impl Parse for Opt {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Debug(input.parse()?))
-        } else if l.peek(kw::enable_method_chaining) {
-            input.parse::<kw::enable_method_chaining>()?;
+        } else if l.peek(kw::chainable_methods) {
+            let span = input.parse::<kw::chainable_methods>()?.span;
             input.parse::<Token![:]>()?;
-            Ok(Opt::EnableMethodChaining(input.parse()?))
+
+            let mut set = ChainableMethodFilterSet::default();
+            let contents;
+            syn::bracketed!(contents in input);
+            for val in contents.parse_terminated(|p| p.parse::<syn::LitStr>(), Token![,])? {
+                set.push(&val.value());
+            }
+            Ok(Opt::ChainableMethods(set, span))
         } else if l.peek(Token![async]) {
             let span = input.parse::<Token![async]>()?.span;
             input.parse::<Token![:]>()?;

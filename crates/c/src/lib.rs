@@ -10,8 +10,8 @@ use wit_bindgen_core::abi::{
     self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmSignature, WasmType,
 };
 use wit_bindgen_core::{
-    AnonymousTypeGenerator, AsyncFilterSet, Direction, Files, InterfaceGenerator as _, Ns,
-    WorldGenerator, dealias, uwrite, uwriteln, wit_parser::*,
+    AnonymousTypeGenerator, AsyncFilterSet, Direction, Files, FilterSet, InterfaceGenerator as _,
+    Ns, WorldGenerator, dealias, uwrite, uwriteln, wit_parser::*,
 };
 use wit_component::StringEncoding;
 
@@ -2077,7 +2077,7 @@ impl InterfaceGenerator<'_> {
             .r#gen
             .opts
             .async_
-            .is_async(self.resolve, interface_name, func, true);
+            .apply_rules(self.resolve, interface_name, func, true);
         if async_ {
             self.r#gen.needs_async = true;
         }
@@ -2246,7 +2246,7 @@ impl InterfaceGenerator<'_> {
             .r#gen
             .opts
             .async_
-            .is_async(self.resolve, interface_name, func, false);
+            .apply_rules(self.resolve, interface_name, func, false);
 
         let (variant, prefix) = if async_ {
             self.r#gen.needs_async = true;
