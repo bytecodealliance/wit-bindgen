@@ -183,9 +183,6 @@ impl Parse for Config {
                     Opt::MergeStructurallyEqualTypes(enable) => {
                         opts.merge_structurally_equal_types = Some(Some(enable.value()))
                     }
-                    Opt::LinkNativeSymbols(enable) => {
-                        opts.link_native_symbols = enable.value();
-                    }
                 }
             }
         } else {
@@ -343,7 +340,6 @@ mod kw {
     syn::custom_keyword!(debug);
     syn::custom_keyword!(chainable_methods);
     syn::custom_keyword!(merge_structurally_equal_types);
-    syn::custom_keyword!(link_native_symbols);
 }
 
 #[derive(Clone)]
@@ -428,7 +424,6 @@ enum Opt {
     Debug(syn::LitBool),
     ChainableMethods(ChainableMethodFilterSet, Span),
     MergeStructurallyEqualTypes(syn::LitBool),
-    LinkNativeSymbols(syn::LitBool),
 }
 
 impl Parse for Opt {
@@ -643,10 +638,6 @@ impl Parse for Opt {
             input.parse::<kw::merge_structurally_equal_types>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::MergeStructurallyEqualTypes(input.parse()?))
-        } else if l.peek(kw::link_native_symbols) {
-            input.parse::<kw::link_native_symbols>()?;
-            input.parse::<Token![:]>()?;
-            Ok(Opt::LinkNativeSymbols(input.parse()?))
         } else {
             Err(l.error())
         }
