@@ -48,10 +48,10 @@ pub struct RustWasm {
     used_member_attr_selectors: HashSet<String>,
     world: Option<WorldId>,
 
-    /// Prefix applied to all native linkage symbols (`Some` iff
-    /// `opts.link_native_symbols` is set). This namespaces the symbols by
-    /// world so that two `generate!` invocations in the same crate don't
-    /// collide, see `RustWasm::native_symbols`.
+    /// Prefix applied to all native linkage symbols, set during `preprocess`.
+    /// This namespaces the symbols by world so that two `generate!`
+    /// invocations in the same crate don't collide, see
+    /// `RustWasm::native_symbols`.
     native_symbols: Option<String>,
 
     rt_module: IndexSet<RuntimeItem>,
@@ -355,32 +355,6 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", clap(flatten))]
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub chainable_methods: ChainableMethodFilterSet,
-
-    /// If true, make the generated bindings usable on native (non-`wasm32`)
-    /// targets in addition to `wasm32`, rather than stubbing every import out
-    /// with `unreachable!()`.
-    ///
-    /// Canonical ABI symbol names contain characters native linkers reject
-    /// (`:`, `/`, `#`, ...), so off `wasm32` all symbols are hex-encoded with
-    /// the same scheme the C++ generator uses (see
-    /// `wit_bindgen_core::symbol_name`):
-    ///
-    /// * Each **import** calls through a function pointer that the host
-    ///   installs at load time via a generated
-    ///   `__wit_bindgen_register_<world><import>` hook taking the import's
-    ///   core signature. Imports aren't resolved by the linker, so a host
-    ///   only registers what it implements; calling an unregistered import
-    ///   aborts with a message naming both symbols.
-    /// * Each **export** (including post-return, async callbacks and resource
-    ///   destructors) is additionally exported under its hex-encoded core
-    ///   export name.
-    ///
-    /// The `<world>` prefix is a hex-encoded
-    /// `<package>/<world><type_section_suffix>`, so distinct worlds in one
-    /// crate don't collide. Binding the *same* world twice still does; set
-    /// `type_section_suffix` to disambiguate.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub link_native_symbols: bool,
 }
 
 impl Opts {
@@ -512,8 +486,10 @@ impl RustWasm {
             .unwrap_or("wit_bindgen::rt")
     }
 
-    fn native_symbols(&self) -> Option<&str> {
-        self.native_symbols.as_deref()
+    fn native_symbols(&self) -> &str {
+        self.native_symbols
+            .as_deref()
+            .expect("native symbol prefix is set during preprocess")
     }
 
     fn map_type_path(&self) -> String {
@@ -587,9 +563,7 @@ impl RustWasm {
     }
 
     fn finish_native_cabi_realloc(&mut self) {
-        let Some(prefix) = self.native_symbols().map(str::to_string) else {
-            return;
-        };
+        let prefix = self.native_symbols().to_string();
         let rt = self.runtime_path().to_string();
         let name = format!("__wit_bindgen_cabi_realloc_{prefix}");
         uwriteln!(
@@ -1334,7 +1308,7 @@ impl WorldGenerator for RustWasm {
         });
         self.world = Some(world);
 
-        self.native_symbols = self.opts.link_native_symbols.then(|| {
+        self.native_symbols = Some({
             let w = &resolve.worlds[world];
             let pkg = w
                 .package
@@ -1955,7 +1929,7 @@ fn declare_import(
     rust_name: &str,
     params: &[WasmType],
     results: &[WasmType],
-    native_prefix: Option<&str>,
+    native_prefix: &str,
 ) -> String {
     let mut sig = "(".to_owned();
     for param in params.iter() {
@@ -1970,31 +1944,38 @@ fn declare_import(
         sig.push_str(wasm_type(*result));
     }
 
-    let non_wasm = if let Some(prefix) = native_prefix {
-        let symbol = symbol_name::make_external_symbol(
-            wasm_import_module,
-            wasm_import_name,
-            abi::AbiVariant::GuestImport,
-        );
-        let ptr_static = format!("__WIT_BINDGEN_IMPORT_{prefix}{symbol}");
-        let register_name = format!("__wit_bindgen_register_{prefix}{symbol}");
-        let named_params: Vec<String> = params
-            .iter()
-            .enumerate()
-            .map(|(i, ty)| format!("arg{i}: {}", wasm_type(*ty)))
-            .collect();
-        let ret_sig = results
-            .first()
-            .map(|r| format!(" -> {}", wasm_type(*r)))
-            .unwrap_or_default();
-        let call_args = (0..params.len())
-            .map(|i| format!("arg{i}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let named_params_str = named_params.join(", ");
+    let symbol = symbol_name::make_external_symbol(
+        wasm_import_module,
+        wasm_import_name,
+        abi::AbiVariant::GuestImport,
+    );
+    let ptr_static = format!("__WIT_BINDGEN_IMPORT_{native_prefix}{symbol}");
+    let register_name = format!("__wit_bindgen_register_{native_prefix}{symbol}");
+    let named_params: Vec<String> = params
+        .iter()
+        .enumerate()
+        .map(|(i, ty)| format!("arg{i}: {}", wasm_type(*ty)))
+        .collect();
+    let ret_sig = results
+        .first()
+        .map(|r| format!(" -> {}", wasm_type(*r)))
+        .unwrap_or_default();
+    let call_args = (0..params.len())
+        .map(|i| format!("arg{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let named_params_str = named_params.join(", ");
 
-        format!(
-            r#"#[cfg(not(target_arch = "wasm32"))]
+    format!(
+        r#"
+            #[cfg(target_arch = "wasm32")]
+            #[link(wasm_import_module = "{wasm_import_module}")]
+            unsafe extern "C" {{
+                #[link_name = "{wasm_import_name}"]
+                fn {rust_name}{sig};
+            }}
+
+            #[cfg(not(target_arch = "wasm32"))]
             #[allow(non_upper_case_globals)]
             static {ptr_static}: ::core::sync::atomic::AtomicPtr<()> =
                 ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
@@ -2016,26 +1997,8 @@ fn declare_import(
                 );
                 let f: unsafe extern "C" fn{sig} = unsafe {{ ::core::mem::transmute(ptr) }};
                 unsafe {{ f({call_args}) }}
-            }}"#,
-        )
-    } else {
-        format!(
-            r#"#[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn {rust_name}{sig} {{ unreachable!() }}"#
-        )
-    };
-
-    format!(
-        "
-            #[cfg(target_arch = \"wasm32\")]
-            #[link(wasm_import_module = \"{wasm_import_module}\")]
-            unsafe extern \"C\" {{
-                #[link_name = \"{wasm_import_name}\"]
-                fn {rust_name}{sig};
             }}
-
-            {non_wasm}
-        "
+        "#,
     )
 }
 

@@ -424,7 +424,7 @@ mod versioned_selectors {
 }
 
 #[allow(unused, reason = "testing codegen, not functionality")]
-mod link_native_symbols {
+mod native_symbols {
     wit_bindgen::generate!({
         inline: r#"
         package test:native;
@@ -444,11 +444,8 @@ mod link_native_symbols {
         }
         "#,
         generate_all,
-        link_native_symbols: true,
     });
 
-    // Covers the resource destructor and post-return exports, both of which
-    // need native symbol names of their own.
     struct Component;
 
     impl exports::test::native::operations::Guest for Component {
@@ -479,33 +476,7 @@ mod link_native_symbols {
 }
 
 #[allow(unused, reason = "testing codegen, not functionality")]
-mod link_native_symbols_root {
-    wit_bindgen::generate!({
-        inline: r#"
-        package test:native-root;
-
-        world test {
-            import an-import: func(a: u32) -> u32;
-            export an-export: func(a: u32) -> u32;
-        }
-        "#,
-        generate_all,
-        link_native_symbols: true,
-    });
-
-    struct Component;
-
-    impl Guest for Component {
-        fn an_export(a: u32) -> u32 {
-            a
-        }
-    }
-
-    export!(Component);
-}
-
-#[allow(unused, reason = "testing codegen, not functionality")]
-mod link_native_symbols_async {
+mod native_symbols_async {
     wit_bindgen::generate!({
         inline: r#"
         package test:native-async;
@@ -520,7 +491,6 @@ mod link_native_symbols_async {
         }
         "#,
         generate_all,
-        link_native_symbols: true,
         async: true,
     });
 
@@ -536,7 +506,7 @@ mod link_native_symbols_async {
 }
 
 #[allow(unused, reason = "testing codegen, not functionality")]
-mod link_native_symbols_shared_one {
+mod native_symbols_shared_one {
     wit_bindgen::generate!({
         inline: r#"
         package test:native-shared;
@@ -544,12 +514,11 @@ mod link_native_symbols_shared_one {
         world one { import operations; }
         "#,
         generate_all,
-        link_native_symbols: true,
     });
 }
 
 #[allow(unused, reason = "testing codegen, not functionality")]
-mod link_native_symbols_shared_two {
+mod native_symbols_shared_two {
     wit_bindgen::generate!({
         inline: r#"
         package test:native-shared;
@@ -557,34 +526,5 @@ mod link_native_symbols_shared_two {
         world two { import operations; }
         "#,
         generate_all,
-        link_native_symbols: true,
-    });
-}
-
-#[allow(unused, reason = "testing codegen, not functionality")]
-mod link_native_symbols_same_world_one {
-    wit_bindgen::generate!({
-        inline: r#"
-        package test:native-same;
-        interface operations { add: func(a: u32, b: u32) -> u32; }
-        world same { import operations; }
-        "#,
-        generate_all,
-        link_native_symbols: true,
-        type_section_suffix: "-one",
-    });
-}
-
-#[allow(unused, reason = "testing codegen, not functionality")]
-mod link_native_symbols_same_world_two {
-    wit_bindgen::generate!({
-        inline: r#"
-        package test:native-same;
-        interface operations { add: func(a: u32, b: u32) -> u32; }
-        world same { import operations; }
-        "#,
-        generate_all,
-        link_native_symbols: true,
-        type_section_suffix: "-two",
     });
 }

@@ -363,25 +363,23 @@ macro_rules! {macro_name} {{
                 }
             };
             let camel = name.to_upper_camel_case();
-            for (cfg, symbol) in self.core_export_symbols(&format!("{module}#[dtor]{name}")) {
-                uwriteln!(
-                    self.src,
-                    r#"
-                    const _: () = {{
-                        #[doc(hidden)]
-                        {cfg}#[unsafe(export_name = "{symbol}")]
-                        #[allow(non_snake_case)]
-                        unsafe extern "C" fn dtor(rep: *mut u8) {{
-                            unsafe {{
-                                $($path_to_types)*::{camel}::dtor::<
-                                    <$ty as $($path_to_types)*::Guest>::{camel}
-                                >(rep)
-                            }}
+            let attrs = self.core_export_attrs(&format!("{module}#[dtor]{name}"));
+            uwriteln!(
+                self.src,
+                r#"
+                const _: () = {{
+                    #[doc(hidden)]
+                    {attrs}#[allow(non_snake_case)]
+                    unsafe extern "C" fn dtor(rep: *mut u8) {{
+                        unsafe {{
+                            $($path_to_types)*::{camel}::dtor::<
+                                <$ty as $($path_to_types)*::Guest>::{camel}
+                            >(rep)
                         }}
-                    }};
-                    "#
-                );
-            }
+                    }}
+                }};
+                "#
+            );
         }
         uwriteln!(self.src, "}};);");
         uwriteln!(self.src, "}}");
@@ -1345,86 +1343,69 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             export_name.to_string()
         };
 
-        for (cfg, symbol) in self.core_export_symbols(&export_name) {
+        let attrs = self.core_export_attrs(&export_name);
+        uwrite!(
+            self.src,
+            "\
+                {attrs}unsafe extern \"C\" fn export_{name_snake}\
+",
+        );
+        let params = self.print_export_sig(func, async_);
+        self.push_str(" {\n");
+        uwriteln!(
+            self.src,
+            "unsafe {{ {path_to_self}::_export_{name_snake}_cabi::<{ty}>({}) }}",
+            params.join(", ")
+        );
+        self.push_str("}\n");
+
+        if async_ {
+            let attrs = self.core_export_attrs(&format!("[callback]{export_name}"));
             uwrite!(
                 self.src,
                 "\
-                    {cfg}#[unsafe(export_name = \"{symbol}\")]
-                    unsafe extern \"C\" fn export_{name_snake}\
-",
+                    {attrs}unsafe extern \"C\" fn _callback_{name_snake}(event0: u32, event1: u32, event2: u32) -> u32 {{
+                        unsafe {{
+                            {path_to_self}::__callback_{name_snake}(event0, event1, event2)
+                        }}
+                    }}
+                "
             );
-            let params = self.print_export_sig(func, async_);
-            self.push_str(" {\n");
+        } else if abi::guest_export_needs_post_return(self.resolve, func) {
+            let attrs = self.core_export_attrs(&format!("cabi_post_{export_name}"));
+            uwrite!(
+                self.src,
+                "\
+                    {attrs}unsafe extern \"C\" fn _post_return_{name_snake}\
+"
+            );
+            let params = self.print_post_return_sig(func);
+            self.src.push_str("{\n");
             uwriteln!(
                 self.src,
-                "unsafe {{ {path_to_self}::_export_{name_snake}_cabi::<{ty}>({}) }}",
+                "unsafe {{ {path_to_self}::__post_return_{name_snake}::<{ty}>({}) }}",
                 params.join(", ")
             );
-            self.push_str("}\n");
-        }
-
-        if async_ {
-            for (cfg, symbol) in self.core_export_symbols(&format!("[callback]{export_name}")) {
-                uwrite!(
-                    self.src,
-                    "\
-                        {cfg}#[unsafe(export_name = \"{symbol}\")]
-                        unsafe extern \"C\" fn _callback_{name_snake}(event0: u32, event1: u32, event2: u32) -> u32 {{
-                            unsafe {{
-                                {path_to_self}::__callback_{name_snake}(event0, event1, event2)
-                            }}
-                        }}
-                    "
-                );
-            }
-        } else if abi::guest_export_needs_post_return(self.resolve, func) {
-            for (cfg, symbol) in self.core_export_symbols(&format!("cabi_post_{export_name}")) {
-                uwrite!(
-                    self.src,
-                    "\
-                        {cfg}#[unsafe(export_name = \"{symbol}\")]
-                        unsafe extern \"C\" fn _post_return_{name_snake}\
-"
-                );
-                let params = self.print_post_return_sig(func);
-                self.src.push_str("{\n");
-                uwriteln!(
-                    self.src,
-                    "unsafe {{ {path_to_self}::__post_return_{name_snake}::<{ty}>({}) }}",
-                    params.join(", ")
-                );
-                self.src.push_str("}\n");
-            }
+            self.src.push_str("}\n");
         }
     }
 
-    /// Returns each copy of a core export named `export_name` that needs to be
-    /// emitted, as `(cfg, symbol)`: the `cfg` attribute to gate the copy with
-    /// and the symbol to export it as.
+    /// Returns the `export_name` attributes for a core export named
+    /// `export_name`.
     ///
-    /// Normally there's just one copy: the canonical ABI name with no `cfg`.
-    /// With `link_native_symbols` enabled a second, hex-encoded copy is emitted
-    /// for native targets as well, because native linkers reject the `:`, `/`,
-    /// `#`, `[` and `]` characters that canonical names contain. Names that
-    /// survive encoding unchanged (`$root` exports, for instance) are emitted
-    /// once with no `cfg` rather than twice.
-    fn core_export_symbols(&self, export_name: &str) -> Vec<(&'static str, String)> {
+    /// Has to exist due to the fact that native names cannot contain
+    /// special characters that wasm32 can like '/'.
+    ///
+    /// `cfg_attr` conditions are mutually exclusive, so exactly one attribute
+    /// applies on any target (for names that survive encoding unchanged, such
+    /// as `$root` exports, both carry the same string).
+    fn core_export_attrs(&self, export_name: &str) -> String {
         let prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
-        let wasm = format!("{prefix}{export_name}");
-        if self.r#gen.native_symbols().is_none() {
-            return vec![("", wasm)];
-        }
-        let native = format!(
-            "{prefix}{}",
-            symbol_name::make_external_component(export_name)
-        );
-        if native == wasm {
-            return vec![("", wasm)];
-        }
-        vec![
-            ("#[cfg(target_arch = \"wasm32\")]\n", wasm),
-            ("#[cfg(not(target_arch = \"wasm32\"))]\n", native),
-        ]
+        let native = symbol_name::make_external_component(export_name);
+        format!(
+            "#[cfg_attr(target_arch = \"wasm32\", unsafe(export_name = \"{prefix}{export_name}\"))]\n\
+             #[cfg_attr(not(target_arch = \"wasm32\"), unsafe(export_name = \"{prefix}{native}\"))]\n"
+        )
     }
 
     fn print_export_sig(&mut self, func: &Function, async_: bool) -> Vec<String> {
