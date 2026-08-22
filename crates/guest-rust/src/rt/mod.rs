@@ -153,7 +153,7 @@ pub fn maybe_link_cabi_realloc() {
 /// `cabi_realloc` module above. It's otherwise never explicitly called.
 ///
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
-#[cfg(any(target_env = "p1", target_env = ""))]
+#[cfg(any(target_env = "p1", target_env = "", not(target_arch = "wasm32")))]
 pub unsafe fn cabi_realloc(
     old_ptr: *mut u8,
     old_len: usize,

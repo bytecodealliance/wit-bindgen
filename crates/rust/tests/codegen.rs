@@ -403,3 +403,109 @@ mod versioned_selectors {
         assert!(Alpha { x: 1 } < Alpha { x: 2 });
     }
 }
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native;
+
+        interface operations {
+            resource thing {
+                constructor(x: u32);
+                get: func() -> u32;
+            }
+            add: func(a: u32, b: u32) -> u32;
+            describe: func(value: u32) -> string;
+        }
+
+        world test {
+            import operations;
+            export operations;
+        }
+        "#,
+        generate_all,
+    });
+
+    struct Component;
+
+    impl exports::test::native::operations::Guest for Component {
+        type Thing = MyThing;
+
+        fn add(a: u32, b: u32) -> u32 {
+            a + b
+        }
+
+        fn describe(value: u32) -> String {
+            value.to_string()
+        }
+    }
+
+    struct MyThing(u32);
+
+    impl exports::test::native::operations::GuestThing for MyThing {
+        fn new(x: u32) -> Self {
+            MyThing(x)
+        }
+
+        fn get(&self) -> u32 {
+            self.0
+        }
+    }
+
+    export!(Component);
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols_async {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native-async;
+
+        interface operations {
+            describe: func(value: u32) -> string;
+        }
+
+        world test {
+            import operations;
+            export operations;
+        }
+        "#,
+        generate_all,
+        async: true,
+    });
+
+    struct Component;
+
+    impl exports::test::native_async::operations::Guest for Component {
+        async fn describe(value: u32) -> String {
+            value.to_string()
+        }
+    }
+
+    export!(Component);
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols_shared_one {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native-shared;
+        interface operations { add: func(a: u32, b: u32) -> u32; }
+        world one { import operations; }
+        "#,
+        generate_all,
+    });
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols_shared_two {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native-shared;
+        interface operations { add: func(a: u32, b: u32) -> u32; }
+        world two { import operations; }
+        "#,
+        generate_all,
+    });
+}
