@@ -1,7 +1,8 @@
-use anyhow::{Result, bail};
-use std::collections::HashSet;
 use std::fmt;
+use std::{collections::HashSet, fmt::Write};
 use wit_parser::{Function, FunctionKind, Resolve, WorldKey};
+
+use crate::filter::{FilterMode, FilterRule, FilterSet, FilterTarget};
 
 /// Structure used to parse the command line argument `--async` consistently
 /// across guest generators.
@@ -33,9 +34,9 @@ pub struct AsyncFilterSet {
         arg(
             long = "async",
             value_parser = parse_async,
-            value_delimiter =',',
+            value_delimiter = ',',
             value_name = "FILTER",
-        ),
+        )
     )]
     #[cfg_attr(feature = "serde", serde(rename = "async"))]
     async_: Vec<Async>,
@@ -45,26 +46,35 @@ pub struct AsyncFilterSet {
     used_options: HashSet<usize>,
 }
 
-#[cfg(feature = "clap")]
-fn parse_async(s: &str) -> Result<Async, String> {
-    Ok(Async::parse(s))
-}
+impl FilterSet for AsyncFilterSet {
+    type Mode = bool;
+    type Filter = AsyncFilter;
 
-impl AsyncFilterSet {
-    /// Returns a set where all functions should be async or not depending on
-    /// `async_` provided.
-    pub fn all(async_: bool) -> AsyncFilterSet {
-        AsyncFilterSet {
-            async_: vec![Async {
-                enabled: async_,
-                filter: AsyncFilter::All,
-            }],
+    fn new(rules: Vec<Async>) -> Self {
+        Self {
+            async_: rules,
             used_options: HashSet::new(),
         }
     }
 
-    /// Returns whether the `func` provided is to be bound `async` or not.
-    pub fn is_async(
+    fn rules(&self) -> &[Async] {
+        &self.async_
+    }
+    fn rules_mut(&mut self) -> &mut Vec<Async> {
+        &mut self.async_
+    }
+    fn used_options(&self) -> &HashSet<usize> {
+        &self.used_options
+    }
+    fn used_options_mut(&mut self) -> &mut HashSet<usize> {
+        &mut self.used_options
+    }
+
+    fn option_name() -> &'static str {
+        "async"
+    }
+
+    fn apply_rules(
         &mut self,
         resolve: &Resolve,
         interface: Option<&WorldKey>,
@@ -75,11 +85,12 @@ impl AsyncFilterSet {
             Some(key) => format!("{}#{}", resolve.name_world_key(key), func.name),
             None => func.name.clone(),
         };
+
         for (i, opt) in self.async_.iter().enumerate() {
             let name = match &opt.filter {
                 AsyncFilter::All => {
                     self.used_options.insert(i);
-                    return opt.enabled;
+                    return opt.mode;
                 }
                 AsyncFilter::Function(s) => s,
                 AsyncFilter::Import(s) => {
@@ -97,95 +108,77 @@ impl AsyncFilterSet {
             };
             if *name == name_to_test {
                 self.used_options.insert(i);
-                return opt.enabled;
+                return opt.mode;
             }
         }
 
-        match &func.kind {
-            FunctionKind::Freestanding
-            | FunctionKind::Method(_)
-            | FunctionKind::Static(_)
-            | FunctionKind::Constructor(_) => false,
+        matches!(
+            func.kind,
             FunctionKind::AsyncFreestanding
-            | FunctionKind::AsyncMethod(_)
-            | FunctionKind::AsyncStatic(_) => true,
+                | FunctionKind::AsyncMethod(_)
+                | FunctionKind::AsyncStatic(_)
+        )
+    }
+}
+
+#[cfg(feature = "clap")]
+fn parse_async(s: &str) -> Result<Async, String> {
+    Ok(Async::parse(s))
+}
+
+impl AsyncFilterSet {
+    pub fn any_enabled(&self) -> bool {
+        self.async_.iter().any(|o| o.mode)
+    }
+}
+
+type Async = FilterRule<bool, AsyncFilter>;
+
+impl FilterMode for bool {
+    fn parse(s: &str) -> (Self, &str) {
+        match s.strip_prefix('-') {
+            Some(rest) => (false, rest),
+            None => (true, s),
         }
     }
-
-    /// Intended to be used in the header comment of generated code to help
-    /// indicate what options were specified.
-    pub fn debug_opts(&self) -> impl Iterator<Item = String> + '_ {
-        self.async_.iter().map(|opt| opt.to_string())
-    }
-
-    /// Tests whether all `--async` options were used throughout bindings
-    /// generation, returning an error if any were unused.
-    pub fn ensure_all_used(&self) -> Result<()> {
-        for (i, opt) in self.async_.iter().enumerate() {
-            if self.used_options.contains(&i) {
-                continue;
-            }
-            if !matches!(opt.filter, AsyncFilter::All) {
-                bail!("unused async option: {opt}");
-            }
+    fn fmt_prefix(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if *self {
+            f.write_char('-')?;
         }
         Ok(())
     }
-
-    /// Returns whether any option explicitly requests that async is enabled.
-    pub fn any_enabled(&self) -> bool {
-        self.async_.iter().any(|o| o.enabled)
-    }
-
-    /// Pushes a new option into this set.
-    pub fn push(&mut self, directive: &str) {
-        self.async_.push(Async::parse(directive));
-    }
 }
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
-struct Async {
-    enabled: bool,
-    filter: AsyncFilter,
-}
-
-impl Async {
-    fn parse(s: &str) -> Async {
-        let (s, enabled) = match s.strip_prefix('-') {
-            Some(s) => (s, false),
-            None => (s, true),
-        };
-        let filter = match s {
-            "all" => AsyncFilter::All,
-            other => match other.strip_prefix("import:") {
-                Some(s) => AsyncFilter::Import(s.to_string()),
-                None => match other.strip_prefix("export:") {
-                    Some(s) => AsyncFilter::Export(s.to_string()),
-                    None => AsyncFilter::Function(s.to_string()),
-                },
-            },
-        };
-        Async { enabled, filter }
-    }
-}
-
-impl fmt::Display for Async {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.enabled {
-            write!(f, "-")?;
-        }
-        self.filter.fmt(f)
-    }
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
-enum AsyncFilter {
+pub enum AsyncFilter {
     All,
     Function(String),
     Import(String),
     Export(String),
+}
+
+impl FilterTarget for AsyncFilter {
+    fn parse(s: &str) -> Self {
+        match s {
+            "all" => AsyncFilter::All,
+            other => match other.strip_prefix("import:") {
+                Some(sub) => AsyncFilter::Import(sub.to_string()),
+                None => match other.strip_prefix("export:") {
+                    Some(sub) => AsyncFilter::Export(sub.to_string()),
+                    None => AsyncFilter::Function(other.to_string()),
+                },
+            },
+        }
+    }
+
+    fn all() -> AsyncFilter {
+        AsyncFilter::All
+    }
+
+    fn is_all(&self) -> bool {
+        matches!(self, AsyncFilter::All)
+    }
 }
 
 impl fmt::Display for AsyncFilter {

@@ -19,7 +19,8 @@ use wit_bindgen_core::wit_parser::{
     TypeDefKind, TypeId, TypeOwner, Variant, WorldId, WorldKey,
 };
 use wit_bindgen_core::{
-    AsyncFilterSet, Direction, Files, InterfaceGenerator as _, Ns, WorldGenerator, uwriteln,
+    AsyncFilterSet, Direction, Files, FilterSet, InterfaceGenerator as _, Ns, WorldGenerator,
+    uwriteln,
 };
 
 const MAX_FLAT_PARAMS: usize = 16;
@@ -1030,7 +1031,7 @@ impl Go {
     ) -> InterfaceData {
         self.visit_futures_and_streams(true, resolve, func, interface);
 
-        let async_ = self.opts.async_.is_async(resolve, interface, func, true);
+        let async_ = self.opts.async_.apply_rules(resolve, interface, func, true);
 
         let (variant, prefix) = if async_ {
             (AbiVariant::GuestImportAsync, "[async-lower]")
@@ -1254,7 +1255,10 @@ func {camel}({go_params}) {go_results} {{
     ) -> String {
         self.visit_futures_and_streams(false, resolve, func, interface);
 
-        let async_ = self.opts.async_.is_async(resolve, interface, func, false);
+        let async_ = self
+            .opts
+            .async_
+            .apply_rules(resolve, interface, func, false);
 
         let (variant, prefix) = if async_ {
             (AbiVariant::GuestExportAsync, "[async-lift]")
