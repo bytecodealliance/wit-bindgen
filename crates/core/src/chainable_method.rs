@@ -1,15 +1,14 @@
 use std::fmt;
-use std::{collections::HashSet, fmt::Write};
+use std::fmt::Write;
 use wit_parser::{Function, FunctionKind, Resolve, WorldKey};
 
-use crate::filter::{FilterMode, FilterRule, FilterSet, FilterTarget};
+use crate::define_filter_set;
+use crate::filter::{FilterMode, FilterRule, FilterTarget};
 
-/// Structure used to parse the command line argument `--chainable-method` consistently
-/// across guest generators.
-#[cfg_attr(feature = "clap", derive(clap::Parser))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
-#[derive(Clone, Default, Debug)]
-pub struct ChainableMethodFilterSet {
+define_filter_set! {
+    /// Structure used to parse the command line argument `--chainable-method` consistently
+    /// across guest generators.
+    pub struct ChainableMethodFilterSet,
     /// Determines which resource methods should have chaining enabled.
     /// Chaining takes a WIT method import returning nothing, and modifies bindgen
     /// in a language-dependent way to return `self` in the glue code. This does
@@ -20,12 +19,18 @@ pub struct ChainableMethodFilterSet {
     /// passed here can be one of:
     ///
     /// - `all` - all applicable methods will be chainable
+    ///
     /// - `foo:bar/baz#my-resource` - enable chaining for all methods in a resource
+    ///
     /// - `foo:bar/baz#my-resource.some-method` - enable chaining for particular method
     ///
+    ///
     /// Each filter may also have one of two modifier prefixes:
+    ///
     /// - `-` - inverts the selection; e.g. `-all` will disable chaining for all
+    ///
     /// - `&` - makes the chainable return `&Self` instead of `Self` (borrowing)
+    ///
     ///
     /// For instance, `&foo:bar/baz#my-resource` will make all methods in said resource
     /// borrowing chainable, while `-foo:bar/baz#my-resource.some-method` will disable it
@@ -33,50 +38,11 @@ pub struct ChainableMethodFilterSet {
     ///
     /// Options are processed in the order they are passed here, so if a method
     /// matches two directives passed the least-specific one should be last.
-    #[cfg_attr(
-        feature = "clap",
-        arg(
-            long = "chainable-methods",
-            value_parser = parse_chainable_method,
-            value_delimiter = ',',
-            value_name = "FILTER",
-        )
-    )]
-    chainable_methods: Vec<ChainableMethod>,
-
-    #[cfg_attr(feature = "clap", arg(skip))]
-    #[cfg_attr(feature = "serde", serde(skip))]
-    used_options: HashSet<usize>,
+    Option<ChainingMode>, ChainableMethodFilter,
+    "chainable-methods"
 }
 
-impl FilterSet for ChainableMethodFilterSet {
-    type Mode = Option<ChainingMode>;
-    type Filter = ChainableMethodFilter;
-
-    fn new(rules: Vec<ChainableMethod>) -> Self {
-        Self {
-            chainable_methods: rules,
-            used_options: HashSet::new(),
-        }
-    }
-
-    fn rules(&self) -> &[ChainableMethod] {
-        &self.chainable_methods
-    }
-    fn rules_mut(&mut self) -> &mut Vec<ChainableMethod> {
-        &mut self.chainable_methods
-    }
-    fn used_options(&self) -> &HashSet<usize> {
-        &self.used_options
-    }
-    fn used_options_mut(&mut self) -> &mut HashSet<usize> {
-        &mut self.used_options
-    }
-
-    fn option_name() -> &'static str {
-        "chainable"
-    }
-
+impl ChainableMethodFilterSet {
     fn apply_rules(
         &mut self,
         resolve: &Resolve,
@@ -105,7 +71,7 @@ impl FilterSet for ChainableMethodFilterSet {
         );
         let method_name_to_test = format!("{}{}", interface_name, func.name);
 
-        for (i, opt) in self.chainable_methods.iter().enumerate() {
+        for (i, opt) in self.rules.iter().enumerate() {
             let matched = match &opt.filter {
                 ChainableMethodFilter::All => true,
                 ChainableMethodFilter::Resource(s) => *s == resource_name_to_test,
@@ -122,18 +88,11 @@ impl FilterSet for ChainableMethodFilterSet {
     }
 }
 
-#[cfg(feature = "clap")]
-fn parse_chainable_method(s: &str) -> Result<ChainableMethod, String> {
-    Ok(ChainableMethod::parse(s))
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum ChainingMode {
     Owning,
     Borrowing,
 }
-
-type ChainableMethod = FilterRule<Option<ChainingMode>, ChainableMethodFilter>;
 
 impl FilterMode for Option<ChainingMode> {
     fn parse(s: &str) -> (Self, &str) {
@@ -155,7 +114,7 @@ impl FilterMode for Option<ChainingMode> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub enum ChainableMethodFilter {
     All,
@@ -179,10 +138,6 @@ impl FilterTarget for ChainableMethodFilter {
 
     fn all() -> ChainableMethodFilter {
         ChainableMethodFilter::All
-    }
-
-    fn is_all(&self) -> bool {
-        matches!(self, ChainableMethodFilter::All)
     }
 }
 
