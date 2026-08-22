@@ -1235,6 +1235,9 @@ impl WorldGenerator for RustWasm {
         for opt in self.opts.async_.debug_opts() {
             uwriteln!(self.src_preamble, "//   * async: {opt}");
         }
+        for opt in self.opts.chainable_methods.debug_opts() {
+            uwriteln!(self.src_preamble, "//   * chainable-methods: {opt}");
+        }
         self.types.analyze(resolve);
         self.types.collect_equal_types(resolve, world, &|a| {
             // If `--merge-structurally-equal-types` is enabled then any type

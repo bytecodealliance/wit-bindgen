@@ -97,7 +97,7 @@ impl FilterMode for bool {
         }
     }
     fn fmt_prefix(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if *self {
+        if !*self {
             f.write_char('-')?;
         }
         Ok(())

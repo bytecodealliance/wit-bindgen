@@ -78,7 +78,7 @@ macro_rules! define_filter_set {
                         continue;
                     }
                     if opt.filter != Self::Filter::all() {
-                        anyhow::bail!("unused {}: {opt}", Self::option_name());
+                        anyhow::bail!("unused {} option: {opt}", Self::option_name());
                     }
                 }
                 Ok(())
