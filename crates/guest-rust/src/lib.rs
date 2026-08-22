@@ -891,26 +891,41 @@ extern crate std;
 ///     // structurally equal, which is useful when import and export the same
 ///     // interface.
 ///     merge_structurally_equal_types: true,
-///
-///     // Make the same generated bindings usable on a native (non-wasm)
-///     // target as well as on wasm32.
-///     //
-///     // Imports normally compile to `unreachable!()` off wasm32. With this
-///     // enabled each one instead calls through a function pointer that a host
-///     // installs at load time via a generated
-///     // `__wit_bindgen_register_*` symbol, and exports additionally get a
-///     // native symbol whose name encodes the characters a linker cannot
-///     // accept. Both targets still build from one source.
-///     //
-///     // The registration symbols are prefixed with a hex-encoded
-///     // `<package>/<world>` so that two `generate!` invocations in one crate
-///     // don't collide. Binding the *same* world twice in one linkage unit
-///     // still does; use `type_section_suffix` to tell them apart. See
-///     // `wit_bindgen_rust::Opts::link_native_symbols` for the full list of
-///     // symbols a host can expect.
-///     link_native_symbols: true,
 /// });
 /// ```
+///
+/// ## Native (non-WebAssembly) targets
+///
+/// Generated bindings also compile for native targets, which is useful for
+/// testing component code without a wasm runtime or for building it as a
+/// `cdylib` plugin. Native linkers don't accept the `:`, `/`, `#`, `[` and
+/// `]` characters that canonical ABI symbol names use, so on native targets
+/// symbols are hex-encoded with the scheme in
+/// `wit_bindgen_core::symbol_name` (the same one the C++ generator uses).
+///
+/// Imports are not resolved by the native linker. Each import calls through
+/// a function pointer that starts out null, and a host provides an
+/// implementation at load time by calling the generated
+/// `__wit_bindgen_register_<world><import>` function with a function pointer
+/// of the import's core signature (`<import>` here is
+/// `make_external_symbol(module, name, GuestImport)`). This means everything
+/// links whether or not a host is present: a host only needs to register the
+/// imports it actually implements, and calling an import that was never
+/// registered aborts with a message naming the import and its registration
+/// function.
+///
+/// Exports, including post-return functions, async callbacks, and resource
+/// destructors, are exported under their hex-encoded core export names. A
+/// `__wit_bindgen_cabi_realloc_<world>` function is also exported so hosts
+/// can allocate guest-owned memory when lowering arguments, as the canonical
+/// ABI requires.
+///
+/// The `<world>` prefix above is a hex-encoded
+/// `<package>/<world><type_section_suffix>`, which keeps two `generate!`
+/// invocations in one binary from defining the same symbols. Note that
+/// binding the same world twice in one native binary will fail to link with
+/// duplicate symbols unless `type_section_suffix` is used to tell the two
+/// apart.
 ///
 /// [WIT package]: https://component-model.bytecodealliance.org/design/packages.html
 #[cfg(feature = "macros")]
