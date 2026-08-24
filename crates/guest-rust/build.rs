@@ -17,9 +17,7 @@ fn main() {
     if target_env == "p1" || target_env == "" {
         link_lib("cabi_realloc");
     }
-    if target_env == "p3" {
-        link_lib("cabi_wasip3");
-    }
+    link_lib("cabi_wasip3");
 }
 
 fn link_lib(name: &str) {
