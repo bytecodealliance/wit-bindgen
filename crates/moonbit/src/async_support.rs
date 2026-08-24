@@ -2,7 +2,7 @@ use std::{collections::HashSet, fmt::Write, mem, ops::Range};
 
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::{
-    AsyncFilterSet, Direction, Files, FilterSet, Ns, Source,
+    AsyncFilterSet, Direction, Files, Ns, Source,
     abi::{self, AbiVariant, WasmSignature, WasmType},
     uwrite, uwriteln,
     wit_parser::{
@@ -408,7 +408,7 @@ impl AsyncSupport {
         module: Option<&WorldKey>,
         func: &Function,
     ) -> AsyncImportPlan {
-        let is_async = async_filter.apply_rules(resolve, module, func, true);
+        let is_async = async_filter.is_async(resolve, module, func, true);
         if is_async {
             self.runtime_required = true;
         }
@@ -422,7 +422,7 @@ impl AsyncSupport {
         interface: Option<&WorldKey>,
         func: &Function,
     ) -> AsyncExportPlan {
-        let is_async = async_filter.apply_rules(resolve, interface, func, false);
+        let is_async = async_filter.is_async(resolve, interface, func, false);
         if is_async {
             self.runtime_required = true;
         }
@@ -2370,7 +2370,7 @@ fn wasm{symbol_name}Reject(
             r#"
             FixedArray::makei(
                 {length},
-                (index) => {{
+                (index) => {{ 
                     let ptr = ({address}) + (index * {size})
                     {lift_func}(ptr)
                 }}

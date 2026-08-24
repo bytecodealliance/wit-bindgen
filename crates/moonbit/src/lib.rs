@@ -3115,8 +3115,6 @@ fn print_docs(src: &mut String, docs: &Docs) {
 
 #[cfg(test)]
 mod tests {
-    use wit_bindgen_core::FilterSet;
-
     use super::*;
 
     fn try_generate_with_opts(wit: &str, world: &str, opts: Opts) -> Result<Files> {

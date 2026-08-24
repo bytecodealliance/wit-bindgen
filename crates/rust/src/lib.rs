@@ -10,9 +10,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    AsyncFilterSet, ChainableMethodFilterSet, ChainingMode, Files, FilterSet,
-    InterfaceGenerator as _, Source, Types, WorldGenerator, dealias, name_package_module, uwrite,
-    uwriteln, wit_parser::*,
+    AsyncFilterSet, ChainableMethodFilterSet, ChainingMode, Files, InterfaceGenerator as _, Source,
+    Types, WorldGenerator, dealias, name_package_module, uwrite, uwriteln, wit_parser::*,
 };
 
 mod bindgen;
@@ -1103,7 +1102,7 @@ macro_rules! __export_{world_name}_impl {{
     ) -> bool {
         self.opts
             .async_
-            .apply_rules(resolve, interface, func, is_import)
+            .is_async(resolve, interface, func, is_import)
     }
 
     fn should_return_self(
@@ -1116,7 +1115,7 @@ macro_rules! __export_{world_name}_impl {{
         return self
             .opts
             .chainable_methods
-            .apply_rules(resolve, interface, func, is_import);
+            .should_be_chainable(resolve, interface, func, is_import);
     }
 }
 
