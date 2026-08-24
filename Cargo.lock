@@ -1456,8 +1456,8 @@ dependencies = [
  "clap",
  "heck",
  "indexmap",
- "wasm-encoder 0.254.0",
- "wasm-metadata 0.254.0",
+ "wasm-encoder 0.257.0",
+ "wasm-metadata 0.257.0",
  "wit-bindgen-core",
  "wit-component",
 ]
