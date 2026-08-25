@@ -110,16 +110,6 @@ static bool equal(std::expected<void, U> const& a, std::expected<void, U> const&
     }
 }
 template <class T>
-static bool equal(std::expected<T, wit::string> const& a, std::expected<T, std::string_view> const& b) {
-    if (a.has_value()) {
-        if (!b.has_value()) return false;
-        return equal(*a, *b);
-    } else {
-        if (b.has_value()) return false;
-        return equal(a.error().get_view(), b.error());
-    }
-}
-template <class T>
 static bool equal(std::optional<T> const& a, std::optional<T> const& b) {
     if (a.has_value() != b.has_value()) return false;
     if (a.has_value()) {

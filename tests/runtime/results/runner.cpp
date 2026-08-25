@@ -30,16 +30,6 @@ static bool equal(std::expected<T, U> const& a, std::expected<T, U> const& b) {
         return equal(a.error(), b.error());
     }
 }
-template <class U>
-static bool equal(std::expected<void, U> const& a, std::expected<void, U> const& b) {
-    if (a.has_value()) {
-        if (!b.has_value()) return false;
-        return true;
-    } else {
-        if (b.has_value()) return false;
-        return equal(a.error(), b.error());
-    }
-}
 static bool equal(std::expected<void, wit::string> const& a, std::expected<void, std::string_view> const& b) {
     if (a.has_value()) {
         if (!b.has_value()) return false;
