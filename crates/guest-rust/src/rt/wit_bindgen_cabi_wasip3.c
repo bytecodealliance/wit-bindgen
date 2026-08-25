@@ -13,10 +13,10 @@ void *wasip3_task_set(void *ptr) {
 
 static _Thread_local void *task_context = NULL;
 
-void *wit_bindgen_0_61_0_get_task_context(void) {
+void *wit_bindgen_0_61_1_get_task_context(void) {
   return task_context;
 }
 
-void wit_bindgen_0_61_0_set_task_context(void *ptr) {
+void wit_bindgen_0_61_1_set_task_context(void *ptr) {
   task_context = ptr;
 }
