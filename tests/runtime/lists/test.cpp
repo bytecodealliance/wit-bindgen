@@ -2,6 +2,7 @@
 #include <test_cpp.h>
 #include <float.h>
 #include <math.h>
+#include <vector>
 
 uint32_t exports::test::lists::to_test::AllocatedBytes() {
     return 0;
@@ -20,24 +21,8 @@ static bool equal(std::span<R> const&a, std::span<S> const& b) {
     return true;
 }
 template<class R>
-static bool equal(wit::vector<R> const&a, std::span<R> const& b) {
-    return equal(a.get_view(), b);
-}
-template<class R>
-static bool equal(std::span<const R> const&a, wit::vector<R> const& b) {
-    return equal(b, a);
-}
-template<class R>
-static bool equal(std::span<const R> const&a, std::vector<R> const& b) {
-    return equal(a, std::span<const R>(b));
-}
-template<class R>
 static bool equal(wit::vector<R> const&a, std::vector<R> const& b) {
     return equal(a.get_view(), std::span<R const>(b));
-}
-template<class R,class S, class T, class U>
-static bool equal(std::tuple<R,S> const&a, std::tuple<T,U> const& b) {
-    return equal(std::get<0>(a), std::get<0>(b)) && equal(std::get<1>(a), std::get<1>(b));
 }
 
 static bool equal(wit::string const& a, std::string_view b) {
