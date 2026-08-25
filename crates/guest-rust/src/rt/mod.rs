@@ -122,7 +122,7 @@ mod wit_bindgen_cabi_realloc;
 ///
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 pub fn maybe_link_cabi_realloc() {
-    #[cfg(any(target_env = "p1", target_env = ""))]
+    #[cfg(all(target_family = "wasm", any(target_env = "p1", target_env = "")))]
     {
         unsafe extern "C" {
             fn cabi_realloc(
