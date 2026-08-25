@@ -4,7 +4,7 @@ description: 'Install the wasi-sdk toolchain'
 inputs:
   version:
     description: "Wasi-sdk version to install"
-    default: "30"
+    default: "34"
 
 runs:
   using: composite
@@ -34,8 +34,8 @@ runs:
     - name: Setup `wasm-tools`
       uses: bytecodealliance/actions/wasm-tools/setup@v1
       with:
-        version: "1.252.0"
+        version: "1.258.0"
     - name: Setup `wasmtime`
       uses: bytecodealliance/actions/wasmtime/setup@v1
       with:
-        version: "46.0.1"
+        version: "48.0.1"
