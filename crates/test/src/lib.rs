@@ -1087,6 +1087,25 @@ status: {}",
         bail!("{error}")
     }
 
+    /// TODO
+    fn link_dylibs_to_component(&self, dylibs: &[PathBuf], compile: &Compile<'_>) -> Result<()> {
+        let mut linker = wit_component::Linker::default();
+        for dylib in dylibs {
+            let dylib_bytes =
+                fs::read(dylib).with_context(|| format!("failed to read dylib file {dylib:?}"))?;
+            let name = dylib
+                .file_name()
+                .and_then(|s| s.to_str())
+                .context("non-utf-8 dylib filename")?;
+            linker
+                .library(name, &dylib_bytes, false)
+                .with_context(|| format!("failed to register {name}"))?;
+        }
+        let component = linker.encode().context("failed to link")?;
+        write_if_different(compile.output, component)?;
+        Ok(())
+    }
+
     /// Converts the WASIp1 module at `p1` to a component using the information
     /// stored within `compile`.
     ///

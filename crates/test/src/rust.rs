@@ -40,10 +40,19 @@ struct RustConfig {
     /// Space-separated list or array of compiler flags to pass.
     #[serde(default)]
     rustflags: StringList,
+
     /// List of path to rust files to build as external crates and link to the
     /// main crate.
     #[serde(default)]
     externs: Vec<String>,
+
+    #[serde(default)]
+    link_shared: bool,
+
+    /// Paths to Rust files to build as dynamic libraries. If non-empty the
+    /// main file is also built as a dynamic library.
+    #[serde(default)]
+    extern_dylibs: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -208,6 +217,7 @@ path = 'lib.rs'
 
     fn compile(&self, runner: &Runner, compile: &Compile) -> Result<()> {
         let config = compile.component.deserialize_lang_config::<RustConfig>()?;
+        let link_shared = config.link_shared || !config.extern_dylibs.is_empty();
 
         // If this rust target doesn't natively produce a component then place
         // the compiler output in a temporary location which is componentized
@@ -216,7 +226,15 @@ path = 'lib.rs'
 
         // Compile all extern crates, if any
         let mut externs = Vec::new();
+        let mut dylibs = Vec::new();
         let manifest_dir = compile.component.path.parent().unwrap();
+
+        let wasi_sdk_path = if link_shared {
+            let path = runner.opts.c.wasi_sdk_path.as_ref();
+            Some(path.ok_or_else(|| anyhow::anyhow!("need a wasi-sdk-path"))?)
+        } else {
+            None
+        };
 
         let rustc = |path: &Path, output: &Path| {
             // Compile the main crate, passing `--extern` for all upstream crates.
@@ -228,7 +246,27 @@ path = 'lib.rs'
             for flag in Vec::from(config.rustflags.clone()) {
                 cmd.arg(flag);
             }
+            if link_shared {
+                cmd.arg("-Clink-arg=-shared");
+                cmd.arg("-Clink-self-contained=n");
+                cmd.arg(&format!(
+                    "-Clinker={}/bin/clang",
+                    wasi_sdk_path.unwrap().display()
+                ));
+                cmd.arg("-L").arg(&compile.artifacts_dir);
+            }
             cmd
+        };
+
+        let compile_cdylib = |cmd: &mut Command| {
+            cmd.arg("--crate-type=cdylib");
+            if runner.produces_component() {
+                if link_shared {
+                    cmd.arg("-Clink-arg=-Wl,--skip-wit-component");
+                } else {
+                    cmd.arg("-Clink-arg=--skip-wit-component");
+                }
+            }
         };
 
         for file in config.externs.iter() {
@@ -237,6 +275,16 @@ path = 'lib.rs'
             let output = compile.artifacts_dir.join(format!("lib{stem}.rlib"));
             runner.run_command(rustc(&file, &output).arg("--crate-type=rlib"))?;
             externs.push((stem.to_string(), output));
+        }
+
+        for file in config.extern_dylibs.iter() {
+            let file = manifest_dir.join(file);
+            let stem = file.file_stem().unwrap().to_str().unwrap();
+            let output = compile.artifacts_dir.join(format!("lib{stem}.so"));
+            let mut cmd = rustc(&file, &output);
+            compile_cdylib(&mut cmd);
+            runner.run_command(&mut cmd)?;
+            dylibs.push(output);
         }
 
         // Compile the main crate, passing `--extern` for all upstream crates.
@@ -252,15 +300,27 @@ path = 'lib.rs'
             let arg = format!("--extern={name}={}", path.display());
             cmd.arg(arg);
         }
-        cmd.arg("--crate-type=cdylib");
-        if runner.produces_component() {
-            cmd.arg("-Clink-arg=--skip-wit-component");
-        }
+        compile_cdylib(&mut cmd);
         runner.run_command(&mut cmd)?;
 
-        runner
-            .convert_p1_to_component(&output, compile)
-            .with_context(|| format!("failed to convert {output:?}"))?;
+        if link_shared {
+            let libc_so = wasi_sdk_path.unwrap().join(&format!(
+                "share/wasi-sysroot/lib/{}/libc.so",
+                runner.opts.rust.rust_target,
+            ));
+            if !libc_so.is_file() {
+                anyhow::bail!("libc.so not found at {libc_so:?}");
+            }
+            dylibs.insert(0, libc_so);
+            dylibs.push(output.clone());
+            runner
+                .link_dylibs_to_component(&dylibs, compile)
+                .with_context(|| format!("failed to link {output:?}"))?;
+        } else {
+            runner
+                .convert_p1_to_component(&output, compile)
+                .with_context(|| format!("failed to convert {output:?}"))?;
+        }
 
         Ok(())
     }
