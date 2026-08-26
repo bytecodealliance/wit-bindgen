@@ -46,6 +46,9 @@ struct RustConfig {
     #[serde(default)]
     externs: Vec<String>,
 
+    /// Whether or not to link the main crate as a shared library.
+    ///
+    /// This is implied if `extern_dylibs` is specified.
     #[serde(default)]
     link_shared: bool,
 

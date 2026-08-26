@@ -1087,7 +1087,11 @@ status: {}",
         bail!("{error}")
     }
 
-    /// TODO
+    /// Converts the list of dynamic libraries in `dylibs` into a component and places it
+    /// in the destination specified by `compile`.
+    ///
+    /// This is similar to `convert_p1_to_component` except usese a
+    /// `wit_component::Linker` instead of a `wit_component::ComponentEncoder`.
     fn link_dylibs_to_component(&self, dylibs: &[PathBuf], compile: &Compile<'_>) -> Result<()> {
         let mut linker = wit_component::Linker::default();
         for dylib in dylibs {
