@@ -106,7 +106,7 @@ jobs:
     - uses: ./.github/actions/install-wasi-sdk
       if: matrix.lang == 'csharp'
       with:
-        version: 29
+        version: 32
 
     # As of this writing async tests require [a patched build of
     # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle).
