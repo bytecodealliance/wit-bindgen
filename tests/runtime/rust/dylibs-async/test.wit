@@ -1,0 +1,15 @@
+package my:inline;
+
+interface a {
+  a: async func(f: future<u32>) -> u32;
+}
+
+world test {
+    export a;
+}
+
+world runner {
+    import a;
+
+    export run: async func();
+}

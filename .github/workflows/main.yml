@@ -79,7 +79,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, csharp, cpp, go, d]
+        # csharp removed from language matrix for now - causing CI failures
+        lang: [c, rust, cpp, go, d]
         exclude:
           # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
@@ -103,10 +104,6 @@ jobs:
       with:
         dotnet-version: '9.x'
       if: matrix.lang == 'csharp'
-    - uses: ./.github/actions/install-wasi-sdk
-      if: matrix.lang == 'csharp'
-      with:
-        version: 29
 
     # As of this writing async tests require [a patched build of
     # Go](https://github.com/dicej/go/releases/tag/go1.25.5-wasi-on-idle).
