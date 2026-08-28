@@ -524,6 +524,10 @@ impl WorldGenerator for MoonBit {
     }
 
     fn finish(&mut self, _resolve: &Resolve, _id: WorldId, files: &mut Files) -> Result<()> {
+        // Error about unused async configuration to help catch configuration
+        // errors.
+        self.opts.async_.ensure_all_used()?;
+
         // If async is used, export async utils
         self.async_support.emit_runtime_files(files, VERSION);
 
@@ -3249,9 +3253,16 @@ mod tests {
 
     #[test]
     fn async_filters_respect_import_export_direction() {
+        // The world both imports and exports `run` so that each directional
+        // filter below matches something; an unmatched filter is now an error
+        // (see `AsyncFilterSet::ensure_all_used`), which would mask what this
+        // test is actually checking.
         let wit = r#"
             package a:b;
-            world runner { import run: func(); }
+            world runner {
+                import run: func();
+                export run: func();
+            }
         "#;
 
         let mut import_opts = Opts {

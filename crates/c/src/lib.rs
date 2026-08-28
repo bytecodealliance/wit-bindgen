@@ -319,6 +319,10 @@ impl WorldGenerator for C {
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
+        // Error about unused async configuration to help catch configuration
+        // errors.
+        self.opts.async_.ensure_all_used()?;
+
         let linking_symbol = component_type_object::linking_symbol(&self.world);
         self.c_include("<stdlib.h>");
         let snake = self.world.to_snake_case();
