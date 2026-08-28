@@ -877,6 +877,9 @@ impl WorldGenerator for Go {
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         _ = (resolve, id);
+        // Error about unused async configuration to help catch configuration
+        // errors.
+        self.opts.async_.ensure_all_used()?;
 
         let version = env!("CARGO_PKG_VERSION");
         let packages = resolve
