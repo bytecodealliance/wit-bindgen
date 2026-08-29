@@ -176,8 +176,10 @@ impl PkgResolver {
         match ty {
             Type::Bool => "Bool".into(),
             Type::U8 => "Byte".into(),
-            Type::S32 | Type::S8 | Type::S16 => "Int".into(),
-            Type::U16 | Type::U32 => "UInt".into(),
+            Type::S8 | Type::S32 => "Int".into(),
+            Type::S16 => "Int16".into(),
+            Type::U16 => "UInt16".into(),
+            Type::U32 => "UInt".into(),
             Type::Char => "Char".into(),
             Type::U64 => "UInt64".into(),
             Type::S64 => "Int64".into(),
@@ -189,18 +191,34 @@ impl PkgResolver {
                 let ty = self.resolve.types[dealias(&self.resolve, *id)].clone();
                 match ty.kind {
                     TypeDefKind::Type(ty) => self.type_name(this, &ty),
-                    TypeDefKind::List(ty) => match ty {
-                        Type::U8
-                        | Type::U32
-                        | Type::U64
-                        | Type::S32
-                        | Type::S64
-                        | Type::F32
-                        | Type::F64 => {
+                    TypeDefKind::List(ty) => {
+                        let element = match &ty {
+                            Type::Id(id) => {
+                                match &self.resolve.types[dealias(&self.resolve, *id)].kind {
+                                    TypeDefKind::Type(element) => element,
+                                    _ => &ty,
+                                }
+                            }
+                            element => element,
+                        };
+                        if matches!(
+                            element,
+                            Type::Bool
+                                | Type::U8
+                                | Type::U16
+                                | Type::U32
+                                | Type::U64
+                                | Type::S16
+                                | Type::S32
+                                | Type::S64
+                                | Type::F32
+                                | Type::F64
+                        ) {
                             format!("FixedArray[{}]", self.type_name(this, &ty))
+                        } else {
+                            format!("Array[{}]", self.type_name(this, &ty))
                         }
-                        _ => format!("Array[{}]", self.type_name(this, &ty)),
-                    },
+                    }
                     TypeDefKind::FixedLengthList(ty, _size) => {
                         format!("FixedArray[{}]", self.type_name(this, &ty))
                     }
