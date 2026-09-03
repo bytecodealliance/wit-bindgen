@@ -192,6 +192,12 @@ pub unsafe fn cabi_realloc(
     return ptr;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+mod native_imports;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use native_imports::{ImportResolver, resolve_import};
+
 /// Provide a hook for generated export functions to run static constructors at
 /// most once.
 ///
