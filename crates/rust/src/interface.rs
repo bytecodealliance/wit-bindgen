@@ -725,26 +725,79 @@ macro_rules! {macro_name} {{
             }
         }
 
+        // Natively the intrinsics are resolved through the host's import
+        // resolver, exactly like every other import.
+        let rt = self.r#gen.runtime_path();
+        let handle = || ("handle".to_string(), "u32");
+        let mut extra: Vec<(String, &str)> = Vec::new();
+        if let PayloadFor::Stream = payload_for {
+            extra.push(("amt".to_string(), "usize"));
+        }
+        let mut native_intrinsics = String::new();
+        for (rust_name, core_name, params, result) in [
+            (
+                "new",
+                format!("[{import_prefix}-new-{index}]{func_name}"),
+                vec![],
+                Some("u64"),
+            ),
+            (
+                "cancel_write",
+                format!("[{import_prefix}-cancel-write-{index}]{func_name}"),
+                vec![handle()],
+                Some("u32"),
+            ),
+            (
+                "cancel_read",
+                format!("[{import_prefix}-cancel-read-{index}]{func_name}"),
+                vec![handle()],
+                Some("u32"),
+            ),
+            (
+                "drop_writable",
+                format!("[{import_prefix}-drop-writable-{index}]{func_name}"),
+                vec![handle()],
+                None,
+            ),
+            (
+                "drop_readable",
+                format!("[{import_prefix}-drop-readable-{index}]{func_name}"),
+                vec![handle()],
+                None,
+            ),
+            (
+                "start_read",
+                format!("[async-lower][{import_prefix}-read-{index}]{func_name}"),
+                [
+                    vec![handle(), ("ptr".to_string(), "*mut u8")],
+                    extra.clone(),
+                ]
+                .concat(),
+                Some("u32"),
+            ),
+            (
+                "start_write",
+                format!("[async-lower][{import_prefix}-write-{index}]{func_name}"),
+                [
+                    vec![handle(), ("ptr".to_string(), "*const u8")],
+                    extra.clone(),
+                ]
+                .concat(),
+                Some("u32"),
+            ),
+        ] {
+            native_intrinsics.push_str(&crate::native_import_shim(
+                &module, &core_name, rust_name, &params, result, rt,
+            ));
+        }
+
         let code = format!(
             r#"
 #[doc(hidden)]
 #[allow(unused_unsafe)]
 pub mod vtable{ordinal} {{
 
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn cancel_write(_: u32) -> u32 {{ unreachable!() }}
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn cancel_read(_: u32) -> u32 {{ unreachable!() }}
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn drop_writable(_: u32) {{ unreachable!() }}
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn drop_readable(_: u32) {{ unreachable!() }}
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn new() -> u64 {{ unreachable!() }}
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn start_read(_: u32, _: *mut u8{start_extra}) -> u32 {{ unreachable!() }}
-    #[cfg(not(target_arch = "wasm32"))]
-    unsafe extern "C" fn start_write(_: u32, _: *const u8{start_extra}) -> u32 {{ unreachable!() }}
+    {native_intrinsics}
 
     // Work around a behavior of LLD where in a shared library when an address
     // is taken of an imported function that only shows up as a `GOT.func`

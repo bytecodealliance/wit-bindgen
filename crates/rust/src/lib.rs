@@ -1904,10 +1904,6 @@ fn wasm_type(ty: WasmType) -> &'static str {
     }
 }
 
-/// Declares the core import `wasm_import_module`/`wasm_import_name` as a
-/// function named `rust_name`. On `wasm32` this is a plain linker-resolved
-/// import; natively it's a shim that asks the host's resolver for the
-/// implementation on first call (see `rt::resolve_import`) and caches it.
 fn declare_import(
     wasm_import_module: &str,
     wasm_import_name: &str,
@@ -1929,20 +1925,19 @@ fn declare_import(
         sig.push_str(wasm_type(*result));
     }
 
-    let named_params: Vec<String> = params
+    let named_params: Vec<(String, &str)> = params
         .iter()
         .enumerate()
-        .map(|(i, ty)| format!("arg{i}: {}", wasm_type(*ty)))
+        .map(|(i, ty)| (format!("arg{i}"), wasm_type(*ty)))
         .collect();
-    let ret_sig = results
-        .first()
-        .map(|r| format!(" -> {}", wasm_type(*r)))
-        .unwrap_or_default();
-    let call_args = (0..params.len())
-        .map(|i| format!("arg{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let named_params_str = named_params.join(", ");
+    let native = native_import_shim(
+        wasm_import_module,
+        wasm_import_name,
+        rust_name,
+        &named_params,
+        results.first().map(|r| wasm_type(*r)),
+        rt,
+    );
 
     format!(
         r#"
@@ -1952,18 +1947,54 @@ fn declare_import(
                 #[link_name = "{wasm_import_name}"]
                 fn {rust_name}{sig};
             }}
+            {native}
+        "#,
+    )
+}
 
+/// Emits the native (non-`wasm32`) definition of the core import
+/// `module`/`name`: an `unsafe extern "C" fn` named `rust_name` that asks the
+/// host's import resolver for the implementation on first call (see
+/// `rt::resolve_import`) and caches it. `params` are `(name, type)` pairs.
+fn native_import_shim(
+    module: &str,
+    name: &str,
+    rust_name: &str,
+    params: &[(String, &str)],
+    result: Option<&str>,
+    rt: &str,
+) -> String {
+    let named_params = params
+        .iter()
+        .map(|(arg, ty)| format!("{arg}: {ty}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let param_types = params
+        .iter()
+        .map(|(_, ty)| *ty)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let call_args = params
+        .iter()
+        .map(|(arg, _)| arg.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ret_sig = result.map(|r| format!(" -> {r}")).unwrap_or_default();
+
+    format!(
+        r#"
             #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn {rust_name}({named_params_str}){ret_sig} {{
+            unsafe extern "C" fn {rust_name}({named_params}){ret_sig} {{
                 static CACHE: ::core::sync::atomic::AtomicPtr<()> =
                     ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
-                let mut ptr = CACHE.load(::core::sync::atomic::Ordering::Acquire);
-                if ptr.is_null() {{
-                    ptr = {rt}::resolve_import(c"{wasm_import_module}", c"{wasm_import_name}");
-                    CACHE.store(ptr, ::core::sync::atomic::Ordering::Release);
+                // Named so as not to shadow any parameter.
+                let mut __impl = CACHE.load(::core::sync::atomic::Ordering::Acquire);
+                if __impl.is_null() {{
+                    __impl = {rt}::resolve_import(c"{module}", c"{name}");
+                    CACHE.store(__impl, ::core::sync::atomic::Ordering::Release);
                 }}
-                let f: unsafe extern "C" fn{sig} = unsafe {{ ::core::mem::transmute(ptr) }};
-                unsafe {{ f({call_args}) }}
+                let __func: unsafe extern "C" fn({param_types}){ret_sig} = unsafe {{ ::core::mem::transmute(__impl) }};
+                unsafe {{ __func({call_args}) }}
             }}
         "#,
     )
