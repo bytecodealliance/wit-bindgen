@@ -24,8 +24,12 @@ mod multiple_paths {
 #[allow(unused, reason = "testing codegen, not functionality")]
 mod inline_and_path {
     wit_bindgen::generate!({
+        // A different package from `multiple_paths` above. Two different
+        // worlds under one name corrupt each other's `component-type` sections
+        // on wasm, and collide on the world marker symbol natively. So this
+        // technically is a fix to the existing tests
         inline: r#"
-        package test:paths;
+        package test:inline-and-path-root;
 
         world test {
             import test:inline-and-path/bar;
@@ -240,7 +244,7 @@ mod owning_method_chaining {
 mod borrowing_method_chaining {
     wit_bindgen::generate!({
         inline: r#"
-        package test:method-chaining;
+        package test:borrowing-method-chaining;
         world test {
             resource a {
                 constructor();
@@ -422,3 +426,146 @@ mod versioned_selectors {
         assert!(Alpha { x: 1 } < Alpha { x: 2 });
     }
 }
+
+// These call `export!` so the native export symbols, which live inside the
+// `__export_*_cabi!` macro, actually get compiled.
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native;
+
+        interface operations {
+            resource thing {
+                constructor(x: u32);
+                get: func() -> u32;
+            }
+            add: func(a: u32, b: u32) -> u32;
+            describe: func(value: u32) -> string;
+        }
+
+        world test {
+            import operations;
+            export operations;
+        }
+        "#,
+        generate_all,
+    });
+
+    struct Component;
+
+    impl exports::test::native::operations::Guest for Component {
+        type Thing = MyThing;
+
+        fn add(a: u32, b: u32) -> u32 {
+            a + b
+        }
+
+        fn describe(value: u32) -> String {
+            value.to_string()
+        }
+    }
+
+    struct MyThing(u32);
+
+    impl exports::test::native::operations::GuestThing for MyThing {
+        fn new(x: u32) -> Self {
+            MyThing(x)
+        }
+
+        fn get(&self) -> u32 {
+            self.0
+        }
+    }
+
+    export!(Component);
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols_async {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native-async;
+
+        interface operations {
+            describe: func(value: u32) -> string;
+        }
+
+        world test {
+            import operations;
+            export operations;
+        }
+        "#,
+        generate_all,
+        async: true,
+    });
+
+    struct Component;
+
+    impl exports::test::native_async::operations::Guest for Component {
+        async fn describe(value: u32) -> String {
+            value.to_string()
+        }
+    }
+
+    export!(Component);
+}
+
+// Import shims define no symbols, so two worlds importing the same
+// interface link side by side.
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols_shared_one {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native-shared;
+        interface operations { add: func(a: u32, b: u32) -> u32; }
+        world one { import operations; }
+        "#,
+        generate_all,
+    });
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod native_symbols_shared_two {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:native-shared;
+        interface operations { add: func(a: u32, b: u32) -> u32; }
+        world two { import operations; }
+        "#,
+        generate_all,
+    });
+}
+
+// Binding the *same* world twice needs `type_section_suffix` for the world
+// marker and `export_prefix` for the export names; drop either and it fails
+// to link with a duplicate symbol.
+macro_rules! native_symbols_same_world {
+    ($module:ident, $tag:literal) => {
+        #[allow(unused, reason = "testing codegen, not functionality")]
+        mod $module {
+            wit_bindgen::generate!({
+                inline: r#"
+                package test:native-same-world;
+                world w { export run: func() -> u32; }
+                "#,
+                generate_all,
+                type_section_suffix: $tag,
+                export_prefix: $tag,
+            });
+
+            struct Component;
+
+            impl Guest for Component {
+                fn run() -> u32 {
+                    0
+                }
+            }
+
+            export!(Component);
+        }
+    };
+}
+
+native_symbols_same_world!(native_symbols_same_world_a, "a_");
+native_symbols_same_world!(native_symbols_same_world_b, "b_");

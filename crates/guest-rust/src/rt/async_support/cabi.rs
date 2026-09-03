@@ -69,21 +69,42 @@
 
 use core::ffi::c_void;
 
-extern_wasm! {
-    unsafe extern "C" {
-        /// Sets the global task pointer to `ptr` provided. Returns the previous
-        /// value.
-        ///
-        /// This function acts as a dual getter and a setter. To get the
-        /// current task pointer a dummy `ptr` can be provided (e.g. NULL) and then
-        /// it's passed back when you're done working with it. When setting the
-        /// current task pointer it's recommended to call this and then call it
-        /// again with the previous value when the tasks's work is done.
-        ///
-        /// For executors they need to ensure that the `ptr` passed in lives for
-        /// the entire lifetime of the component model task.
-        pub fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task;
-    }
+#[cfg(target_family = "wasm")]
+unsafe extern "C" {
+    /// Sets the global task pointer to `ptr` provided. Returns the previous
+    /// value.
+    ///
+    /// This function acts as a dual getter and a setter. To get the
+    /// current task pointer a dummy `ptr` can be provided (e.g. NULL) and then
+    /// it's passed back when you're done working with it. When setting the
+    /// current task pointer it's recommended to call this and then call it
+    /// again with the previous value when the tasks's work is done.
+    ///
+    /// For executors they need to ensure that the `ptr` passed in lives for
+    /// the entire lifetime of the component model task.
+    pub fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task;
+}
+
+/// Native counterpart of the C-defined `wasip3_task_set` above. Uses
+/// thread local so there is no possible panic on multi thread when polling
+/// two async exports at the same time.
+#[cfg(all(not(target_family = "wasm"), feature = "std"))]
+pub unsafe fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task {
+    use core::cell::Cell;
+    std::thread_local!(
+        static CURRENT: Cell<*mut wasip3_task> = const { Cell::new(core::ptr::null_mut()) }
+    );
+    CURRENT.with(|current| current.replace(ptr))
+}
+
+/// Without `std` there are no thread-locals on stable Rust, so this falls
+/// back to one global slot, which requires the host to not poll two async
+/// exports at the same time.
+#[cfg(all(not(target_family = "wasm"), not(feature = "std")))]
+pub unsafe fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    static CURRENT: AtomicPtr<wasip3_task> = AtomicPtr::new(core::ptr::null_mut());
+    CURRENT.swap(ptr, Ordering::AcqRel)
 }
 
 /// The first version of `wasip3_task` which implies the existence of the

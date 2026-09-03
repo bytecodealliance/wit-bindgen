@@ -27,33 +27,49 @@ macro_rules! rtdebug {
 
 /// Helper macro to deduplicate foreign definitions of wasm functions.
 ///
-/// This automatically imports when on wasm targets and then defines a dummy
-/// panicking shim for native targets to support native compilation but fail at
-/// runtime.
+/// On wasm targets this declares the canonical ABI built-ins as ordinary
+/// linker-resolved imports. On native targets each one instead becomes a shim
+/// that asks the host's import resolver for its implementation on first call
+/// (see `rt::native_imports`), identified by the same module and name, so the
+/// generated code is the same on both targets and only who satisfies the
+/// import differs.
 macro_rules! extern_wasm {
     (
-        $(#[$extern_attr:meta])*
+        #[link(wasm_import_module = $module:literal)]
         unsafe extern "C" {
             $(
-                $(#[$func_attr:meta])*
-                $vis:vis fn $func_name:ident ( $($args:tt)* ) $(-> $ret:ty)?;
+                #[link_name = $name:literal]
+                $vis:vis fn $func_name:ident ( $($arg:ident : $ty:ty),* $(,)? ) $(-> $ret:ty)?;
             )*
         }
     ) => {
         $(
             #[cfg(not(target_family = "wasm"))]
-            #[allow(unused, reason = "dummy shim for non-wasm compilation, never invoked")]
-            $vis unsafe fn $func_name($($args)*) $(-> $ret)? {
-                unreachable!();
+            #[allow(dead_code, reason = "mirrors the wasm import set even if unused natively")]
+            $vis unsafe fn $func_name($($arg: $ty),*) $(-> $ret)? {
+                static CACHE: ::core::sync::atomic::AtomicPtr<()> =
+                    ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
+                // Named so as not to shadow any parameter.
+                let mut __impl = CACHE.load(::core::sync::atomic::Ordering::Acquire);
+                if __impl.is_null() {
+                    __impl = crate::rt::resolve_import(
+                        crate::rt::native_imports::cstr(concat!($module, "\0")),
+                        crate::rt::native_imports::cstr(concat!($name, "\0")),
+                    );
+                    CACHE.store(__impl, ::core::sync::atomic::Ordering::Release);
+                }
+                let __func: unsafe extern "C" fn($($ty),*) $(-> $ret)? =
+                    unsafe { ::core::mem::transmute(__impl) };
+                unsafe { __func($($arg),*) }
             }
         )*
 
         #[cfg(target_family = "wasm")]
-        $(#[$extern_attr])*
+        #[link(wasm_import_module = $module)]
         unsafe extern "C" {
             $(
-                $(#[$func_attr])*
-                $vis fn $func_name($($args)*) $(-> $ret)?;
+                #[link_name = $name]
+                $vis fn $func_name($($arg: $ty),*) $(-> $ret)?;
             )*
         }
     };

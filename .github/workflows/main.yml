@@ -211,6 +211,23 @@ jobs:
     - run: rustup component add rust-src
     - run: cargo miri test -p wit-bindgen --all-features
 
+  native_e2e:
+    name: Native E2E
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Install Rust
+      run: rustup update stable --no-self-update && rustup default stable
+    # Builds the plugin in `crates/rust/tests/native-e2e` as a native cdylib,
+    # loads it, and drives it through the import resolver and core ABI.
+    - run: cargo test -p wit-bindgen-rust --test native_e2e
+
   check:
     name: Check
     runs-on: ubuntu-latest
@@ -305,6 +322,7 @@ jobs:
     needs:
       - test
       - test_unit
+      - native_e2e
       - rustfmt
       - build
       - verify-publish

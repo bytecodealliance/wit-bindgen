@@ -11,7 +11,8 @@ use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
     AsyncFilterSet, ChainableMethodFilterSet, ChainingMode, Files, InterfaceGenerator as _, Source,
-    Types, WorldGenerator, dealias, name_package_module, uwrite, uwriteln, wit_parser::*,
+    Types, WorldGenerator, dealias, name_package_module, symbol_name, uwrite, uwriteln,
+    wit_parser::*,
 };
 
 mod bindgen;
@@ -547,6 +548,33 @@ impl RustWasm {
         assert!(prev.is_none());
 
         Ok(remapped)
+    }
+
+    /// Emits the world's native marker symbol, `__wit_bindgen_world_<world>`,
+    /// which hosts look up before calling anything else to check that the
+    /// library they opened implements the world they expect. It's keyed on
+    /// the world name and `type_section_suffix`, like the `component-type`
+    /// section on wasm.
+    fn finish_native_world_marker(&mut self, resolve: &Resolve, world: WorldId) {
+        let world = &resolve.worlds[world];
+        let pkg = world
+            .package
+            .map(|p| resolve.packages[p].name.to_string())
+            .unwrap_or_default();
+        let name = format!("{pkg}/{}", world.name);
+        let suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
+        let symbol = symbol_name::make_external_component(&format!("{name}{suffix}"));
+        uwriteln!(
+            self.src,
+            r#"
+#[cfg(not(target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub extern "C" fn __wit_bindgen_world_{symbol}() -> *const ::core::ffi::c_char {{
+    c"{name}".as_ptr()
+}}
+"#
+        );
     }
 
     fn finish_runtime_module(&mut self) {
@@ -1501,6 +1529,7 @@ impl WorldGenerator for RustWasm {
         let exports = mem::take(&mut self.export_modules);
         self.emit_modules(exports);
 
+        self.finish_native_world_marker(resolve, world);
         self.finish_runtime_module();
         self.finish_export_macro(resolve, world);
 
@@ -1881,6 +1910,7 @@ fn declare_import(
     rust_name: &str,
     params: &[WasmType],
     results: &[WasmType],
+    rt: &str,
 ) -> String {
     let mut sig = "(".to_owned();
     for param in params.iter() {
@@ -1894,18 +1924,79 @@ fn declare_import(
         sig.push_str(" -> ");
         sig.push_str(wasm_type(*result));
     }
+
+    let named_params: Vec<(String, &str)> = params
+        .iter()
+        .enumerate()
+        .map(|(i, ty)| (format!("arg{i}"), wasm_type(*ty)))
+        .collect();
+    let native = native_import_shim(
+        wasm_import_module,
+        wasm_import_name,
+        rust_name,
+        &named_params,
+        results.first().map(|r| wasm_type(*r)),
+        rt,
+    );
+
     format!(
-        "
-            #[cfg(target_arch = \"wasm32\")]
-            #[link(wasm_import_module = \"{wasm_import_module}\")]
-            unsafe extern \"C\" {{
-                #[link_name = \"{wasm_import_name}\"]
+        r#"
+            #[cfg(target_arch = "wasm32")]
+            #[link(wasm_import_module = "{wasm_import_module}")]
+            unsafe extern "C" {{
+                #[link_name = "{wasm_import_name}"]
                 fn {rust_name}{sig};
             }}
+            {native}
+        "#,
+    )
+}
 
-            #[cfg(not(target_arch = \"wasm32\"))]
-            unsafe extern \"C\" fn {rust_name}{sig} {{ unreachable!() }}
-        "
+/// Emits the native (non-`wasm32`) definition of the core import
+/// `module`/`name`: an `unsafe extern "C" fn` named `rust_name` that asks the
+/// host's import resolver for the implementation on first call (see
+/// `rt::resolve_import`) and caches it. `params` are `(name, type)` pairs.
+fn native_import_shim(
+    module: &str,
+    name: &str,
+    rust_name: &str,
+    params: &[(String, &str)],
+    result: Option<&str>,
+    rt: &str,
+) -> String {
+    let named_params = params
+        .iter()
+        .map(|(arg, ty)| format!("{arg}: {ty}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let param_types = params
+        .iter()
+        .map(|(_, ty)| *ty)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let call_args = params
+        .iter()
+        .map(|(arg, _)| arg.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ret_sig = result.map(|r| format!(" -> {r}")).unwrap_or_default();
+
+    format!(
+        r#"
+            #[cfg(not(target_arch = "wasm32"))]
+            unsafe extern "C" fn {rust_name}({named_params}){ret_sig} {{
+                static CACHE: ::core::sync::atomic::AtomicPtr<()> =
+                    ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
+                // Named so as not to shadow any parameter.
+                let mut __impl = CACHE.load(::core::sync::atomic::Ordering::Acquire);
+                if __impl.is_null() {{
+                    __impl = {rt}::resolve_import(c"{module}", c"{name}");
+                    CACHE.store(__impl, ::core::sync::atomic::Ordering::Release);
+                }}
+                let __func: unsafe extern "C" fn({param_types}){ret_sig} = unsafe {{ ::core::mem::transmute(__impl) }};
+                unsafe {{ __func({call_args}) }}
+            }}
+        "#,
     )
 }
 

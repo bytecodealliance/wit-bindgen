@@ -74,10 +74,10 @@ extern_wasm! {
     #[link(wasm_import_module = "$root")]
     unsafe extern "C" {
         #[link_name = "[error-context-new-utf8]"]
-        fn new(_: *const u8, _: usize) -> u32;
+        fn new(ptr: *const u8, len: usize) -> u32;
         #[link_name = "[error-context-drop]"]
-        fn drop(_: u32);
+        fn drop(handle: u32);
         #[link_name = "[error-context-debug-message-utf8]"]
-        fn debug_message(_: u32, _: &mut RetPtr);
+        fn debug_message(handle: u32, ret: &mut RetPtr);
     }
 }

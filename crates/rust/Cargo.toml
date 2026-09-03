@@ -41,6 +41,8 @@ test-helpers = { path = '../test-helpers' }
 # For use with the custom attributes test
 serde_json = { workspace = true }
 bytes = "1"
+# For the native end-to-end test
+libloading = "0.8"
 
 [features]
 serde = ['dep:serde', 'wit-bindgen-core/serde']
