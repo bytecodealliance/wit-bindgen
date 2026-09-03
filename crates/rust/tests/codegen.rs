@@ -24,8 +24,10 @@ mod multiple_paths {
 #[allow(unused, reason = "testing codegen, not functionality")]
 mod inline_and_path {
     wit_bindgen::generate!({
+        // Deliberately not `test:paths` like `multiple_paths` above: two
+        // different worlds under one name collide on the native world marker.
         inline: r#"
-        package test:paths;
+        package test:inline-and-path-root;
 
         world test {
             import test:inline-and-path/bar;
@@ -251,7 +253,9 @@ mod borrowing_method_chaining {
         }
         "#,
         generate_all,
-        chainable_methods: ["&all"]
+        chainable_methods: ["&all"],
+        // `owning_method_chaining` above binds the same world; keep the markers apart.
+        type_section_suffix: "-borrowing",
     });
 }
 
@@ -423,6 +427,8 @@ mod versioned_selectors {
     }
 }
 
+// These call `export!` so the native export symbols, which live inside the
+// `__export_*_cabi!` macro, actually get compiled.
 #[allow(unused, reason = "testing codegen, not functionality")]
 mod native_symbols {
     wit_bindgen::generate!({
@@ -505,6 +511,8 @@ mod native_symbols_async {
     export!(Component);
 }
 
+// Import shims define no symbols, so two worlds importing the same
+// interface link side by side.
 #[allow(unused, reason = "testing codegen, not functionality")]
 mod native_symbols_shared_one {
     wit_bindgen::generate!({
@@ -528,3 +536,36 @@ mod native_symbols_shared_two {
         generate_all,
     });
 }
+
+// Binding the *same* world twice needs `type_section_suffix` for the world
+// marker and `export_prefix` for the export names; drop either and it fails
+// to link with a duplicate symbol.
+macro_rules! native_symbols_same_world {
+    ($module:ident, $tag:literal) => {
+        #[allow(unused, reason = "testing codegen, not functionality")]
+        mod $module {
+            wit_bindgen::generate!({
+                inline: r#"
+                package test:native-same-world;
+                world w { export run: func() -> u32; }
+                "#,
+                generate_all,
+                type_section_suffix: $tag,
+                export_prefix: $tag,
+            });
+
+            struct Component;
+
+            impl Guest for Component {
+                fn run() -> u32 {
+                    0
+                }
+            }
+
+            export!(Component);
+        }
+    };
+}
+
+native_symbols_same_world!(native_symbols_same_world_a, "a_");
+native_symbols_same_world!(native_symbols_same_world_b, "b_");
