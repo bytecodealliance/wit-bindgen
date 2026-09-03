@@ -24,8 +24,10 @@ mod multiple_paths {
 #[allow(unused, reason = "testing codegen, not functionality")]
 mod inline_and_path {
     wit_bindgen::generate!({
-        // Deliberately not `test:paths` like `multiple_paths` above: two
-        // different worlds under one name collide on the native world marker.
+        // A different package from `multiple_paths` above. Two different
+        // worlds under one name corrupt each other's `component-type` sections
+        // on wasm, and collide on the world marker symbol natively. So this
+        // technically is a fix to the existing tests
         inline: r#"
         package test:inline-and-path-root;
 
@@ -242,7 +244,7 @@ mod owning_method_chaining {
 mod borrowing_method_chaining {
     wit_bindgen::generate!({
         inline: r#"
-        package test:method-chaining;
+        package test:borrowing-method-chaining;
         world test {
             resource a {
                 constructor();
@@ -253,9 +255,7 @@ mod borrowing_method_chaining {
         }
         "#,
         generate_all,
-        chainable_methods: ["&all"],
-        // `owning_method_chaining` above binds the same world; keep the markers apart.
-        type_section_suffix: "-borrowing",
+        chainable_methods: ["&all"]
     });
 }
 
