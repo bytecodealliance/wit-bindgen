@@ -1,0 +1,15 @@
+[package]
+name = "native-e2e-plugin"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = { path = "../../../guest-rust" }
+
+# Deliberately not a member of the wit-bindgen workspace: `tests/native_e2e.rs`
+# builds this crate with a nested `cargo build` and `dlopen`s the result.
+[workspace]

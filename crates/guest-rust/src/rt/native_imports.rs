@@ -48,6 +48,15 @@ pub unsafe extern "C" fn __wit_bindgen_set_import_resolver(
     RESOLVER.store(resolver, Ordering::Release);
 }
 
+/// Builds the `&CStr` for an import name from a `concat!(name, "\0")`
+/// literal, for the runtime's own intrinsic shims.
+pub(crate) const fn cstr(with_nul: &'static str) -> &'static CStr {
+    match CStr::from_bytes_with_nul(with_nul.as_bytes()) {
+        Ok(s) => s,
+        Err(_) => panic!("import name contains an interior NUL"),
+    }
+}
+
 /// Called by generated import shims on their first invocation.
 ///
 /// `module` and `name` are the strings described on [`ImportResolver`].
