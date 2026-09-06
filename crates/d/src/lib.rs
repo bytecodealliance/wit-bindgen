@@ -844,13 +844,19 @@ impl WorldGenerator for D {
 
         world_src.push_str("\n\nprivate alias AliasSeq(T...) = T;\n");
         world_src.push_str("template Exports(Impl...) {\n");
+
+        world_src.push_str(&format!(
+            "\nalias FilteredImpl = {}.findWitExports!Impl;\n",
+            self.common_module
+        ));
+
         world_src.push_str("alias InterfaceExports = AliasSeq!(\n");
         world_src.indent(1);
         world_src.push_str(
             &self
                 .interface_exports
                 .iter()
-                .map(|fqn| format!("{fqn}.Exports!Impl"))
+                .map(|fqn| format!("{fqn}.Exports!FilteredImpl"))
                 .collect::<Vec<String>>()
                 .join(",\n"),
         );

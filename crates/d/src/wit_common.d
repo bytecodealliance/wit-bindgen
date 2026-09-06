@@ -479,26 +479,45 @@ template witInterfaceOf(alias Symbol) {
     }
 }
 
+template witNameOf(alias Symbol) {
+    alias udas = AliasSeq!();
+    static foreach (uda; __traits(getAttributes, Symbol)) {
+        static if (!is(uda) && is(typeof(uda) == witExport)) {
+            udas = AliasSeq!(udas, uda);
+        }
+    }
+
+    static assert(
+        udas.length <= 1,
+        "There must be at most one `@witExport` attached. Found multiple on `",
+        __traits(fullyQualifiedName, Symbol), "`.",
+    );
+
+    static if (udas.length) {
+        enum string witNameOf = udas[0].name;
+    } else {
+        enum string witNameOf = "";
+    }
+}
+
 template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl...) {
     static foreach(Func; Impl) {
-        static foreach(uda; __traits(getAttributes, Func)) {
-            static if (!is(uda) && is(typeof(uda) == witExport) && uda.name == name && witInterfaceOf!Func == mod) {
-                static assert(
-                    !is(Func) &&
-                    (is(typeof(Func) == function)),
-                    "The implementation of '", mod, "#", name, "' ",
-                    "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
-                    "must be a function or method."
-                );
+        static if (witNameOf!Func == name && witInterfaceOf!Func == mod) {
+            static assert(
+                !is(Func) &&
+                (is(typeof(Func) == function)),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+                "must be a function or method."
+            );
 
-                static assert(
-                    !is(typeof(findWitExportFunc) == void) || __traits(isSame, findWitExportFunc, Func),
-                    "There must be only one implementation of '", mod, "#", name, "'. ",
-                    "Found at least `", __traits(fullyQualifiedName, findWitExportFunc),
-                    "` and `", __traits(fullyQualifiedName, Func), "`."
-                );
-                alias findWitExportFunc = Func;
-            }
+            static assert(
+                !is(typeof(findWitExportFunc) == void) || __traits(isSame, findWitExportFunc, Func),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportFunc),
+                "` and `", __traits(fullyQualifiedName, Func), "`."
+            );
+            alias findWitExportFunc = Func;
         }
     }
 
@@ -519,23 +538,21 @@ template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl
 
 template findWitExportResource(string mod, string name, Impl...) {
     static foreach(Resource; Impl) {
-        static foreach(uda; __traits(getAttributes, Resource)) {
-            static if (!is(uda) && is(typeof(uda) == witExport) && uda.name == name && witInterfaceOf!Resource == mod) {
-                static assert(
-                    is(Resource == struct),
-                    "The implementation of '", mod, "#", name, "' ",
-                    "`", __traits(fullyQualifiedName, findWitExportResource), "` ",
-                    "must be a struct."
-                );
+        static if (witNameOf!Resource == name && witInterfaceOf!Resource == mod) {
+            static assert(
+                is(Resource == struct),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportResource), "` ",
+                "must be a struct."
+            );
 
-                static assert(
-                    !is(typeof(findWitExportResource) == void) || __traits(isSame, findWitExportResource, Resource),
-                    "There must be only one implementation of '", mod, "#", name, "'. ",
-                    "Found at least `", __traits(fullyQualifiedName, findWitExportResource),
-                    "` and `", __traits(fullyQualifiedName, Resource), "`."
-                );
-                alias findWitExportResource = Resource;
-            }
+            static assert(
+                !is(typeof(findWitExportResource) == void) || __traits(isSame, findWitExportResource, Resource),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportResource),
+                "` and `", __traits(fullyQualifiedName, Resource), "`."
+            );
+            alias findWitExportResource = Resource;
         }
     }
 
@@ -545,16 +562,21 @@ template findWitExportResource(string mod, string name, Impl...) {
     );
 }
 
-
-template witExportsIn(T) {
+public template witExportsIn(T) {
     alias witExportsIn = AliasSeq!();
 
-    static foreach(M; __traits(allMembers, T)) {
-        static foreach(Export; __traits(getOverloads, T, M)) {
-            static foreach(uda; __traits(getAttributes, Export)) {
-                static if (!is(uda) && is(typeof(uda) == witExport)) {
-                    witExportsIn = AliasSeq!(witExportsIn, Export);
-                }
+    static foreach(member; __traits(allMembers, T)) {
+        witExportsIn = AliasSeq!(witExportsIn, findWitExports!(__traits(getOverloads, T, member)));
+    }
+}
+
+public template findWitExports(Exports...) {
+    alias findWitExports = AliasSeq!();
+
+    static foreach (elem; Exports) {
+        static foreach(uda; __traits(getAttributes, elem)) {
+            static if (!is(uda) && is(typeof(uda) == witExport)) {
+                findWitExports = AliasSeq!(findWitExports, elem);
             }
         }
     }
