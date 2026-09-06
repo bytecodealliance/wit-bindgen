@@ -2,7 +2,8 @@ import wit.test.results.runner;
 
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport("run")
 void run() {
     {
         auto result = stringError(0.0);

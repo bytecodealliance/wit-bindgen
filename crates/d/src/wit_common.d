@@ -8,7 +8,8 @@ alias wasmImport(string mod, string name) = AliasSeq!(
 
 enum wasmExport(string name) = llvmAttr("wasm-export-name", name);
 
-struct witExport { string mod; string name; }
+struct witInterface { string name; }
+struct witExport { string name; }
 
 /// Thin CABI compliant wrapper over `T[]`
 struct WitList(T) {
@@ -444,10 +445,44 @@ T[] mallocSlice(T)(size_t count) @nogc nothrow {
 alias AliasSeq(T...) = T;
 
 
+/+string kebabCase(string s) {
+    string res;
+    foreach (i, char c; s) {
+        if (c >= 'A' && c <= 'Z') {
+            if (i > 0 && i+1 < s.length) res ~= '-';
+            res ~= cast(char)(c + 32);
+        } else {
+            res ~= c;
+        }
+    }
+    return res;
+}+/
+
+template witInterfaceOf(alias Symbol) {
+    alias udas = AliasSeq!();
+    static foreach (uda; __traits(getAttributes, Symbol)) {
+        static if (!is(uda) && is(typeof(uda) == witInterface)) {
+            udas = AliasSeq!(udas, uda);
+        }
+    }
+
+    static assert(
+        udas.length <= 1,
+        "There must be at most one `@witInterface` attached. Found multiple on `",
+        __traits(fullyQualifiedName, Symbol), "`.",
+    );
+
+    static if (udas.length) {
+        enum string witInterfaceOf = udas[0].name;
+    } else {
+        enum string witInterfaceOf = "";
+    }
+}
+
 template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl...) {
     static foreach(Func; Impl) {
         static foreach(uda; __traits(getAttributes, Func)) {
-            static if (!is(uda) && is(typeof(uda) == witExport) && uda == witExport(mod, name)) {
+            static if (!is(uda) && is(typeof(uda) == witExport) && uda.name == name && witInterfaceOf!Func == mod) {
                 static assert(
                     !is(Func) &&
                     (is(typeof(Func) == function)),
@@ -485,7 +520,7 @@ template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl
 template findWitExportResource(string mod, string name, Impl...) {
     static foreach(Resource; Impl) {
         static foreach(uda; __traits(getAttributes, Resource)) {
-            static if (!is(uda) && is(typeof(uda) == witExport) && uda == witExport(mod, name)) {
+            static if (!is(uda) && is(typeof(uda) == witExport) && uda.name == name && witInterfaceOf!Resource == mod) {
                 static assert(
                     is(Resource == struct),
                     "The implementation of '", mod, "#", name, "' ",

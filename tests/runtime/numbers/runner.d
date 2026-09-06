@@ -24,7 +24,8 @@ void doAsserts(alias func)() {
     assert(func(c) == c);
 }
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport("run")
 void run() {
     doAsserts!roundtripU8;
     doAsserts!roundtripS8;

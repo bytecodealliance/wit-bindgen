@@ -1,7 +1,8 @@
 import wit.test.resource_aggregates.runner;
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport("run")
 void run() {
     auto r2Thing = Thing.makeNew(1);
     scope(exit) r2Thing.witDrop;

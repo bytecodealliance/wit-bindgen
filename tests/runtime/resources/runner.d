@@ -2,7 +2,8 @@ import wit.test.resources.runner;
 
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport("run")
 void run() {
     {
         auto result = testImports();

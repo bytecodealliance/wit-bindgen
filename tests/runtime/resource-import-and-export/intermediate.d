@@ -4,28 +4,31 @@ import wit.test.resource_import_and_export.test.exports : ThingExport = Thing;
 
 import wit.common;
 
-@witExport("test:resource-import-and-export/test", "thing")
+@witInterface("test:resource-import-and-export/test")
+@witExport("thing")
 struct ThingImpl {
     ThingImport thing;
 
-    @witExport("test:resource-import-and-export/test", "[constructor]thing")
+    @witInterface("test:resource-import-and-export/test"):
+    
+    @witExport("[constructor]thing")
     static ThingExport constructor(uint v) {
         return ThingExport.makeNew((out typeof(this) self) {
             self.thing = ThingImport.makeNew(v + 1);
         });
     }
 
-    @witExport("test:resource-import-and-export/test", "[method]thing.foo")
+    @witExport("[method]thing.foo")
     uint foo() {
         return thing.foo + 2;
     }
 
-    @witExport("test:resource-import-and-export/test", "[method]thing.bar")
+    @witExport("[method]thing.bar")
     void bar(uint v) {
         thing.bar(v + 3);
     }
 
-    @witExport("test:resource-import-and-export/test", "[static]thing.baz")
+    @witExport("[static]thing.baz")
     static ThingExport baz(ThingExport a, ThingExport b) {
         scope(exit) {
             a.witDrop;
@@ -47,7 +50,8 @@ struct ThingImpl {
     }
 }
 
-@witExport("$root", "toplevel-export")
+@witInterface("$root")
+@witExport("toplevel-export")
 ThingImport toplevelExport(ThingImport input) {
     // `input` not dropped b/c ownership transferred
     // to `toplevelImport`

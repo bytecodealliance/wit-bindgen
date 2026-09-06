@@ -2,7 +2,8 @@ import wit.my.inline.runner;
 
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport("run")
 void run() {
     wit.my.inline.foo1.imports.foo();
     wit.my.inline.foo2.imports.foo();

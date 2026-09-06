@@ -34,55 +34,57 @@ char[] commaJoin(in WitString[] strs) {
     return chars;
 }
 
-@witExport("test:list-in-variant/to-test", "list-in-option")
-WitString listInOption(in Option!(WitList!WitString) data) {
-    if (data.isSome) {
-        return data.unwrap.commaJoin.witList; // no clone
+@witInterface("test:list-in-variant/to-test") {
+    @witExport("list-in-option")
+    WitString listInOption(in Option!(WitList!WitString) data) {
+        if (data.isSome) {
+            return data.unwrap.commaJoin.witList; // no clone
+        }
+        return "none".witList.witClone;
     }
-    return "none".witList.witClone;
-}
-
-@witExport("test:list-in-variant/to-test", "list-in-variant")
-WitString listInVariant(in PayloadOrEmpty data) {
-    if (data.isWithData) {
-        return data.getWithData.commaJoin.witList; // no clone
+    
+    @witExport("list-in-variant")
+    WitString listInVariant(in PayloadOrEmpty data) {
+        if (data.isWithData) {
+            return data.getWithData.commaJoin.witList; // no clone
+        }
+        return "empty".witList.witClone;
     }
-    return "empty".witList.witClone;
-}
-
-@witExport("test:list-in-variant/to-test", "list-in-result")
-WitString listInResult(in Result!(WitList!WitString, WitString) data) {
-    if (data.isOk) {
-        return data.unwrap.commaJoin.witList;
+    
+    @witExport("list-in-result")
+    WitString listInResult(in Result!(WitList!WitString, WitString) data) {
+        if (data.isOk) {
+            return data.unwrap.commaJoin.witList;
+        }
+    
+    
+        auto errStr = data.unwrapErr;
+        void* ptr = malloc(errStr.length+4);
+        assert(ptr);
+        char[] chars = cast(char[])ptr[0..errStr.length+4];
+    
+        chars[0..4] = "err:";
+        foreach (i, ref chr; chars[4..$]) {
+            chr = errStr[i];
+        }
+    
+        return chars.witList; // no clone
     }
-
-
-    auto errStr = data.unwrapErr;
-    void* ptr = malloc(errStr.length+4);
-    assert(ptr);
-    char[] chars = cast(char[])ptr[0..errStr.length+4];
-
-    chars[0..4] = "err:";
-    foreach (i, ref chr; chars[4..$]) {
-        chr = errStr[i];
+    
+    @witExport("list-in-option-with-return")
+    Summary listInOptionWithReturn(in Option!(WitList!WitString) data) {
+        if (data.isSome) {
+            auto items = data.unwrap();
+            return Summary(items.length, items.commaJoin.witList); // no clone
+        }
+    
+        return Summary(0, "none".witList.witClone);
     }
-
-    return chars.witList; // no clone
-}
-
-@witExport("test:list-in-variant/to-test", "list-in-option-with-return")
-Summary listInOptionWithReturn(in Option!(WitList!WitString) data) {
-    if (data.isSome) {
-        auto items = data.unwrap();
-        return Summary(items.length, items.commaJoin.witList); // no clone
+    
+    @witExport("top-level-list")
+    WitString topLevelList(in WitList!WitString data) {
+        return data.commaJoin.witList; // no clone
     }
-
-    return Summary(0, "none".witList.witClone);
-}
-
-@witExport("test:list-in-variant/to-test", "top-level-list")
-WitString topLevelList(in WitList!WitString data) {
-    return data.commaJoin.witList; // no clone
 }
 
 alias Exports = wit.test.list_in_variant.test.Exports!(

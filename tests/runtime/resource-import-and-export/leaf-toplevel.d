@@ -4,7 +4,8 @@ import wit.test.resource_import_and_export.leaf_toplevel;
 
 import wit.common;
 
-@witExport("$root", "toplevel-export")
+@witInterface("$root")
+@witExport("toplevel-export")
 Thing toplevelExport(Thing input) {
     // `input` not dropped b/c ownership transferred
     // via return

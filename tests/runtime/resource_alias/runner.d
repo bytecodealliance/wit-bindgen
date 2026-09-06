@@ -5,7 +5,8 @@ import wit.test.resource_alias.e2.imports : a2 = a, Foo2 = Foo;
 
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport("run")
 void run() {
     auto fooE1 = Foo1(
         x: X.makeNew(42)

@@ -1,7 +1,8 @@
 import wit.a.b.test;
 import wit.common;
 
-@witExport("a:b/the-test", "x")
+@witInterface("a:b/the-test")
+@witExport("x")
 void x() {
 }
 

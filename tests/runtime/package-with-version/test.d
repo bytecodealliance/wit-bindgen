@@ -3,9 +3,11 @@ import wit.common;
 
 import std.meta : Repeat, AliasSeq;
 
-@witExport("my:inline/foo@0.0.0", "bar")
+@witInterface("my:inline/foo@0.0.0")
+@witExport("bar")
 struct BarImpl {
-    @witExport("my:inline/foo@0.0.0", "[constructor]bar")
+    @witInterface("my:inline/foo@0.0.0")
+    @witExport("[constructor]bar")
     static Bar constructor() {
         return Bar.makeNew((out typeof(this) self) {
         });

@@ -650,9 +650,11 @@ impl WorldGenerator for D {
                     ));
 
                     if emit_exports_stubs {
+                        r#gen
+                            .stub_src
+                            .push_str(&format!("@witInterface(\"{}\")", wasm_import_module));
                         r#gen.stub_src.push_str(&format!(
-                            "@witExport(\"{}\", \"{}\")\nstruct {escaped_name}_STUB {{\n",
-                            wasm_import_module,
+                            "@witExport(\"{}\")\nstruct {escaped_name}_STUB {{\n",
                             ty.name.as_ref().unwrap()
                         ));
 
@@ -1446,10 +1448,11 @@ impl<'a> DInterfaceGenerator<'a> {
 
         if self.r#gen.opts.emit_export_stubs {
             self.stub_src.push_str(&format!(
-                "@witExport(\"{}\", \"{}\")\n",
+                "@witInterface(\"{}\")",
                 self.wasm_import_module.unwrap(),
-                func.name
             ));
+            self.stub_src
+                .push_str(&format!("@witExport(\"{}\")\n", func.name));
             if d_sig.static_member {
                 self.stub_src.push_str("static ");
             }
