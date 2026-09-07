@@ -16,7 +16,7 @@ import std.algorithm.iteration : sum, map;
         }
     }
     
-    @witExport("foo")
+    @witExport
     uint foo(
         scope ref R1 r1, scope ref R2 r2, scope ref R3 r3,
         scope ref T1 t1, scope ref T2 t2,

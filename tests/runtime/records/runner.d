@@ -2,7 +2,7 @@ import wit.test.records.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     assert(multipleResults() == tuple(ubyte(4), ushort(5)));
 

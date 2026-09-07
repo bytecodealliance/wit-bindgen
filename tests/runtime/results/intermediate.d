@@ -4,32 +4,32 @@ import imports = wit.test.results.test.imports;
 import wit.common;
 
 @witInterface("test:results/test") {
-    @witExport("string-error")
+    @witExport
     Result!(float, WitString) stringError(float a) {
         return imports.stringError(a);
     }
     
-    @witExport("enum-error")
+    @witExport
     Result!(float, E) enumError(float a) {
         return imports.enumError(a);
     }
     
-    @witExport("record-error")
+    @witExport
     Result!(float, E2) recordError(float a) {
         return imports.recordError(a);
     }
     
-    @witExport("variant-error")
+    @witExport
     Result!(float, E3) variantError(float a) {
         return imports.variantError(a);
     }
     
-    @witExport("empty-error")
+    @witExport
     Result!(uint, void) emptyError(uint a) {
         return imports.emptyError(a);
     }
     
-    @witExport("double-error")
+    @witExport
     Result!(Result!(void, WitString), WitString) doubleError(uint a) {
         return imports.doubleError(a);
     }

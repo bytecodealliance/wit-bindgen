@@ -36,7 +36,7 @@ struct ThingImpl {
         });
     }
 
-    @witExport("foo")
+    @witExport
     WitList!ubyte foo() {
         auto list = val.foo;
         scope(exit) list.witFree;
@@ -45,7 +45,7 @@ struct ThingImpl {
         return result.witList; // no clone, no free; already on C heap
     }
 
-    @witExport("bar")
+    @witExport
     auto bar(in WitList!ubyte l) {
         auto result = l.concat(" Thing.bar");
         scope(exit) free(result.ptr);
@@ -54,7 +54,7 @@ struct ThingImpl {
     }
 
 
-    @witExport("baz")
+    @witExport
     static WitList!ubyte baz(in WitList!ubyte l) {
         auto input = l.concat(" Thing.baz");
         scope(exit) free(input.ptr);

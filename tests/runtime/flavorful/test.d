@@ -2,46 +2,46 @@ import wit.test.flavorful.test;
 import wit.common;
 
 @witInterface("test:flavorful/to-test") {
-    @witExport("f-list-in-record1")
+    @witExport
     void fListInRecord1(in ListInRecord1 a) {
         assert(a.a == "list_in_record1");
     }
     
-    @witExport("f-list-in-record2")
+    @witExport
     ListInRecord2 fListInRecord2() {
         return (const ListInRecord2("list_in_record2".witList)).witClone;
     }
     
-    @witExport("f-list-in-record3")
+    @witExport
     ListInRecord3 fListInRecord3(in ListInRecord3 a) {
         assert(a.a == "list_in_record3 input");
         return (const ListInRecord3("list_in_record3 output".witList)).witClone;
     }
     
-    @witExport("f-list-in-record4")
+    @witExport
     ListInAlias fListInRecord4(in ListInAlias a) {
         assert(a.a == "input4");
         return (const ListInAlias("result4".witList)).witClone;
     }
     
-    @witExport("f-list-in-variant1")
+    @witExport
     void fListInVariant1(in ListInVariant1V1 a, in ListInVariant1V2 b) {
         assert(a.unwrap() == "foo");
         assert(b.unwrapErr() == "bar");
     }
     
-    @witExport("f-list-in-variant2")
+    @witExport
     Option!WitString fListInVariant2() {
         return some("list_in_variant2".witList).witClone;
     }
     
-    @witExport("f-list-in-variant3")
+    @witExport
     Option!WitString fListInVariant3(in ListInVariant3 a) {
         assert(a.unwrap() == "input3");
         return some("output3".witList).witClone;
     }
     
-    @witExport("errno-result")
+    @witExport
     Result!(void, MyErrno) errnoResult() {
         static bool first = true;
     
@@ -54,7 +54,7 @@ import wit.common;
     }
     
     
-    @witExport("list-typedefs")
+    @witExport
     Tuple!(ListTypedef2, ListTypedef3) listTypedefs(in ListTypedef a, in ListTypedef3 b) {
         assert(a == "typedef1");
         assert(b.length == 1);
@@ -72,7 +72,7 @@ import wit.common;
     
     
     
-    @witExport("list-of-variants")
+    @witExport
     Tuple!(WitList!bool, WitList!(Result!()), WitList!MyErrno) listOfVariants(in WitList!bool bools, in WitList!(Result!()) results, in WitList!MyErrno enums) {
         static immutable bool[] boolsCmp = [true, false];
         assert(bools == boolsCmp[]);

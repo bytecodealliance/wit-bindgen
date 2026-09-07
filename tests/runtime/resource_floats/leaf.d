@@ -17,12 +17,12 @@ struct FloatImpl {
         });
     }
 
-    @witExport("get")
+    @witExport
     double get() {
         return val + 4;
     }
 
-    @witExport("add")
+    @witExport
     static Float add(Float a, double b) {
         scope(exit) a.witDrop;
 
@@ -44,7 +44,7 @@ struct Float2Impl {
         });
     }
 
-    @witExport("get")
+    @witExport
     double get() {
         return val + 3;
     }

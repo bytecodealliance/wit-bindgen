@@ -4,7 +4,7 @@ import wit.test.fixed_length_lists.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     listParam([1, 2, 3, 4]);
     listParam2([[1, 2], [3, 4]]);

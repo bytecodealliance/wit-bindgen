@@ -3,7 +3,7 @@ import wit.test.resource_borrow_in_record.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     auto thing1 = Thing.makeNew("Bonjour".witList);
     scope(exit) thing1.witDrop;

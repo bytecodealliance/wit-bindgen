@@ -5,7 +5,7 @@ import wit.test.resource_floats.runner.imports.exports : Float2 = Float;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     auto float1 = Float.makeNew(42);
     scope(exit) float1.witDrop;

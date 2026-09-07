@@ -3,7 +3,7 @@ import wit.my.strings.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     foo("hello".witList);
 

@@ -5,7 +5,7 @@ import wit.foo.bar.component.common : UnusedEnum, UnusedRecord, UnusedVariant;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     foo();
 }

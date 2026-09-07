@@ -15,7 +15,7 @@ import wit.common;
         }
     }
     
-    @witExport("foo")
+    @witExport
     uint foo(Thing.Borrow v) {
         return v.rep!ThingImpl.val + 2;
     }

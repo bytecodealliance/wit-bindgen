@@ -7,7 +7,7 @@ extern(C) void* malloc(size_t size);
 extern(C) void free(void* ptr);
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     auto allocedAtFuncStart = walloc_allocated_bytes;
     auto allocedAtFuncStart2 = allocatedBytes;

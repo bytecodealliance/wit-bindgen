@@ -444,20 +444,6 @@ T[] mallocSlice(T)(size_t count) @nogc nothrow {
 // from std.meta
 alias AliasSeq(T...) = T;
 
-
-/+string kebabCase(string s) {
-    string res;
-    foreach (i, char c; s) {
-        if (c >= 'A' && c <= 'Z') {
-            if (i > 0 && i+1 < s.length) res ~= '-';
-            res ~= cast(char)(c + 32);
-        } else {
-            res ~= c;
-        }
-    }
-    return res;
-}+/
-
 template witInterfaceOf(alias Symbol) {
     alias udas = AliasSeq!();
     static foreach (uda; __traits(getAttributes, Symbol)) {
@@ -479,10 +465,34 @@ template witInterfaceOf(alias Symbol) {
     }
 }
 
+alias toKebabCase = (string s) { // lambda to satisfy `betterC` (use of GC)
+    if (s.length == 0) return "";
+    
+    char[] buf;
+    foreach (i, c; s) {
+        if (i > 0 && c >= 'A' && c <= 'Z') {
+            char prev = s[i - 1];
+            char next = ((i + 1) < s.length) ? s[i + 1] : '\0';
+            if (
+                (prev >= 'a' && prev <= 'z') || 
+                (
+                    next != '\0' &&
+                    prev >= 'A' && prev <= 'Z' &&
+                    !(next >= 'A' && next <= 'Z')
+                )
+            ) {
+                buf ~= '-';
+            }
+        }
+        buf ~= (c >= 'A' && c <= 'Z') ? (c + 32) : c;
+    }
+    return cast(string)buf;
+};
+
 template witNameOf(alias Symbol) {
     alias udas = AliasSeq!();
     static foreach (uda; __traits(getAttributes, Symbol)) {
-        static if (!is(uda) && is(typeof(uda) == witExport)) {
+        static if ((!is(uda) && is(typeof(uda) == witExport)) || is(uda == witExport)) {
             udas = AliasSeq!(udas, uda);
         }
     }
@@ -494,7 +504,17 @@ template witNameOf(alias Symbol) {
     );
 
     static if (udas.length) {
-        enum string witNameOf = udas[0].name;
+        static if (is(udas[0])) {
+            enum string witNameOf = toKebabCase(__traits(identifier, Symbol));
+        } else {
+            static assert(
+                udas[0].name.length,
+                "Specifying an empty name for `@witExport(...)` is not allowed. Found empty on `",
+                __traits(fullyQualifiedName, Symbol), "`. Omit the parenthesis and parameter",
+                " (i.e. use as `@witExport`) or specify non-empty name.",
+            );
+            enum string witNameOf = udas[0].name;
+        }
     } else {
         enum string witNameOf = "";
     }
@@ -640,7 +660,7 @@ public template findWitExports(Exports...) {
 
     static foreach (elem; Exports) {
         static foreach(uda; __traits(getAttributes, elem)) {
-            static if (!is(uda) && is(typeof(uda) == witExport)) {
+            static if ((!is(uda) && is(typeof(uda) == witExport)) || is(uda == witExport)) {
                 findWitExports = AliasSeq!(findWitExports, elem);
             }
         }

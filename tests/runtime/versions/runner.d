@@ -2,7 +2,7 @@ import wit.test.versions.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     import v1 = wit.test.dep_0_1_0.test.imports;
 

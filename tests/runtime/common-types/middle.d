@@ -4,12 +4,12 @@ import wit.common;
 import imps = wit.test.common.to_test.imports;
 
 @witInterface("test:common/to-test") {
-    @witExport("wrap")
+    @witExport
     R1 wrap(F1 flag) {
         return imps.wrap(flag);
     }
     
-    @witExport("var-f")
+    @witExport
     V1 varF() {
         return imps.varF;
     }

@@ -3,7 +3,7 @@ import wit.test.resource_with_lists.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     auto thingInstance = Thing.makeNew((cast(immutable ubyte[])"Hi").witList);
     scope(exit) thingInstance.witDrop;

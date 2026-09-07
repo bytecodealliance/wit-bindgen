@@ -25,7 +25,7 @@ void doAsserts(alias func)() {
 }
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     doAsserts!roundtripU8;
     doAsserts!roundtripS8;

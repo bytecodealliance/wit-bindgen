@@ -3,12 +3,12 @@ import wit.common;
 
 
 @witInterface("cat") {
-    @witExport("foo")
+    @witExport
     void foo(in WitList!ubyte x) {
         assert(x == (cast(immutable ubyte[])"hello").witList);
     }
     
-    @witExport("bar")
+    @witExport
     WitList!ubyte bar() {
         return (cast(immutable ubyte[])"world").witList.witClone;
     }

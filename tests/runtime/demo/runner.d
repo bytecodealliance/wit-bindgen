@@ -2,7 +2,7 @@ import wit.a.b.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     x();
 }

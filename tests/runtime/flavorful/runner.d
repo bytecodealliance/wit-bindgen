@@ -2,7 +2,7 @@ import wit.test.flavorful.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     fListInRecord1(ListInRecord1(a: cast(WitString)"list_in_record1".witList));
 

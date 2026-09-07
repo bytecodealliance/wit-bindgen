@@ -2,7 +2,7 @@ import wit.test.list_in_variant.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     const WitString[2] hw = ["hello".witList, "world".witList];
     {

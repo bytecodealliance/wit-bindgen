@@ -14,17 +14,17 @@ import wit.common;
             });
         }
     
-        @witExport("get-a")
+        @witExport
         int getA() {
             return val;
         }
     
-        @witExport("set-a")
+        @witExport
         void setA(int a) {
             val = a;
         }
     
-        @witExport("add")
+        @witExport
         static X add(X x, int a) {
             scope(exit) x.witDrop;
     
@@ -47,7 +47,7 @@ import wit.common;
             });
         }
     
-        @witExport("get-a")
+        @witExport
         int getA() {
             return val;
         }
@@ -73,12 +73,12 @@ import wit.common;
             });
         }
     
-        @witExport("get-a")
+        @witExport
         uint getA() {
             return val;
         }
     
-        @witExport("take-owned")
+        @witExport
         static uint takeOwned(KebabCase k) {
             scope(exit) k.witDrop;
     
@@ -87,7 +87,7 @@ import wit.common;
     }
     
     
-    @witExport("add")
+    @witExport
     Z add(Z.Borrow a, Z.Borrow b) {
         scope(exit) {
             a.witDrop;
@@ -98,13 +98,13 @@ import wit.common;
     }
     
     
-    @witExport("consume")
+    @witExport
     void consume(X x) {
         x.witDrop;
     }
     
     
-    @witExport("test-imports")
+    @witExport
     Result!(void, WitString) testImports() {
         {
             auto y = Y.makeNew(10);

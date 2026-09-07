@@ -4,22 +4,22 @@ import wit.common;
 
 
 @witInterface("test:strings/to-test") {
-    @witExport("take-basic")
+    @witExport
     void takeBasic(in WitString str) {
         assert(str == "latin utf16");
     }
     
-    @witExport("return-unicode")
+    @witExport
     WitString returnUnicode() {
         return "🚀🚀🚀 𠈄𓀀".witList.witClone;
     }
     
-    @witExport("return-empty")
+    @witExport
     WitString returnEmpty() {
         return WitString();
     }
     
-    @witExport("roundtrip")
+    @witExport
     WitString roundtrip(in WitString str) {
         return str.witClone;
     }

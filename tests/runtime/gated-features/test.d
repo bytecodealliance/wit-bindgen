@@ -5,10 +5,10 @@ import wit.common;
 
 
 @witInterface("foo:bar/bindings@1.2.3") {
-    @witExport("y")
+    @witExport
     void y() {}
     
-    @witExport("z")
+    @witExport
     void z() {}
 }
 

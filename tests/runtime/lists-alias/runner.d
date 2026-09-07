@@ -3,7 +3,7 @@ import cat = wit.my.lists.runner.imports.cat;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     cat.foo((cast(immutable ubyte[])"hello").witList);
 

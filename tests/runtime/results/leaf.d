@@ -3,7 +3,7 @@ import wit.test.results.leaf;
 import wit.common;
 
 @witInterface("test:results/test") {
-    @witExport("string-error")
+    @witExport
     Result!(float, WitString) stringError(float a) {
         if (a == 0.0) {
             return "zero".witList.witClone.err!float;
@@ -12,7 +12,7 @@ import wit.common;
         return a.ok!WitString;
     }
     
-    @witExport("enum-error")
+    @witExport
     Result!(float, E) enumError(float a) {
         if (a == 0.0) {
             return E.a.err!float;
@@ -21,7 +21,7 @@ import wit.common;
         return a.ok!E;
     }
     
-    @witExport("record-error")
+    @witExport
     Result!(float, E2) recordError(float a) {
         if (a == 0.0) {
             return E2(
@@ -38,7 +38,7 @@ import wit.common;
         return a.ok!E2;
     }
     
-    @witExport("variant-error")
+    @witExport
     Result!(float, E3) variantError(float a) {
         if (a == 0.0) {
             return E3.e2(E2(
@@ -54,7 +54,7 @@ import wit.common;
         return a.ok!E3;
     }
     
-    @witExport("empty-error")
+    @witExport
     Result!(uint, void) emptyError(uint a) {
         if (a == 0) {
             return err!uint;
@@ -65,7 +65,7 @@ import wit.common;
         return a.ok!void;
     }
     
-    @witExport("double-error")
+    @witExport
     Result!(Result!(void, WitString), WitString) doubleError(uint a) {
         if (a == 0) {
             return ok!WitString.ok!WitString;

@@ -10,10 +10,10 @@ import wit.common;
     
     uint scalar;
     
-    @witExport("get-scalar")
+    @witExport
     auto getScalar() => scalar;
     
-    @witExport("set-scalar")
+    @witExport
     void setScalar(uint val) { scalar = val; }
 }
 

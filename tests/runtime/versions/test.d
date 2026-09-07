@@ -5,7 +5,7 @@ import wit.common;
     @witExport("x")
     float x_v1() => 1.0;
     
-    @witExport("y")
+    @witExport
     float y(float a) => 1.0 + a;
 }
 
@@ -13,7 +13,7 @@ import wit.common;
     @witExport("x")
     float x_v2() => 2.0;
     
-    @witExport("z")
+    @witExport
     float z(float a, float b) => 2.0 + a + b;
 }
 

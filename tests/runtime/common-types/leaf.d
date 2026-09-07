@@ -2,7 +2,7 @@ import wit.test.common.leaf;
 import wit.common;
 
 @witInterface("test:common/to-test") {
-    @witExport("wrap")
+    @witExport
     R1 wrap(F1 flag) {
         switch (flag.bits) with (F1) {
             case a.bits:
@@ -14,7 +14,7 @@ import wit.common;
         }
     }
     
-    @witExport("var-f")
+    @witExport
     V1 varF() {
         return V1.b(42);
     }

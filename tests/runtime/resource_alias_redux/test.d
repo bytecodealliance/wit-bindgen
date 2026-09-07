@@ -32,13 +32,13 @@ char[] concat(in char[] a, in char[] b) {
             });
         }
     
-        @witExport("get")
+        @witExport
         WitString get() {
             return concat(str, " GuestThing.get").witList; // no clone; already on C heap
         }
     }
     
-    @witExport("a")
+    @witExport
     WitList!Thing1 a(scope ref Foo1 f) {
         scope(exit) f.witDrop;
     
@@ -50,7 +50,7 @@ char[] concat(in char[] a, in char[] b) {
 }
 
 @witInterface("test:resource-alias-redux/resource-alias2")
-@witExport("b")
+@witExport
 WitList!Thing2 b(scope ref Foo2 f, scope ref Bar g) {
     scope(exit) {
         f.witDrop;
@@ -65,7 +65,7 @@ WitList!Thing2 b(scope ref Foo2 f, scope ref Bar g) {
 }
 
 @witInterface("the-test")
-@witExport("test")
+@witExport
 WitList!Thing1 test(scope ref WitList!Thing1 things) {
     return things.witClone;
 }

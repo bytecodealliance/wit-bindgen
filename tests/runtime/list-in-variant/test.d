@@ -35,7 +35,7 @@ char[] commaJoin(in WitString[] strs) {
 }
 
 @witInterface("test:list-in-variant/to-test") {
-    @witExport("list-in-option")
+    @witExport
     WitString listInOption(in Option!(WitList!WitString) data) {
         if (data.isSome) {
             return data.unwrap.commaJoin.witList; // no clone
@@ -43,7 +43,7 @@ char[] commaJoin(in WitString[] strs) {
         return "none".witList.witClone;
     }
     
-    @witExport("list-in-variant")
+    @witExport
     WitString listInVariant(in PayloadOrEmpty data) {
         if (data.isWithData) {
             return data.getWithData.commaJoin.witList; // no clone
@@ -51,7 +51,7 @@ char[] commaJoin(in WitString[] strs) {
         return "empty".witList.witClone;
     }
     
-    @witExport("list-in-result")
+    @witExport
     WitString listInResult(in Result!(WitList!WitString, WitString) data) {
         if (data.isOk) {
             return data.unwrap.commaJoin.witList;
@@ -71,7 +71,7 @@ char[] commaJoin(in WitString[] strs) {
         return chars.witList; // no clone
     }
     
-    @witExport("list-in-option-with-return")
+    @witExport
     Summary listInOptionWithReturn(in Option!(WitList!WitString) data) {
         if (data.isSome) {
             auto items = data.unwrap();
@@ -81,7 +81,7 @@ char[] commaJoin(in WitString[] strs) {
         return Summary(0, "none".witList.witClone);
     }
     
-    @witExport("top-level-list")
+    @witExport
     WitString topLevelList(in WitList!WitString data) {
         return data.commaJoin.witList; // no clone
     }

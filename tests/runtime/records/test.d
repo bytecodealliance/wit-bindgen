@@ -4,37 +4,37 @@ import wit.common;
 import std.meta : Repeat, AliasSeq;
 
 @witInterface("test:records/to-test") {
-    @witExport("multiple-results")
+    @witExport
     Tuple!(ubyte, ushort) multipleResults() {
         return tuple(ubyte(4), ushort(5));
     }
     
-    @witExport("swap-tuple")
+    @witExport
     Tuple!(uint, ubyte) swapTuple(in Tuple!(ubyte, uint) a) {
         return tuple(a[1], a[0]);
     }
     
-    @witExport("roundtrip-flags1")
+    @witExport
     F1 roundtripFlags1(F1 a) {
         return a;
     }
     
-    @witExport("roundtrip-flags2")
+    @witExport
     F2 roundtripFlags2(F2 a) {
         return a;
     }
     
-    @witExport("roundtrip-flags3")
+    @witExport
     Tuple!(Flag8, Flag16, Flag32) roundtripFlags3(Flag8 a, Flag16 b, Flag32 c) {
         return tuple(a, b, c);
     }
     
-    @witExport("roundtrip-record1")
+    @witExport
     R1 roundtripRecord1(in R1 a) {
         return a;
     }
     
-    @witExport("tuple1")
+    @witExport
     Tuple!(ubyte) tuple1(in Tuple!(ubyte) a) {
         return tuple(a[0]);
     }

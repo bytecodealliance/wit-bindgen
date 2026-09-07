@@ -16,17 +16,17 @@ struct ThingImpl {
         });
     }
 
-    @witExport("foo")
+    @witExport
     uint foo() {
         return val + 2;
     }
 
-    @witExport("bar")
+    @witExport
     void bar(uint v) {
         val = v + 3;
     }
 
-    @witExport("baz")
+    @witExport
     static Thing baz(Thing a, Thing b) {
         return ThingImpl.constructor(
             a.rep!ThingImpl.foo + b.rep!ThingImpl.foo + 4

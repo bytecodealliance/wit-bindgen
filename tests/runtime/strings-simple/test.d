@@ -3,12 +3,12 @@ import wit.my.strings.test;
 import wit.common;
 
 @witInterface("cat") {
-    @witExport("foo")
+    @witExport
     void foo(in WitString str) {
         assert(str == "hello");
     }
     
-    @witExport("bar")
+    @witExport
     WitString bar() {
         return "world".witList.witClone;
     }

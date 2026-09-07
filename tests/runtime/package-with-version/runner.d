@@ -2,7 +2,7 @@ import wit.my.inline.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     Bar.makeNew().witDrop;
 }

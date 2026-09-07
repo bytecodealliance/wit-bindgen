@@ -29,13 +29,13 @@ char[] concat(in char[] a, in char[] b) {
             });
         }
     
-        @witExport("get")
+        @witExport
         WitString get() {
             return concat(contents, " get").witList;
         }
     }
     
-    @witExport("test")
+    @witExport
     WitList!Thing test(ref scope WitList!Foo list) {
         if (list.length == 0) return WitList!Thing();
     

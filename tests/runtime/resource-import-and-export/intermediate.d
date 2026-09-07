@@ -16,17 +16,17 @@ struct ThingImpl {
         });
     }
 
-    @witExport("foo")
+    @witExport
     uint foo() {
         return thing.foo + 2;
     }
 
-    @witExport("bar")
+    @witExport
     void bar(uint v) {
         thing.bar(v + 3);
     }
 
-    @witExport("baz")
+    @witExport
     static ThingExport baz(ThingExport a, ThingExport b) {
         scope(exit) {
             a.witDrop;
@@ -49,7 +49,7 @@ struct ThingImpl {
 }
 
 @witInterface("$root")
-@witExport("toplevel-export")
+@witExport
 ThingImport toplevelExport(ThingImport input) {
     // `input` not dropped b/c ownership transferred
     // to `toplevelImport`

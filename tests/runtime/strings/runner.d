@@ -3,7 +3,7 @@ import wit.test.strings.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     takeBasic("latin utf16".witList);
 

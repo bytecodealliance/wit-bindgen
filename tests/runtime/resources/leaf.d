@@ -12,17 +12,17 @@ import wit.common;
             return Y.makeNew((out typeof(this) self) { self.val = a; });
         }
 
-        @witExport("get-a")
+        @witExport
         int getA() {
             return val;
         }
 
-        @witExport("set-a")
+        @witExport
         void setA(int a) {
             val = a;
         }
 
-        @witExport("add")
+        @witExport
         static Y add(Y y, int a) {
             scope (exit)
                 y.witDrop;

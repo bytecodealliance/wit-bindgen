@@ -3,35 +3,35 @@ import wit.test.variants.test;
 import wit.common;
 
 @witInterface("test:variants/to-test") {
-    @witExport("roundtrip-option")
+    @witExport
     Option!ubyte roundtripOption(in Option!float a) {
         if (a.isSome) return (cast(ubyte)a.unwrap).some;
         return none!ubyte;
     }
     
-    @witExport("roundtrip-result")
+    @witExport
     Result!(double, ubyte) roundtripResult(in Result!(uint, float) a) {
         if (a.isOk) return (cast(double)a.unwrap).ok!ubyte;
         return (cast(ubyte)a.unwrapErr).err!double;
     }
     
-    @witExport("roundtrip-enum")
+    @witExport
     E1 roundtripEnum(E1 a) => a;
     
-    @witExport("invert-bool")
+    @witExport
     bool invertBool(bool a) => !a;
     
-    @witExport("variant-casts")
+    @witExport
     Casts variantCasts(in Casts a) => a;
     
-    @witExport("variant-zeros")
+    @witExport
     Zeros variantZeros(in Zeros a) => a;
     
-    @witExport("variant-typedefs")
+    @witExport
     void variantTypedefs(in Option!uint, bool, in Result!uint) {}
     
     
-    @witExport("variant-enums")
+    @witExport
     Tuple!(bool, Result!void, MyErrno) variantEnums(bool a, in Result!void b, MyErrno c) {
         return tuple(a, b, c);
     }

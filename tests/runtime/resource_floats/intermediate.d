@@ -19,12 +19,12 @@ struct FloatImpl {
         });
     }
 
-    @witExport("get")
+    @witExport
     double get() {
         return val.get + 3;
     }
 
-    @witExport("add")
+    @witExport
     static EFloat add(EFloat a, double b) {
         scope(exit) a.witDrop;
 
@@ -38,7 +38,7 @@ struct FloatImpl {
 }
 
 @witInterface("$root")
-@witExport("add")
+@witExport
 static IFloat2 add(IFloat2.Borrow a, IFloat2.Borrow b) {
     scope(exit) {
         a.witDrop;

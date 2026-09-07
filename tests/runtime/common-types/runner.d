@@ -2,7 +2,7 @@ import wit.test.common.runner;
 import wit.common;
 
 @witInterface("$root")
-@witExport("run")
+@witExport
 void run() {
     R1 res = wrap(F1.a);
     assert(res.b == F1.a);

@@ -4,7 +4,7 @@ import wit.common;
 import std.meta : Repeat, AliasSeq;
 
 @witInterface("test:many-arguments/to-test")
-@witExport("many-arguments")
+@witExport
 void manyArguments(Repeat!(16, ulong) args) {
     assert(args == AliasSeq!(
         1,  2,  3,  4,  5,  6,  7,  8,
