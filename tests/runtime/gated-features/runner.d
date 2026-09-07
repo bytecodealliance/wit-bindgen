@@ -3,7 +3,8 @@
 import wit.foo.bar.runner;
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     y();
     z();

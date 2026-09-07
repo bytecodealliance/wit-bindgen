@@ -4,7 +4,8 @@ import wit.foo.bar.component.common : UnusedEnum, UnusedRecord, UnusedVariant;
 
 import wit.common;
 
-@witExport("foo:bar/component", "foo")
+@witInterface("foo:bar/component")
+@witExport
 void foo() {}
 
 alias Exports = wit.foo.bar.test.Exports!(

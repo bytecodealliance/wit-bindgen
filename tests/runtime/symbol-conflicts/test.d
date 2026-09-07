@@ -2,16 +2,20 @@ import wit.my.inline.test;
 
 import wit.common;
 
-@witExport("my:inline/foo1", "foo")
+@witInterface("my:inline/foo1")
+@witExport("foo")
 void foo1() {}
 
-@witExport("my:inline/foo2", "foo")
+@witInterface("my:inline/foo2")
+@witExport("foo")
 void foo2() {}
 
-@witExport("my:inline/bar1", "bar")
+@witInterface("my:inline/bar1")
+@witExport("bar")
 WitString bar1() { return WitString(); }
 
-@witExport("my:inline/bar2", "bar")
+@witInterface("my:inline/bar2")
+@witExport("bar")
 WitString bar2() { return WitString(); }
 
 

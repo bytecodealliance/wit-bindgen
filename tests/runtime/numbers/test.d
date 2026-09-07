@@ -1,18 +1,21 @@
 import wit.test.numbers.test;
 import wit.common;
 
-template roundtrip(T, string suffix) {
-    @witExport("test:numbers/numbers", "roundtrip-"~suffix)
-    T roundtrip(T val) => val;
+
+@witInterface("test:numbers/numbers") {
+    template roundtrip(T, string suffix) {
+        @witExport("roundtrip-"~suffix)
+        T roundtrip(T val) => val;
+    }
+    
+    uint scalar;
+    
+    @witExport
+    auto getScalar() => scalar;
+    
+    @witExport
+    void setScalar(uint val) { scalar = val; }
 }
-
-uint scalar;
-
-@witExport("test:numbers/numbers", "get-scalar")
-auto getScalar() => scalar;
-
-@witExport("test:numbers/numbers", "set-scalar")
-void setScalar(uint val) { scalar = val; }
 
 alias Exports = wit.test.numbers.test.Exports!(
     roundtrip!(ubyte, "u8"),

@@ -5,28 +5,31 @@ import wit.test.resource_alias.e2.exports : Foo2 = Foo, Bar, Y;
 
 import wit.common;
 
-@witExport("test:resource-alias/e1", "x")
-struct XImpl {
-    uint val;
-
-    @witExport("test:resource-alias/e1", "[constructor]x")
-    static X constructor(uint v) {
-        return X.makeNew((out typeof(this) self) {
-            self.val = v;
-        });
+@witInterface("test:resource-alias/e1") {
+    @witExport("x")
+    struct XImpl {
+        uint val;
+        
+        @witExport("[constructor]")
+        static X constructor(uint v) {
+            return X.makeNew((out typeof(this) self) {
+                self.val = v;
+            });
+        }
+    }
+    
+    @witExport("a")
+    WitList!X a1(ref scope Foo1 f) {
+        // `f.x` consumed by return
+    
+        immutable X[1] ret = [f.x];
+    
+        return ret.witList.witClone;
     }
 }
 
-@witExport("test:resource-alias/e1", "a")
-WitList!X a1(ref scope Foo1 f) {
-    // `f.x` consumed by return
-
-    immutable X[1] ret = [f.x];
-
-    return ret.witList.witClone;
-}
-
-@witExport("test:resource-alias/e2", "a")
+@witInterface("test:resource-alias/e2")
+@witExport("a")
 WitList!Y a2(ref scope Foo2 f, ref scope Bar g, Y.Borrow h) {
     // `f.x` consumed by return
     // `f.g` consumed by return

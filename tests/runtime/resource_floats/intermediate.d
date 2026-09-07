@@ -7,23 +7,24 @@ import wit.test.resource_floats.test.imports : IFloat2 = Float;
 
 import wit.common;
 
-@witExport("exports", "float")
+@witInterface("exports")
+@witExport("float")
 struct FloatImpl {
     IFloat1 val;
 
-    @witExport("exports", "[constructor]float")
+    @witExport("[constructor]")
     static EFloat constructor(double v) {
         return EFloat.makeNew((out typeof(this) self) {
             self.val = IFloat1.makeNew(v + 1);
         });
     }
 
-    @witExport("exports", "[method]float.get")
+    @witExport
     double get() {
         return val.get + 3;
     }
 
-    @witExport("exports", "[static]float.add")
+    @witExport
     static EFloat add(EFloat a, double b) {
         scope(exit) a.witDrop;
 
@@ -36,8 +37,8 @@ struct FloatImpl {
     }
 }
 
-
-@witExport("$root", "add")
+@witInterface("$root")
+@witExport
 static IFloat2 add(IFloat2.Borrow a, IFloat2.Borrow b) {
     scope(exit) {
         a.witDrop;

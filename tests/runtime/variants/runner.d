@@ -2,7 +2,8 @@ import wit.test.variants.runner;
 
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     assert(roundtripOption(1.0f.some) == ubyte(1).some);
     assert(roundtripOption(none!float) == none!ubyte);

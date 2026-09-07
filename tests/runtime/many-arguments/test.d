@@ -3,7 +3,8 @@ import wit.common;
 
 import std.meta : Repeat, AliasSeq;
 
-@witExport("test:many-arguments/to-test", "many-arguments")
+@witInterface("test:many-arguments/to-test")
+@witExport
 void manyArguments(Repeat!(16, ulong) args) {
     assert(args == AliasSeq!(
         1,  2,  3,  4,  5,  6,  7,  8,

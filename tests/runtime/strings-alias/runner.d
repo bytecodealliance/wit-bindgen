@@ -2,7 +2,8 @@ import wit.my.strings.runner;
 
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     foo("hello".witList);
 

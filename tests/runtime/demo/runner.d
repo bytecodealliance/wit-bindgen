@@ -1,7 +1,8 @@
 import wit.a.b.runner;
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     x();
 }

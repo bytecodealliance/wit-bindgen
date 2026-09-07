@@ -6,7 +6,8 @@ extern extern(C) size_t walloc_allocated_bytes;
 extern(C) void* malloc(size_t size);
 extern(C) void free(void* ptr);
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     auto allocedAtFuncStart = walloc_allocated_bytes;
     auto allocedAtFuncStart2 = allocatedBytes;

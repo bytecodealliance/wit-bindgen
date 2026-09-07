@@ -1,7 +1,8 @@
 import wit.test.list_in_variant.runner;
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     const WitString[2] hw = ["hello".witList, "world".witList];
     {

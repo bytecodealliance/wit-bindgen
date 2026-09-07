@@ -8,7 +8,8 @@ alias wasmImport(string mod, string name) = AliasSeq!(
 
 enum wasmExport(string name) = llvmAttr("wasm-export-name", name);
 
-struct witExport { string mod; string name; }
+struct witInterface { string name; }
+struct witExport { string name; }
 
 /// Thin CABI compliant wrapper over `T[]`
 struct WitList(T) {
@@ -443,27 +444,111 @@ T[] mallocSlice(T)(size_t count) @nogc nothrow {
 // from std.meta
 alias AliasSeq(T...) = T;
 
+template witInterfaceOf(alias Symbol) {
+    alias udas = AliasSeq!();
+    static foreach (uda; __traits(getAttributes, Symbol)) {
+        static if (!is(uda) && is(typeof(uda) == witInterface)) {
+            udas = AliasSeq!(udas, uda);
+        }
+    }
 
-template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl...) {
-    static foreach(Func; Impl) {
-        static foreach(uda; __traits(getAttributes, Func)) {
-            static if (!is(uda) && is(typeof(uda) == witExport) && uda == witExport(mod, name)) {
-                static assert(
-                    !is(Func) &&
-                    (is(typeof(Func) == function)),
-                    "The implementation of '", mod, "#", name, "' ",
-                    "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
-                    "must be a function or method."
-                );
+    static assert(
+        udas.length <= 1,
+        "There must be at most one `@witInterface` attached. Found multiple on `",
+        __traits(fullyQualifiedName, Symbol), "`.",
+    );
 
-                static assert(
-                    !is(typeof(findWitExportFunc) == void) || __traits(isSame, findWitExportFunc, Func),
-                    "There must be only one implementation of '", mod, "#", name, "'. ",
-                    "Found at least `", __traits(fullyQualifiedName, findWitExportFunc),
-                    "` and `", __traits(fullyQualifiedName, Func), "`."
-                );
-                alias findWitExportFunc = Func;
+    static if (udas.length) {
+        enum string witInterfaceOf = udas[0].name;
+    } else {
+        enum string witInterfaceOf = "";
+    }
+}
+
+alias toKebabCase = (string s) { // lambda to satisfy `betterC` (use of GC)
+    if (s.length == 0) return "";
+    
+    char[] buf;
+    foreach (i, c; s) {
+        if (i > 0 && c >= 'A' && c <= 'Z') {
+            char prev = s[i - 1];
+            char next = ((i + 1) < s.length) ? s[i + 1] : '\0';
+            if (
+                (prev >= 'a' && prev <= 'z') || 
+                (
+                    next != '\0' &&
+                    prev >= 'A' && prev <= 'Z' &&
+                    !(next >= 'A' && next <= 'Z')
+                )
+            ) {
+                buf ~= '-';
             }
+        }
+        buf ~= (c >= 'A' && c <= 'Z') ? (c + 32) : c;
+    }
+    return cast(string)buf;
+};
+
+template witNameOf(alias Symbol) {
+    alias udas = AliasSeq!();
+    static foreach (uda; __traits(getAttributes, Symbol)) {
+        static if ((!is(uda) && is(typeof(uda) == witExport)) || is(uda == witExport)) {
+            udas = AliasSeq!(udas, uda);
+        }
+    }
+
+    static assert(
+        udas.length <= 1,
+        "There must be at most one `@witExport` attached. Found multiple on `",
+        __traits(fullyQualifiedName, Symbol), "`.",
+    );
+
+    static if (udas.length) {
+        static if (is(udas[0])) {
+            enum string witNameOf = toKebabCase(__traits(identifier, Symbol));
+        } else {
+            static assert(
+                udas[0].name.length,
+                "Specifying an empty name for `@witExport(...)` is not allowed. Found empty on `",
+                __traits(fullyQualifiedName, Symbol), "`. Omit the parenthesis and parameter",
+                " (i.e. use as `@witExport`) or specify non-empty name.",
+            );
+            enum string witNameOf = udas[0].name;
+        }
+    } else {
+        enum string witNameOf = "";
+    }
+}
+
+template witNameInResourceOf(T, alias Func) {
+    enum resName = witNameOf!T;
+    enum name = witNameOf!Func;
+    
+    static if (name == "[constructor]") {
+        enum witNameInResourceOf = "[constructor]" ~ resName;
+    } else {
+        enum witNameInResourceOf = (__traits(isStaticFunction, Func) ? "[static]" : "[method]") ~ resName ~ "." ~ name;
+    }
+}
+
+template findWitExportFunc(string mod, string name, Sig, Impl...) {
+    static foreach(Func; Impl) {
+        static if (witNameOf!Func == name && witInterfaceOf!Func == mod) {
+            static assert(
+                !is(Func) &&
+                (is(typeof(Func) == function)),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+                "must be a function or method."
+            );
+
+            static assert(
+                !is(typeof(findWitExportFunc) == void) || __traits(isSame, findWitExportFunc, Func),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportFunc),
+                "` and `", __traits(fullyQualifiedName, Func), "`."
+            );
+            alias findWitExportFunc = Func;
         }
     }
 
@@ -473,7 +558,14 @@ template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl
     );
 
     static assert(
-        is(typeof(&findWitExportFunc) : Sig) && __traits(isStaticFunction, findWitExportFunc) != implicitSelf,
+         __traits(isStaticFunction, findWitExportFunc),
+         "The implementation of '", mod, "#", name, "' ",
+         "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+         "must be static.",
+    );
+    
+    static assert(
+        is(typeof(&findWitExportFunc) : Sig),
         "The implementation of '", mod, "#", name, "' ",
         "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
         "must conform to the necessary signature. ",
@@ -482,25 +574,70 @@ template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl
     );
 }
 
+template findWitExportMethod(T, string name, Sig, bool isStatic) {
+    alias Impl = witExportsIn!T;
+
+    enum mod = witInterfaceOf!T;
+    
+    static foreach(Func; Impl) {
+        static if (witNameInResourceOf!(T, Func) == name) {
+            static assert(
+                !is(Func) &&
+                (is(typeof(Func) == function)),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+                "must be a function or method."
+            );
+
+            static assert(
+                !is(typeof(findWitExportMethod) == void) || __traits(isSame, findWitExportMethod, Func),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportMethod),
+                "` and `", __traits(fullyQualifiedName, Func), "`."
+            );
+            alias findWitExportMethod = Func;
+        }
+    }
+
+    static assert(
+        !is(typeof(findWitExportMethod) == void),
+        "Could not find implementation for '", mod, "#", name, "'"
+    );
+
+    static assert(
+        __traits(isStaticFunction, findWitExportMethod) == isStatic,
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+        "must " ~ (isSttic ? "be static" : "have implicit `this`") ~ ".",
+    );
+    
+    static assert(
+        is(typeof(&findWitExportMethod) : Sig),
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+        "must conform to the necessary signature. ",
+        "Found `", typeof(&findWitExportMethod), "`",
+        ", but expected `", Sig, "`"
+    );
+}
+
 template findWitExportResource(string mod, string name, Impl...) {
     static foreach(Resource; Impl) {
-        static foreach(uda; __traits(getAttributes, Resource)) {
-            static if (!is(uda) && is(typeof(uda) == witExport) && uda == witExport(mod, name)) {
-                static assert(
-                    is(Resource == struct),
-                    "The implementation of '", mod, "#", name, "' ",
-                    "`", __traits(fullyQualifiedName, findWitExportResource), "` ",
-                    "must be a struct."
-                );
+        static if (witNameOf!Resource == name && witInterfaceOf!Resource == mod) {
+            static assert(
+                is(Resource == struct),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportResource), "` ",
+                "must be a struct."
+            );
 
-                static assert(
-                    !is(typeof(findWitExportResource) == void) || __traits(isSame, findWitExportResource, Resource),
-                    "There must be only one implementation of '", mod, "#", name, "'. ",
-                    "Found at least `", __traits(fullyQualifiedName, findWitExportResource),
-                    "` and `", __traits(fullyQualifiedName, Resource), "`."
-                );
-                alias findWitExportResource = Resource;
-            }
+            static assert(
+                !is(typeof(findWitExportResource) == void) || __traits(isSame, findWitExportResource, Resource),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportResource),
+                "` and `", __traits(fullyQualifiedName, Resource), "`."
+            );
+            alias findWitExportResource = Resource;
         }
     }
 
@@ -510,16 +647,21 @@ template findWitExportResource(string mod, string name, Impl...) {
     );
 }
 
-
-template witExportsIn(T) {
+public template witExportsIn(T) {
     alias witExportsIn = AliasSeq!();
 
-    static foreach(M; __traits(allMembers, T)) {
-        static foreach(Export; __traits(getOverloads, T, M)) {
-            static foreach(uda; __traits(getAttributes, Export)) {
-                static if (!is(uda) && is(typeof(uda) == witExport)) {
-                    witExportsIn = AliasSeq!(witExportsIn, Export);
-                }
+    static foreach(member; __traits(allMembers, T)) {
+        witExportsIn = AliasSeq!(witExportsIn, findWitExports!(__traits(getOverloads, T, member)));
+    }
+}
+
+public template findWitExports(Exports...) {
+    alias findWitExports = AliasSeq!();
+
+    static foreach (elem; Exports) {
+        static foreach(uda; __traits(getAttributes, elem)) {
+            static if ((!is(uda) && is(typeof(uda) == witExport)) || is(uda == witExport)) {
+                findWitExports = AliasSeq!(findWitExports, elem);
             }
         }
     }

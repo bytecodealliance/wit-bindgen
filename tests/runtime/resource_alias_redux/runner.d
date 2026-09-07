@@ -6,7 +6,8 @@ import wit.test.resource_alias_redux.resource_alias2.imports : Foo2 = Foo;
 
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     auto thing1 = Thing.makeNew("Ni Hao".witList);
     scope(exit) thing1.witDrop;

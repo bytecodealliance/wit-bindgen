@@ -1,7 +1,8 @@
 import wit.test.resource_borrow.runner;
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     auto thing = Thing.makeNew(42);
     scope(exit) thing.witDrop;

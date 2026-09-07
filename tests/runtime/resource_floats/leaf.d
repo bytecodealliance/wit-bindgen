@@ -5,23 +5,24 @@ import wit.test.resource_floats.leaf.exports.imports : Float;
 import wit.test.resource_floats.test.exports : Float2 = Float;
 import wit.common;
 
-@witExport("imports", "float")
+@witInterface("imports")
+@witExport("float")
 struct FloatImpl {
     double val;
 
-    @witExport("imports", "[constructor]float")
+    @witExport("[constructor]")
     static Float constructor(double v) {
         return Float.makeNew((out typeof(this) self) {
             self.val = v + 2;
         });
     }
 
-    @witExport("imports", "[method]float.get")
+    @witExport
     double get() {
         return val + 4;
     }
 
-    @witExport("imports", "[static]float.add")
+    @witExport
     static Float add(Float a, double b) {
         scope(exit) a.witDrop;
 
@@ -31,18 +32,19 @@ struct FloatImpl {
     }
 }
 
-@witExport("test:resource-floats/test", "float")
+@witInterface("test:resource-floats/test")
+@witExport("float")
 struct Float2Impl {
     double val;
 
-    @witExport("test:resource-floats/test", "[constructor]float")
+    @witExport("[constructor]")
     static Float2 constructor(double v) {
         return Float2.makeNew((out typeof(this) self) {
             self.val = v + 1;
         });
     }
 
-    @witExport("test:resource-floats/test", "[method]float.get")
+    @witExport
     double get() {
         return val + 3;
     }

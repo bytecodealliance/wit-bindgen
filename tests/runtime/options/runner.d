@@ -1,7 +1,8 @@
 import wit.test.options.runner;
 import wit.common;
 
-@witExport("$root", "run")
+@witInterface("$root")
+@witExport
 void run() {
     optionNoneParam(none!WitString);
     optionSomeParam("foo".witList.some);

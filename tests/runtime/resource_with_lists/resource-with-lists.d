@@ -21,11 +21,12 @@ ubyte[] concat(in ubyte[] a, in char[] b) {
     return ptr[0..a.length+b.length];
 }
 
-@witExport("test:resource-with-lists/test", "thing")
+@witInterface("test:resource-with-lists/test")
+@witExport("thing")
 struct ThingImpl {
     IThing val;
 
-    @witExport("test:resource-with-lists/test", "[constructor]thing")
+    @witExport("[constructor]")
     static EThing constructor(in WitList!ubyte a) {
         return EThing.makeNew((out typeof(this) self) {
             auto result = a.concat(" Thing");
@@ -35,7 +36,7 @@ struct ThingImpl {
         });
     }
 
-    @witExport("test:resource-with-lists/test", "[method]thing.foo")
+    @witExport
     WitList!ubyte foo() {
         auto list = val.foo;
         scope(exit) list.witFree;
@@ -44,7 +45,7 @@ struct ThingImpl {
         return result.witList; // no clone, no free; already on C heap
     }
 
-    @witExport("test:resource-with-lists/test", "[method]thing.bar")
+    @witExport
     auto bar(in WitList!ubyte l) {
         auto result = l.concat(" Thing.bar");
         scope(exit) free(result.ptr);
@@ -53,7 +54,7 @@ struct ThingImpl {
     }
 
 
-    @witExport("test:resource-with-lists/test", "[static]thing.baz")
+    @witExport
     static WitList!ubyte baz(in WitList!ubyte l) {
         auto input = l.concat(" Thing.baz");
         scope(exit) free(input.ptr);
