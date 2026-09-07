@@ -7,8 +7,7 @@ import wit.common;
     struct ThingImpl {
         uint val;
     
-        @witInterface("test:resource-borrow/to-test")
-        @witExport("[constructor]thing")
+        @witExport("[constructor]")
         static Thing constructor(uint v) {
             return Thing.makeNew((out typeof(this) self) {
                 self.val = v + 1;

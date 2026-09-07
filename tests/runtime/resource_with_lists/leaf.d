@@ -22,9 +22,7 @@ ubyte[] concat(in ubyte[] a, in char[] b) {
 struct ThingImpl {
     ubyte[] val;
 
-    @witInterface("test:resource-with-lists/test"):
-    
-    @witExport("[constructor]thing")
+    @witExport("[constructor]")
     static Thing constructor(in WitList!ubyte a) {
         return Thing.makeNew((out typeof(this) self) {
             auto result = a.concat(" HostThing");
@@ -33,13 +31,13 @@ struct ThingImpl {
         });
     }
 
-    @witExport("[method]thing.foo")
+    @witExport("foo")
     WitList!ubyte foo() {
         auto result = val.concat(" HostThing.foo");
         return result.witList; // no clone, no free; already on C heap
     }
 
-    @witExport("[method]thing.bar")
+    @witExport("bar")
     auto bar(in WitList!ubyte l) {
         auto result = l.concat(" HostThing.bar");
 
@@ -48,7 +46,7 @@ struct ThingImpl {
     }
 
 
-    @witExport("[static]thing.baz")
+    @witExport("baz")
     static WitList!ubyte baz(in WitList!ubyte l) {
         auto result = l.concat(" HostThing.baz");
         return result.witList; // no clone, no free; already on C heap

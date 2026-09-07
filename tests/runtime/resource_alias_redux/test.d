@@ -25,16 +25,14 @@ char[] concat(in char[] a, in char[] b) {
     struct ThingImpl {
         const(char)[] str;
         
-        @witInterface("test:resource-alias-redux/resource-alias1"):
-    
-        @witExport("[constructor]thing")
+        @witExport("[constructor]")
         static Thing1 constructor(in WitString msg) {
             return Thing1.makeNew((out typeof(this) self) {
                 self.str = concat(msg, " GuestThing");
             });
         }
     
-        @witExport("[method]thing.get")
+        @witExport("get")
         WitString get() {
             return concat(str, " GuestThing.get").witList; // no clone; already on C heap
         }

@@ -22,16 +22,14 @@ char[] concat(in char[] a, in char[] b) {
     struct ThingImpl {
         const(char)[] contents;
     
-        @witInterface("test:resource-borrow-in-record/to-test"):
-        
-        @witExport("[constructor]thing")
+        @witExport("[constructor]")
         static Thing constructor(in WitString v) {
             return Thing.makeNew((out typeof(this) self) {
                 self.contents = concat(v, " new");
             });
         }
     
-        @witExport("[method]thing.get")
+        @witExport("get")
         WitString get() {
             return concat(contents, " get").witList;
         }

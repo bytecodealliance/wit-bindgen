@@ -500,7 +500,18 @@ template witNameOf(alias Symbol) {
     }
 }
 
-template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl...) {
+template witNameInResourceOf(T, alias Func) {
+    enum resName = witNameOf!T;
+    enum name = witNameOf!Func;
+    
+    static if (name == "[constructor]") {
+        enum witNameInResourceOf = "[constructor]" ~ resName;
+    } else {
+        enum witNameInResourceOf = (__traits(isStaticFunction, Func) ? "[static]" : "[method]") ~ resName ~ "." ~ name;
+    }
+}
+
+template findWitExportFunc(string mod, string name, Sig, Impl...) {
     static foreach(Func; Impl) {
         static if (witNameOf!Func == name && witInterfaceOf!Func == mod) {
             static assert(
@@ -527,11 +538,65 @@ template findWitExportFunc(string mod, string name, Sig, bool implicitSelf, Impl
     );
 
     static assert(
-        is(typeof(&findWitExportFunc) : Sig) && __traits(isStaticFunction, findWitExportFunc) != implicitSelf,
+         __traits(isStaticFunction, findWitExportFunc),
+         "The implementation of '", mod, "#", name, "' ",
+         "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+         "must be static.",
+    );
+    
+    static assert(
+        is(typeof(&findWitExportFunc) : Sig),
         "The implementation of '", mod, "#", name, "' ",
         "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
         "must conform to the necessary signature. ",
         "Found `", typeof(&findWitExportFunc), "`",
+        ", but expected `", Sig, "`"
+    );
+}
+
+template findWitExportMethod(T, string name, Sig, bool isStatic) {
+    alias Impl = witExportsIn!T;
+
+    enum mod = witInterfaceOf!T;
+    
+    static foreach(Func; Impl) {
+        static if (witNameInResourceOf!(T, Func) == name) {
+            static assert(
+                !is(Func) &&
+                (is(typeof(Func) == function)),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+                "must be a function or method."
+            );
+
+            static assert(
+                !is(typeof(findWitExportMethod) == void) || __traits(isSame, findWitExportMethod, Func),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportMethod),
+                "` and `", __traits(fullyQualifiedName, Func), "`."
+            );
+            alias findWitExportMethod = Func;
+        }
+    }
+
+    static assert(
+        !is(typeof(findWitExportMethod) == void),
+        "Could not find implementation for '", mod, "#", name, "'"
+    );
+
+    static assert(
+        __traits(isStaticFunction, findWitExportMethod) == isStatic,
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+        "must " ~ (isSttic ? "be static" : "have implicit `this`") ~ ".",
+    );
+    
+    static assert(
+        is(typeof(&findWitExportMethod) : Sig),
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+        "must conform to the necessary signature. ",
+        "Found `", typeof(&findWitExportMethod), "`",
         ", but expected `", Sig, "`"
     );
 }

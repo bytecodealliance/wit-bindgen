@@ -7,26 +7,24 @@ import wit.common;
     struct XImpl {
         int val;
     
-        @witInterface("exports"):
-        
-        @witExport("[constructor]x")
+        @witExport("[constructor]")
         static X constructor(int a) {
             return X.makeNew((out typeof(this) self) {
                 self.val = a;
             });
         }
     
-        @witExport("[method]x.get-a")
+        @witExport("get-a")
         int getA() {
             return val;
         }
     
-        @witExport("[method]x.set-a")
+        @witExport("set-a")
         void setA(int a) {
             val = a;
         }
     
-        @witExport("[static]x.add")
+        @witExport("add")
         static X add(X x, int a) {
             scope(exit) x.witDrop;
     
@@ -42,21 +40,19 @@ import wit.common;
     
         int val;
     
-        @witInterface("exports"):
-        
-        @witExport("[constructor]z")
+        @witExport("[constructor]")
         static Z constructor(int a) {
             return Z.makeNew((out typeof(this) self) {
                 self.val = a;
             });
         }
     
-        @witExport("[method]z.get-a")
+        @witExport("get-a")
         int getA() {
             return val;
         }
     
-        @witExport("[static]z.num-dropped")
+        @witExport("num-dropped")
         static uint getNumDropped() {
             return numDropped + 1;
         }
@@ -70,21 +66,19 @@ import wit.common;
     struct KebabCaseImpl {
         uint val;
         
-        @witInterface("exports"):
-        
-        @witExport("[constructor]kebab-case")
+        @witExport("[constructor]")
         static KebabCase constructor(uint a) {
             return KebabCase.makeNew((out typeof(this) self) {
                 self.val = a;
             });
         }
     
-        @witExport("[method]kebab-case.get-a")
+        @witExport("get-a")
         uint getA() {
             return val;
         }
     
-        @witExport("[static]kebab-case.take-owned")
+        @witExport("take-owned")
         static uint takeOwned(KebabCase k) {
             scope(exit) k.witDrop;
     

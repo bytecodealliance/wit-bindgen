@@ -6,8 +6,7 @@ import std.meta : Repeat, AliasSeq;
 @witInterface("my:inline/foo@0.0.0")
 @witExport("bar")
 struct BarImpl {
-    @witInterface("my:inline/foo@0.0.0")
-    @witExport("[constructor]bar")
+    @witExport("[constructor]")
     static Bar constructor() {
         return Bar.makeNew((out typeof(this) self) {
         });

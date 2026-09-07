@@ -7,29 +7,23 @@ import wit.common;
     struct YImpl {
         int val;
 
-    @witInterface("imports") :
-
-        @witExport("[constructor]y")
-        static Y constructor(int a)
-        {
+        @witExport("[constructor]")
+        static Y constructor(int a) {
             return Y.makeNew((out typeof(this) self) { self.val = a; });
         }
 
-        @witExport("[method]y.get-a")
-        int getA()
-        {
+        @witExport("get-a")
+        int getA() {
             return val;
         }
 
-        @witExport("[method]y.set-a")
-        void setA(int a)
-        {
+        @witExport("set-a")
+        void setA(int a) {
             val = a;
         }
 
-        @witExport("[static]y.add")
-        static Y add(Y y, int a)
-        {
+        @witExport("add")
+        static Y add(Y y, int a) {
             scope (exit)
                 y.witDrop;
 

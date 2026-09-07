@@ -1438,27 +1438,45 @@ impl<'a> DInterfaceGenerator<'a> {
                 .join(", ")
         ));
 
-        self.src.push_str(&format!(
-            "/// ditto\nalias {}_Impl = findWitExportFunc!(\"{}\", \"{}\", {0}_Sig, {}, {});\n",
-            d_sig.name,
-            self.wasm_import_module.unwrap(),
-            func.name,
-            d_sig.implicit_self,
-            match &func.kind {
-                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => "Impl",
-                _ => {
-                    "witExportsIn!_Resource_Impl"
-                }
+        match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
+                self.src.push_str(&format!(
+                    "/// ditto\nalias {}_Impl = findWitExportFunc!(\"{}\", \"{}\", {0}_Sig, Impl);\n",
+                    d_sig.name,
+                    self.wasm_import_module.unwrap(),
+                    func.name
+                ));
             }
-        ));
+            _ => {
+                self.src.push_str(&format!(
+                    "/// ditto\nalias {}_Impl = findWitExportMethod!(_Resource_Impl, \"{}\", {0}_Sig, {});\n",
+                    d_sig.name,
+                    func.name,
+                    !d_sig.implicit_self,
+                ));
+            }
+        }
 
         if self.r#gen.opts.emit_export_stubs {
-            self.stub_src.push_str(&format!(
-                "@witInterface(\"{}\")",
-                self.wasm_import_module.unwrap(),
-            ));
+            if matches!(
+                &func.kind,
+                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding
+            ) {
+                self.stub_src.push_str(&format!(
+                    "@witInterface(\"{}\")",
+                    self.wasm_import_module.unwrap(),
+                ));
+            }
+
+            let name = &func.name;
+            let name = match &func.kind {
+                FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => name,
+                FunctionKind::Constructor(_) => "[constructor]",
+                _ => name.split(".").skip(1).next().unwrap(),
+            };
+
             self.stub_src
-                .push_str(&format!("@witExport(\"{}\")\n", func.name));
+                .push_str(&format!("@witExport(\"{}\")\n", name));
             if d_sig.static_member {
                 self.stub_src.push_str("static ");
             }

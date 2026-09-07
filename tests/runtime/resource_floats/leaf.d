@@ -10,21 +10,19 @@ import wit.common;
 struct FloatImpl {
     double val;
 
-    @witInterface("imports"):
-
-    @witExport("[constructor]float")
+    @witExport("[constructor]")
     static Float constructor(double v) {
         return Float.makeNew((out typeof(this) self) {
             self.val = v + 2;
         });
     }
 
-    @witExport("[method]float.get")
+    @witExport("get")
     double get() {
         return val + 4;
     }
 
-    @witExport("[static]float.add")
+    @witExport("add")
     static Float add(Float a, double b) {
         scope(exit) a.witDrop;
 
@@ -39,16 +37,14 @@ struct FloatImpl {
 struct Float2Impl {
     double val;
 
-    @witInterface("test:resource-floats/test"):
-    
-    @witExport("[constructor]float")
+    @witExport("[constructor]")
     static Float2 constructor(double v) {
         return Float2.makeNew((out typeof(this) self) {
             self.val = v + 1;
         });
     }
 
-    @witExport("[method]float.get")
+    @witExport("get")
     double get() {
         return val + 3;
     }

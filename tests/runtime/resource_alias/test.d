@@ -10,8 +10,7 @@ import wit.common;
     struct XImpl {
         uint val;
         
-        @witInterface("test:resource-alias/e1")
-        @witExport("[constructor]x")
+        @witExport("[constructor]")
         static X constructor(uint v) {
             return X.makeNew((out typeof(this) self) {
                 self.val = v;

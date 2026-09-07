@@ -12,21 +12,19 @@ import wit.common;
 struct FloatImpl {
     IFloat1 val;
 
-    @witInterface("exports"):
-    
-    @witExport("[constructor]float")
+    @witExport("[constructor]")
     static EFloat constructor(double v) {
         return EFloat.makeNew((out typeof(this) self) {
             self.val = IFloat1.makeNew(v + 1);
         });
     }
 
-    @witExport("[method]float.get")
+    @witExport("get")
     double get() {
         return val.get + 3;
     }
 
-    @witExport("[static]float.add")
+    @witExport("add")
     static EFloat add(EFloat a, double b) {
         scope(exit) a.witDrop;
 

@@ -9,26 +9,24 @@ import wit.common;
 struct ThingImpl {
     ThingImport thing;
 
-    @witInterface("test:resource-import-and-export/test"):
-    
-    @witExport("[constructor]thing")
+    @witExport("[constructor]")
     static ThingExport constructor(uint v) {
         return ThingExport.makeNew((out typeof(this) self) {
             self.thing = ThingImport.makeNew(v + 1);
         });
     }
 
-    @witExport("[method]thing.foo")
+    @witExport("foo")
     uint foo() {
         return thing.foo + 2;
     }
 
-    @witExport("[method]thing.bar")
+    @witExport("bar")
     void bar(uint v) {
         thing.bar(v + 3);
     }
 
-    @witExport("[static]thing.baz")
+    @witExport("baz")
     static ThingExport baz(ThingExport a, ThingExport b) {
         scope(exit) {
             a.witDrop;
