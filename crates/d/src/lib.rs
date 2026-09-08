@@ -904,6 +904,38 @@ impl WorldGenerator for D {
             .unwrap();
 
             world_src.push_str(&format!(
+                "private enum componentTypeBytes = x\"{}\n\";\n",
+                &component_type
+                    .iter()
+                    .map(|b| format!("{b:02X}"))
+                    .enumerate()
+                    .fold(String::default(), |a, (i, b)| {
+                        if (i % 39) == 0 { a + "\n" + &b } else { a + &b }
+                    })
+            ));
+
+            world_src.push_str(
+                "
+                private enum componentTypeStr = (() {
+                    immutable input = componentTypeBytes;
+                    auto result = new char[input.length*3];
+
+                    foreach (i, b; input) {
+                        result[(i*3)+0] = '\\\\';
+
+                        ubyte n1 = (b >> 4) & 0xF;
+                        result[(i*3)+1] = n1 < 0xA ? cast(char)('0'+n1) : cast(char)('A'+(n1-0xA));
+
+                        ubyte n2 = b & 0xF;
+                        result[(i*3)+2] = n2 < 0xA ? cast(char)('0'+n2) : cast(char)('A'+(n2-0xA));
+                    }
+
+                    return cast(string)result;
+                })();
+                ",
+            );
+
+            world_src.push_str(&format!(
                 "
                 pragma(inline, false)
                 package({}) void __wit_bindgen_component_type_force_link() pure @nogc nothrow {{}}
@@ -914,19 +946,12 @@ impl WorldGenerator for D {
                         \"\",
                         \"\",
                         `!wasm.custom_sections = !{{!0}}
-                !0 = !{{!\"component-type:wit-bindgen:{version}:{pkg}:{world_name}:{opts_suffix}\", !\"{}\"}}`,
+                !0 = !{{!\"component-type:wit-bindgen:{version}:{pkg}:{world_name}:{opts_suffix}\", !\"`~componentTypeStr~`\"}}`,
                         void
                     );
                 }}
                 ",
-                self.root_pkg,
-                &component_type
-                    .iter()
-                    .map(|b| format!("\\{b:02X}"))
-                    .enumerate()
-                    .fold(String::default(), |a, (i, b)| {
-                        if (i % 24) == 0 { a + "`\n~`" + &b } else { a + &b }
-                    })
+                self.root_pkg
             ));
         }
 
