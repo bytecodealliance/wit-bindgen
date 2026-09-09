@@ -5,7 +5,6 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Rust bindings generator and runtime support for WIT and the component model.
 Used when compiling Rust programs to the component model.

@@ -5,10 +5,12 @@ version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Procedural macro paired with the `wit-bindgen` crate.
 """
+
+[lints]
+workspace = true
 
 [lib]
 proc-macro = true

@@ -5,11 +5,9 @@ edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 rust-version = { workspace = true }
-homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Backend of the `wit-bindgen test` subcommand
 """
-readme = "README.md"
 
 [lints]
 workspace = true
