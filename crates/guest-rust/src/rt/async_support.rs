@@ -654,8 +654,7 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
 ///
 /// This uses `waitable-set.wait` to poll for progress on any in-progress calls
 /// to async-lowered imports as necessary.
-// TODO: refactor so `'static` bounds aren't necessary
-pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
+pub fn block_on<T>(future: impl Future<Output = T>) -> T {
     let mut result = None;
     let mut state = TaskState::new(Box::pin(async {
         result = Some(future.await);
