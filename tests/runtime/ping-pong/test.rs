@@ -12,7 +12,8 @@ impl crate::exports::my::test::i::Guest for Component {
         let (tx, rx) = wit_future::new(|| unreachable!());
         wit_bindgen::spawn_local(async move {
             tx.write(msg).await.unwrap();
-        });
+        })
+        .detach();
         rx
     }
 

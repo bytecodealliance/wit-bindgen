@@ -56,7 +56,8 @@ impl Guest for Component {
                     StreamResult::Cancelled => unreachable!(),
                 }
             }
-        });
+        })
+        .detach();
         outer_reader
     }
 
@@ -81,7 +82,8 @@ impl Guest for Component {
                     StreamResult::Cancelled => unreachable!(),
                 }
             }
-        });
+        })
+        .detach();
         output_reader
     }
 
@@ -89,7 +91,8 @@ impl Guest for Component {
         let (mut writer, reader) = wit_stream::new();
         wit_bindgen::spawn_local(async move {
             assert!(writer.write_all(vec![1, 2]).await.is_empty());
-        });
+        })
+        .detach();
         reader
     }
 
@@ -97,7 +100,8 @@ impl Guest for Component {
         let (mut writer, reader) = wit_stream::new();
         wit_bindgen::spawn_local(async move {
             assert!(writer.write_one(42).await.is_none());
-        });
+        })
+        .detach();
         reader
     }
 

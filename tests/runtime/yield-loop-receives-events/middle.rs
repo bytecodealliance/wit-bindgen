@@ -16,7 +16,8 @@ impl crate::exports::test::common::i_runner::Guest for Component {
             unsafe {
                 HIT = true;
             }
-        });
+        })
+        .detach();
 
         // This is an "infinite loop" but it's also effectively a yield which
         // should enable not only making progress on sibling rust-level tasks
