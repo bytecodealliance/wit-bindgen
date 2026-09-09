@@ -2,6 +2,7 @@ use crate::csharp_ident::ToCSharpIdent;
 use crate::function::ResourceInfo;
 use crate::interface::{InterfaceFragment, InterfaceGenerator, InterfaceTypeAndFragments};
 use crate::{CSharpRuntime, Opts};
+use anyhow::Result;
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -170,7 +171,7 @@ impl WorldGenerator for CSharp {
             }
         });
         self.name = name.to_string();
-        self.sizes.fill(resolve);
+        self.sizes.fill(resolve)?;
         Ok(())
     }
 
@@ -229,7 +230,7 @@ impl WorldGenerator for CSharp {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         self.import_funcs_called = true;
 
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
@@ -255,6 +256,7 @@ impl WorldGenerator for CSharp {
         }
 
         r#gen.add_world_fragment(Some(Direction::Import));
+        Ok(())
     }
 
     fn export_interface(
@@ -364,7 +366,7 @@ impl WorldGenerator for CSharp {
         world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}Imports");
         let mut r#gen = self.interface(resolve, name, Direction::Import, false);
@@ -379,12 +381,13 @@ impl WorldGenerator for CSharp {
         r#gen.csharp_gen.world_resources = new_resources;
 
         r#gen.add_world_fragment(Some(Direction::Import));
+        Ok(())
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> anyhow::Result<()> {
         if !self.import_funcs_called {
             // Ensure that we emit type declarations for any top-level imported resource types:
-            self.import_funcs(resolve, id, &[], files);
+            self.import_funcs(resolve, id, &[], files)?;
         }
 
         let world = &resolve.worlds[id];

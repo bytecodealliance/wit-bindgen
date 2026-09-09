@@ -408,11 +408,11 @@ impl RustWasm {
         wasm_import_module: &'a str,
         resolve: &'a Resolve,
         in_import: bool,
-    ) -> InterfaceGenerator<'a> {
+    ) -> Result<InterfaceGenerator<'a>> {
         let mut sizes = SizeAlign::default();
-        sizes.fill(resolve);
+        sizes.fill(resolve)?;
 
-        InterfaceGenerator {
+        Ok(InterfaceGenerator {
             identifier,
             wasm_import_module,
             src: Source::default(),
@@ -424,7 +424,7 @@ impl RustWasm {
             return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
             needs_wit_map: false,
-        }
+        })
     }
 
     fn emit_modules(&mut self, modules: Vec<(String, Vec<String>)>) {
@@ -1343,7 +1343,7 @@ impl WorldGenerator for RustWasm {
             &wasm_import_module,
             resolve,
             true,
-        );
+        )?;
         let (snake, module_path) = r#gen.start_append_submodule(name);
         if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
@@ -1368,15 +1368,16 @@ impl WorldGenerator for RustWasm {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         self.import_funcs_called = true;
 
-        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true)?;
 
         r#gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
 
         let src = r#gen.finish();
         self.src.push_str(&src);
+        Ok(())
     }
 
     fn export_interface(
@@ -1399,7 +1400,7 @@ impl WorldGenerator for RustWasm {
             &wasm_import_module,
             resolve,
             false,
-        );
+        )?;
         let (snake, module_path) = r#gen.start_append_submodule(name);
         if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
@@ -1425,7 +1426,7 @@ impl WorldGenerator for RustWasm {
                 &wasm_import_module,
                 resolve,
                 false,
-            );
+            )?;
             r#gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
             let stub = r#gen.finish();
             self.src.push_str(&stub);
@@ -1440,7 +1441,8 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let mut r#gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
+        let mut r#gen =
+            self.interface(Identifier::World(world), "[export]$root", resolve, false)?;
         let macro_name = r#gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
         let src = r#gen.finish();
         self.src.push_str(&src);
@@ -1448,7 +1450,7 @@ impl WorldGenerator for RustWasm {
 
         if self.opts.stubs {
             let mut r#gen =
-                self.interface(Identifier::World(world), "[export]$root", resolve, false);
+                self.interface(Identifier::World(world), "[export]$root", resolve, false)?;
             r#gen.generate_stub(None, funcs.iter().map(|f| f.1));
             let stub = r#gen.finish();
             self.src.push_str(&stub);
@@ -1462,7 +1464,7 @@ impl WorldGenerator for RustWasm {
         world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let mut to_define = Vec::new();
         for (name, ty_id) in types {
             let full_name = full_wit_type_name(resolve, *ty_id);
@@ -1476,21 +1478,28 @@ impl WorldGenerator for RustWasm {
             }
             self.generated_types.insert(full_name);
         }
-        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true)?;
         for (name, ty) in to_define {
             r#gen.define_type(name, *ty);
         }
         let src = r#gen.finish();
         self.src.push_str(&src);
+        Ok(())
     }
 
-    fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish_imports(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        files: &mut Files,
+    ) -> Result<()> {
         if !self.import_funcs_called {
             // We call `import_funcs` even if the world doesn't import any
             // functions since one of the side effects of that method is to
             // generate `struct`s for any imported resources.
-            self.import_funcs(resolve, world, &[], files);
+            self.import_funcs(resolve, world, &[], files)?;
         }
+        Ok(())
     }
 
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()> {

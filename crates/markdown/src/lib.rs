@@ -38,7 +38,7 @@ impl Opts {
 
 impl WorldGenerator for Markdown {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
-        self.sizes.fill(resolve);
+        self.sizes.fill(resolve)?;
 
         let world = &resolve.worlds[world];
         uwriteln!(
@@ -142,13 +142,14 @@ impl WorldGenerator for Markdown {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = &resolve.worlds[world].name;
         uwriteln!(self.src, "## Imported functions to world `{name}`\n");
         let mut r#gen = self.interface(resolve);
         for (_, func) in funcs {
             r#gen.func(func);
         }
+        Ok(())
     }
 
     fn export_interface(
@@ -194,13 +195,14 @@ impl WorldGenerator for Markdown {
         world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = &resolve.worlds[world].name;
         uwriteln!(self.src, "## Exported types from world `{name}`\n");
         let mut r#gen = self.interface(resolve);
         for (name, ty) in types {
             r#gen.define_type(name, *ty);
         }
+        Ok(())
     }
 
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()> {

@@ -262,7 +262,7 @@ impl WorldGenerator for MoonBit {
                 format!("{}/{}", package.namespace, package.name)
             }))
             .unwrap_or("generated".into());
-        self.sizes.fill(resolve);
+        self.sizes.fill(resolve)?;
         Ok(())
     }
 
@@ -332,7 +332,7 @@ impl WorldGenerator for MoonBit {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = PkgResolver::world_name(resolve, world);
         let mut r#gen = self.interface(resolve, &name, Direction::Import, None);
 
@@ -342,6 +342,7 @@ impl WorldGenerator for MoonBit {
 
         let result = r#gen.finish();
         self.import_world_fragment.concat(result);
+        Ok(())
     }
 
     fn import_types(
@@ -350,7 +351,7 @@ impl WorldGenerator for MoonBit {
         world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = PkgResolver::world_name(resolve, world);
         let mut r#gen = self.interface(resolve, &name, Direction::Import, None);
 
@@ -360,9 +361,15 @@ impl WorldGenerator for MoonBit {
 
         let result = r#gen.finish();
         self.import_world_fragment.concat(result);
+        Ok(())
     }
 
-    fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish_imports(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        files: &mut Files,
+    ) -> Result<()> {
         let name = PkgResolver::world_name(resolve, world);
         let directory = name.replace('.', "/");
 
@@ -398,6 +405,7 @@ impl WorldGenerator for MoonBit {
             false,
         );
         files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+        Ok(())
     }
 
     fn export_interface(
