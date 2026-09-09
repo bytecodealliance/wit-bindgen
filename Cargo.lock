@@ -1499,7 +1499,7 @@ checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "bitflags 2.13.1",
  "futures",
@@ -1510,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-c"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cpp"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-csharp"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1588,7 +1588,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-d"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1602,7 +1602,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-go"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1615,7 +1615,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-markdown"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1626,7 +1626,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-moonbit"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1636,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1657,7 +1657,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "macro-string",
@@ -1671,7 +1671,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-test"
-version = "0.61.1"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "clap",
