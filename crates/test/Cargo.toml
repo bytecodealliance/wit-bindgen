@@ -25,10 +25,10 @@ regex = "1.11.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = "1.1.2"
-wasi-preview1-component-adapter-provider = "46.0.1"
-wac-parser = "0.10.0"
-wac-types = "0.10.0"
-wac-graph = "0.10.0"
+wasi-preview1-component-adapter-provider = "48.0.1"
+wac-parser = "0.11.0"
+wac-types = "0.11.0"
+wac-graph = "0.11.0"
 wasm-compose = { workspace = true }
 indexmap = { workspace = true }
 wasm-encoder = { workspace = true }

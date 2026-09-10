@@ -42,18 +42,18 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1" }
 clap = { version = "4.6.1", features = ["derive"] }
 indexmap = "2.0.0"
-prettyplease = "0.2.20"
-syn = { version = "2.0.89", features = ["printing"] }
+prettyplease = "0.3.0"
+syn = { version = "3.0.5", features = ["printing"] }
 futures = "0.3.31"
-macro-string = "0.2.0"
+macro-string = "0.3.0"
 
-wat = "1.258.0"
-wasmparser = "0.258.0"
-wasm-encoder = "0.258.0"
-wasm-metadata = { version = "0.258.0", default-features = false }
-wit-parser = "0.258.0"
-wit-component = "0.258.0"
-wasm-compose = "0.258.0"
+wat = "1.259.0"
+wasmparser = "0.259.0"
+wasm-encoder = "0.259.0"
+wasm-metadata = { version = "0.259.0", default-features = false }
+wit-parser = "0.259.0"
+wit-component = "0.259.0"
+wasm-compose = "0.259.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.61.1' }
 wit-bindgen-c = { path = 'crates/c', version = '0.61.1' }

@@ -244,11 +244,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    # Verify MSRV for the whole workspace
     - run: rustup update 1.88.0 && rustup default 1.88.0
     - run: cargo check
-    # Verify the tighter MSRV of the `wit-bindgen` crate.
-    - run: rustup update 1.85.0 && rustup default 1.85.0
     - run: cargo check -p wit-bindgen --all-features
 
   verify-publish:

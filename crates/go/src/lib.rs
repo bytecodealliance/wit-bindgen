@@ -741,7 +741,7 @@ impl WorldGenerator for Go {
 
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
         _ = world;
-        self.sizes.fill(resolve);
+        self.sizes.fill(resolve)?;
         self.imports.insert(remote_pkg("runtime"));
         Ok(())
     }
@@ -787,7 +787,7 @@ impl WorldGenerator for Go {
         _world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let mut data = InterfaceData::default();
         for (_, func) in funcs {
             data.extend(self.import(resolve, func, None));
@@ -796,6 +796,7 @@ impl WorldGenerator for Go {
             .entry(self.go_package_name(resolve, None))
             .or_default()
             .extend(data);
+        Ok(())
     }
 
     fn export_interface(
@@ -863,7 +864,7 @@ impl WorldGenerator for Go {
         _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let package = self.go_package_name(resolve, None);
         let mut generator = InterfaceGenerator::new(self, resolve, None, true);
         for (name, ty) in types {
@@ -873,6 +874,7 @@ impl WorldGenerator for Go {
         }
         let data = generator.into();
         self.interfaces.entry(package).or_default().extend(data);
+        Ok(())
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {

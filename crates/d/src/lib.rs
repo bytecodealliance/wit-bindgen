@@ -341,11 +341,11 @@ impl D {
         direction: Option<Direction>,
         name: Option<&'a WorldKey>,
         wasm_import_module: Option<&'a str>,
-    ) -> DInterfaceGenerator<'a> {
+    ) -> Result<DInterfaceGenerator<'a>> {
         let mut sizes = SizeAlign::default();
-        sizes.fill(resolve);
+        sizes.fill(resolve)?;
 
-        DInterfaceGenerator {
+        Ok(DInterfaceGenerator {
             src: Source::default(),
             stub_src: Source::default(),
             stubs: Vec::default(),
@@ -361,7 +361,7 @@ impl D {
 
             return_pointer_area_size: Default::default(),
             return_pointer_area_align: Default::default(),
-        }
+        })
     }
 
     fn lookup_interface_fqn(&self, id: InterfaceId, direction: Option<Direction>) -> Option<&str> {
@@ -497,7 +497,7 @@ impl WorldGenerator for D {
             Some(Direction::Import),
             Some(name),
             Some(&wasm_import_module),
-        );
+        )?;
         r#gen.fqn = &fqn;
         r#gen.interface = Some(id);
         r#gen.prologue();
@@ -545,9 +545,9 @@ impl WorldGenerator for D {
         _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let fqn = self.world_fqn.clone();
-        let mut r#gen = self.interface(resolve, Some(Direction::Import), None, Some("$root"));
+        let mut r#gen = self.interface(resolve, Some(Direction::Import), None, Some("$root"))?;
         r#gen.fqn = &fqn;
 
         for (name, id) in types.iter() {
@@ -555,6 +555,7 @@ impl WorldGenerator for D {
         }
 
         self.type_imports_src = take(&mut r#gen.src);
+        Ok(())
     }
 
     fn import_funcs(
@@ -563,9 +564,9 @@ impl WorldGenerator for D {
         _world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let fqn = self.world_fqn.clone();
-        let mut r#gen = self.interface(resolve, Some(Direction::Import), None, Some("$root"));
+        let mut r#gen = self.interface(resolve, Some(Direction::Import), None, Some("$root"))?;
         r#gen.fqn = &fqn;
 
         for (_name, func) in funcs {
@@ -573,6 +574,7 @@ impl WorldGenerator for D {
         }
 
         self.function_imports_src = take(&mut r#gen.src);
+        Ok(())
     }
 
     fn export_interface(
@@ -598,7 +600,7 @@ impl WorldGenerator for D {
             Some(Direction::Export),
             Some(name),
             Some(&wasm_import_module),
-        );
+        )?;
         r#gen.fqn = &fqn;
         r#gen.interface = Some(id);
         r#gen.prologue();
@@ -749,7 +751,7 @@ impl WorldGenerator for D {
         _files: &mut Files,
     ) -> Result<()> {
         let fqn = self.world_fqn.clone();
-        let mut r#gen = self.interface(resolve, Some(Direction::Export), None, Some("$root"));
+        let mut r#gen = self.interface(resolve, Some(Direction::Export), None, Some("$root"))?;
         r#gen.fqn = &fqn;
 
         for (_name, func) in funcs {
@@ -788,7 +790,7 @@ impl WorldGenerator for D {
 
                 let wasm_import_module = resolve.name_world_key(&name);
                 let mut r#gen =
-                    self.interface(resolve, None, Some(&name), Some(&wasm_import_module));
+                    self.interface(resolve, None, Some(&name), Some(&wasm_import_module))?;
                 r#gen.fqn = &fqn;
                 r#gen.interface = Some(id);
                 r#gen.prologue();

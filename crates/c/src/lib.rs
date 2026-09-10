@@ -179,7 +179,7 @@ impl WorldGenerator for C {
             .rename_world
             .clone()
             .unwrap_or_else(|| resolve.worlds[world].name.clone());
-        self.sizes.fill(resolve);
+        self.sizes.fill(resolve)?;
         self.world_id = Some(world);
 
         let mut interfaces = HashMap::new();
@@ -239,7 +239,7 @@ impl WorldGenerator for C {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = &resolve.worlds[world].name;
         let mut r#gen = self.interface(resolve, true, Some("$root"));
         r#gen.define_function_types(funcs);
@@ -253,6 +253,7 @@ impl WorldGenerator for C {
         }
 
         r#gen.r#gen.src.append(&r#gen.src);
+        Ok(())
     }
 
     fn export_interface(
@@ -308,7 +309,7 @@ impl WorldGenerator for C {
         _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let mut r#gen = self.interface(resolve, true, Some("$root"));
         let mut live = LiveTypes::default();
         for (_, id) in types {
@@ -316,6 +317,7 @@ impl WorldGenerator for C {
         }
         r#gen.define_live_types(live);
         r#gen.r#gen.src.append(&r#gen.src);
+        Ok(())
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {

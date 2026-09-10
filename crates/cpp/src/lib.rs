@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{Result, bail};
 use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use indexmap::{IndexMap, IndexSet};
 use std::{
@@ -331,11 +331,11 @@ impl Cpp {
         name: Option<&'a WorldKey>,
         in_guest_import: bool,
         wasm_import_module: Option<String>,
-    ) -> CppInterfaceGenerator<'a> {
+    ) -> Result<CppInterfaceGenerator<'a>> {
         let mut sizes = SizeAlign::default();
-        sizes.fill(resolve);
+        sizes.fill(resolve)?;
 
-        CppInterfaceGenerator {
+        Ok(CppInterfaceGenerator {
             _src: Source::default(),
             r#gen: self,
             resolve,
@@ -344,7 +344,7 @@ impl Cpp {
             sizes,
             in_guest_import,
             wasm_import_module,
-        }
+        })
     }
 
     fn clang_format(code: &mut String) {
@@ -549,7 +549,7 @@ impl WorldGenerator for Cpp {
                 let store = self.start_new_file(None);
                 let wasm_import_module = resolve.name_world_key(name);
                 let binding = Some(name);
-                let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
+                let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module))?;
                 r#gen.interface = Some(id);
                 let namespace = namespace(resolve, &TypeOwner::Interface(id), false, &*r#gen.r#gen);
                 let docs = resolve.interfaces[id].docs.contents.as_deref();
@@ -605,7 +605,7 @@ impl WorldGenerator for Cpp {
         self.update_instance_name(resolve, name, id);
         let wasm_import_module = resolve.name_world_key(name);
         let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding, false, Some(wasm_import_module));
+        let mut r#gen = self.interface(resolve, binding, false, Some(wasm_import_module))?;
         r#gen.interface = Some(id);
         let namespace = namespace(resolve, &TypeOwner::Interface(id), true, &*r#gen.r#gen);
         let docs = resolve.interfaces[id].docs.contents.as_deref();
@@ -632,11 +632,12 @@ impl WorldGenerator for Cpp {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = WorldKey::Name("$root".to_string()); //WorldKey::Name(resolve.worlds[world].name.clone());
         let wasm_import_module = resolve.name_world_key(&name);
         let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding.as_ref(), true, Some(wasm_import_module));
+        let mut r#gen =
+            self.interface(resolve, binding.as_ref(), true, Some(wasm_import_module))?;
         let namespace = namespace(resolve, &TypeOwner::World(world), false, &*r#gen.r#gen);
 
         for (_name, func) in funcs.iter() {
@@ -645,6 +646,7 @@ impl WorldGenerator for Cpp {
                 r#gen.generate_function(func, &TypeOwner::World(world), AbiVariant::GuestImport);
             }
         }
+        Ok(())
     }
 
     fn export_funcs(
@@ -656,7 +658,7 @@ impl WorldGenerator for Cpp {
     ) -> anyhow::Result<()> {
         let name = WorldKey::Name(resolve.worlds[world].name.clone());
         let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding.as_ref(), false, None);
+        let mut r#gen = self.interface(resolve, binding.as_ref(), false, None)?;
         let namespace = namespace(resolve, &TypeOwner::World(world), true, &*r#gen.r#gen);
 
         for (_name, func) in funcs.iter() {
@@ -674,11 +676,12 @@ impl WorldGenerator for Cpp {
         _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
-        let mut r#gen = self.interface(resolve, None, true, Some("$root".to_string()));
+    ) -> Result<()> {
+        let mut r#gen = self.interface(resolve, None, true, Some("$root".to_string()))?;
         for (name, id) in types.iter() {
             r#gen.define_type(name, *id);
         }
+        Ok(())
     }
 
     fn finish(
