@@ -7,7 +7,10 @@ use crate::rt::async_support::BoxFuture;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::future::Future;
+use core::pin::Pin;
 use core::task::{Context, Poll};
+use futures::channel::oneshot;
+use futures::future::{AbortHandle, Abortable, Aborted};
 use futures::stream::{FuturesUnordered, StreamExt};
 
 /// Any newly-deferred work queued by calls to the `spawn` function while
@@ -94,10 +97,10 @@ impl<'a> Tasks<'a> {
 ///   computations executing within a [`block_on`] call, however, the spawned
 ///   tasks will be executed within that scope. This notably means that for
 ///   [`block_on`] spawned tasks will prevent the [`block_on`] function from
-///   returning, even if a value is available to return.
-///
-/// * There is no handle returned to the spawned task meaning that it cannot be
-///   cancelled or monitored.
+///   returning, even if a value is available to return. If `spawn_local` is
+///   called within a component-model async task which is then terminated (e.g.
+///   by the host) before the future resolves, awating the `Task` will return
+///   `None`.
 ///
 /// * The task spawned here is executed *concurrently*, not in *parallel*. This
 ///   means that while one future is being polled no other future can be polled
@@ -108,8 +111,79 @@ impl<'a> Tasks<'a> {
 /// exported async function has produced a value this can be used to continue to
 /// execute some more code before the component model async task exits.
 ///
+/// # Cancellation
+///
+/// Dropping the resulting [`Task`] will cancel the spawned future. [`Task::detach`] will
+/// allow the future to continue running in the background and [`Task::cancel`] will
+/// explicitly wait for the cancelation to complete.
+///
 /// [`block_on`]: crate::block_on
 /// [#1305]: https://github.com/bytecodealliance/wit-bindgen/issues/1305
-pub fn spawn_local(future: impl Future<Output = ()> + 'static) {
-    unsafe { SPAWNED.push(Box::pin(future)) }
+pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Task<T> {
+    let (sender, receiver) = oneshot::channel();
+    let (abort, registration) = AbortHandle::new_pair();
+    unsafe {
+        SPAWNED.push(Box::pin(async move {
+            let _ = sender.send(Abortable::new(future, registration).await);
+        }));
+    }
+    Task {
+        receiver,
+        abort,
+        cancel_on_drop: true,
+    }
+}
+
+/// A handle to a spawned task which can be awaited for its result.
+///
+/// Dropping this handle cancels the task. To drop the handle without cancelling
+/// the task, call [`detach`](Self::detach). Awaiting the handle returns `None`
+/// if the task was cancelled or otherwise terminated without producing a
+/// result.
+#[must_use = "dropping the handle cancels the spawned task"]
+pub struct Task<T> {
+    receiver: oneshot::Receiver<Result<T, Aborted>>,
+    abort: AbortHandle,
+    cancel_on_drop: bool,
+}
+
+impl<T> Task<T> {
+    /// Cancels the spawned task and waits for cancellation to complete.
+    ///
+    /// This returns the task's output if it completed before it could be
+    /// cancelled, or `None` if it was cancelled or otherwise terminated.
+    pub async fn cancel(mut self) -> Option<T> {
+        self.abort.abort();
+        self.cancel_on_drop = false;
+        match (&mut self.receiver).await {
+            Ok(Ok(result)) => Some(result),
+            Ok(Err(_)) => None,
+            Err(_) => None,
+        }
+    }
+
+    /// Detaches the spawned task, allowing it to continue in the background.
+    pub fn detach(mut self) {
+        self.cancel_on_drop = false;
+    }
+}
+
+impl<T> Future for Task<T> {
+    type Output = Option<T>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<T>> {
+        match Pin::new(&mut self.receiver).poll(cx) {
+            Poll::Ready(Ok(Ok(result))) => Poll::Ready(Some(result)),
+            Poll::Ready(Ok(Err(_)) | Err(_)) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<T> Drop for Task<T> {
+    fn drop(&mut self) {
+        if self.cancel_on_drop {
+            self.abort.abort();
+        }
+    }
 }

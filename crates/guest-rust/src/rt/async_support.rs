@@ -97,7 +97,7 @@ type BoxFuture<'a> = Pin<Box<dyn Future<Output = ()> + 'a>>;
 #[cfg(feature = "async-spawn")]
 mod spawn;
 #[cfg(feature = "async-spawn")]
-pub use spawn::spawn_local;
+pub use spawn::{Task, spawn_local};
 #[cfg(not(feature = "async-spawn"))]
 mod spawn_disabled;
 #[cfg(not(feature = "async-spawn"))]

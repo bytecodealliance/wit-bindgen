@@ -908,8 +908,6 @@ pub mod resource;
 
 #[cfg(feature = "inter-task-wakeup")]
 pub use rt::async_support::UnitStreamOps;
-#[cfg(feature = "async-spawn")]
-pub use rt::async_support::spawn_local;
 #[cfg(feature = "async")]
 pub use rt::async_support::{
     AbiBuffer, FutureOps, FutureRead, FutureReader, FutureWrite, FutureWriteCancel,
@@ -918,3 +916,5 @@ pub use rt::async_support::{
     StreamRead, StreamReader, StreamResult, StreamWrite, StreamWriter, backpressure_dec,
     backpressure_inc, block_on, yield_async, yield_blocking,
 };
+#[cfg(feature = "async-spawn")]
+pub use rt::async_support::{Task, spawn_local};

@@ -84,7 +84,8 @@ impl Guest for Component {
             SECOND_WRITE_STARTED.store(true, Ordering::SeqCst);
             assert!(writer.write_one(holder::Leaf::new()).await.is_some());
             assert!(writer.write_one(holder::Leaf::new()).await.is_some());
-        });
+        })
+        .detach();
 
         holder::hold(reader).await;
     }
