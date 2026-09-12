@@ -11,3 +11,7 @@ crates/guest-rust/src/cabi_realloc.o
 wit_component
 
 /wit-bindgen.sln
+
+# Built by crates/rust/tests/native_e2e.rs
+crates/rust/tests/native-e2e/Cargo.lock
+crates/rust/tests/native-e2e/target
