@@ -10,7 +10,6 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::channel::oneshot;
-use futures::future::{AbortHandle, Abortable, Aborted};
 use futures::stream::{FuturesUnordered, StreamExt};
 
 /// Any newly-deferred work queued by calls to the `spawn` function while
@@ -121,16 +120,57 @@ impl<'a> Tasks<'a> {
 /// [#1305]: https://github.com/bytecodealliance/wit-bindgen/issues/1305
 pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Task<T> {
     let (sender, receiver) = oneshot::channel();
-    let (abort, registration) = AbortHandle::new_pair();
     unsafe {
         SPAWNED.push(Box::pin(async move {
-            let _ = sender.send(Abortable::new(future, registration).await);
+            SpawnedFuture {
+                fut: future,
+                sender: Some(sender),
+            }
+            .await
         }));
     }
-    Task {
-        receiver,
-        abort,
-        cancel_on_drop: true,
+    Task { receiver }
+}
+
+struct SpawnedFuture<F, T> {
+    fut: F,
+    sender: Option<oneshot::Sender<T>>,
+}
+
+impl<F, T> Future for SpawnedFuture<F, T>
+where
+    F: Future<Output = T> + 'static,
+{
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+        // SAFETY: `fut` is not moved and only used to be polled in place. All
+        // other fields are `Unpin`.
+        let inner = unsafe { self.get_unchecked_mut() };
+        let sender = inner.sender.take();
+        match sender {
+            None => Poll::Ready(()),
+            Some(mut sender) => {
+                std::println!("Polling sender");
+                if let Poll::Ready(()) = sender.poll_canceled(cx) {
+                    return Poll::Ready(());
+                }
+                // SAFETY: `fut` has not been moved.
+                let fut = unsafe { Pin::new_unchecked(&mut inner.fut) };
+                match fut.poll(cx) {
+                    Poll::Ready(t) => {
+                        std::println!("polled ready");
+                        let _ = sender.send(t);
+                        Poll::Ready(())
+                    }
+                    Poll::Pending => {
+                        std::println!("polled pending");
+                        inner.sender = Some(sender);
+                        Poll::Pending
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -142,29 +182,15 @@ pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Tas
 /// result.
 #[must_use = "dropping the handle cancels the spawned task"]
 pub struct Task<T> {
-    receiver: oneshot::Receiver<Result<T, Aborted>>,
-    abort: AbortHandle,
-    cancel_on_drop: bool,
+    receiver: oneshot::Receiver<T>,
 }
 
 impl<T> Task<T> {
-    /// Cancels the spawned task and waits for cancellation to complete.
-    ///
-    /// This returns the task's output if it completed before it could be
-    /// cancelled, or `None` if it was cancelled or otherwise terminated.
-    pub async fn cancel(mut self) -> Option<T> {
-        self.abort.abort();
-        self.cancel_on_drop = false;
-        match (&mut self.receiver).await {
-            Ok(Ok(result)) => Some(result),
-            Ok(Err(_)) => None,
-            Err(_) => None,
-        }
-    }
-
-    /// Detaches the spawned task, allowing it to continue in the background.
-    pub fn detach(mut self) {
-        self.cancel_on_drop = false;
+    /// Cancels the spawned task. It's possible the task resolved before
+    /// cancelation completed and the [`Task`] can still be awaited to check for
+    /// that case.
+    pub fn cancel(&mut self) {
+        self.receiver.close();
     }
 }
 
@@ -173,17 +199,9 @@ impl<T> Future for Task<T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<T>> {
         match Pin::new(&mut self.receiver).poll(cx) {
-            Poll::Ready(Ok(Ok(result))) => Poll::Ready(Some(result)),
-            Poll::Ready(Ok(Err(_)) | Err(_)) => Poll::Ready(None),
+            Poll::Ready(Ok(result)) => Poll::Ready(Some(result)),
+            Poll::Ready(Err(_)) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-impl<T> Drop for Task<T> {
-    fn drop(&mut self) {
-        if self.cancel_on_drop {
-            self.abort.abort();
         }
     }
 }

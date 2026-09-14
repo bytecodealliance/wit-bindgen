@@ -37,8 +37,9 @@ impl crate::exports::test::rust_spawn_and_await::i::Guest for Component {
     }
 
     async fn cancel_task() -> Option<u32> {
-        let task = TASK.with(|slot| slot.borrow_mut().take().unwrap());
-        task.cancel().await
+        let mut task = TASK.with(|slot| slot.borrow_mut().take().unwrap());
+        task.cancel();
+        task.await
     }
 
     async fn resolve() {
