@@ -1880,7 +1880,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 self.src.push_str(
                     "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
                 );
-                self.src.push_str("pragma(inline, true) void witFree() @safe @nogc nothrow {}\n");
+                self.src
+                    .push_str("pragma(inline, true) void witFree() @safe @nogc nothrow {}\n");
 
                 self.src.push_str("pragma(inline, true) typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
 
@@ -2045,7 +2046,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     self.src.push_str(
                         "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
                     );
-                    self.src.push_str("pragma(inline, true) void witFree() @safe @nogc nothrow {}\n");
+                    self.src
+                        .push_str("pragma(inline, true) void witFree() @safe @nogc nothrow {}\n");
 
                     self.src.push_str("pragma(inline, true) typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
 
