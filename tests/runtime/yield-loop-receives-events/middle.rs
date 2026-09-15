@@ -11,13 +11,12 @@ static mut HIT: bool = false;
 
 impl crate::exports::test::common::i_runner::Guest for Component {
     async fn f() {
-        wit_bindgen::spawn_local(async move {
+        let _ = wit_bindgen::spawn_local(async move {
             f().await;
             unsafe {
                 HIT = true;
             }
-        })
-        .detach();
+        });
 
         // This is an "infinite loop" but it's also effectively a yield which
         // should enable not only making progress on sibling rust-level tasks
