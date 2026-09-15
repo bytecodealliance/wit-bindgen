@@ -84,7 +84,9 @@ mixin template WitFlags(T) if (__traits(isUnsigned, T)) {
 }
 
 
-mixin template WitVariant(Types...) {
+mixin template WitVariant(T...) {
+    public alias Types = T;
+    
 private:
     static assert(is(typeof(this).Tag));
     static assert(is(Tag U == enum) && __traits(isIntegral, U));
@@ -122,6 +124,7 @@ private:
       _storage = storage;
     }
 
+public:
     pragma(inline, true) 
     static auto _create(Tag tag)() if (is(Types[tag] == void)) {
         return typeof(this)(tag);
