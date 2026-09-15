@@ -1811,6 +1811,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     "struct {escaped_name} {{
     package({}) uint __handle = 0;
 
+    pragma(inline, true)
     package({0}) this(uint handle) @safe @nogc nothrow {{
         __handle = handle;
     }}
@@ -1861,7 +1862,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 }
 
                 self.src.push_str(
-                    "\nvoid witDrop() @trusted @nogc nothrow {\nif (!__handle) return; __import_drop(__handle); __handle = 0;\n}\n",
+                    "\npragma(inline, true) void witDrop() @trusted @nogc nothrow {\nif (!__handle) return; __import_drop(__handle); __handle = 0;\n}\n",
                 );
                 self.src.push_str(&format!(
                     "@wasmImport!(\"{}\", \"[resource-drop]{}\")\n",
@@ -1879,9 +1880,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 self.src.push_str(
                     "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
                 );
-                self.src.push_str("void witFree() @safe @nogc nothrow {}\n");
+                self.src.push_str("pragma(inline, true) void witFree() @safe @nogc nothrow {}\n");
 
-                self.src.push_str("typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
+                self.src.push_str("pragma(inline, true) typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
 
                 self.src.push_str(&format!(
                     "// TODO: make RAII? disable copy for the own
@@ -1892,15 +1893,17 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
     struct Borrow {{
     package({}) uint __handle = 0;
 
+    pragma(inline, true)
     package({0}) this(uint handle) @safe @nogc nothrow {{
         __handle = handle;
     }}
 
-    void witFree() @safe @nogc nothrow {{}}
+    pragma(inline, true) void witFree() @safe @nogc nothrow {{}}
+    pragma(inline, true)
     void witDrop() @trusted @nogc nothrow {{
         if (!__handle) return; __import_drop(__handle); __handle = 0;
     }}
-    Borrow witClone() const @safe @nogc nothrow {{ return Borrow(__handle); }}
+    pragma(inline, true) Borrow witClone() const @safe @nogc nothrow {{ return Borrow(__handle); }}
                 ",
                     self.r#gen.root_pkg
                 ));
@@ -1966,6 +1969,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         "struct {escaped_name} {{
         package({}) uint __handle = 0;
 
+        pragma(inline, true)
         package({0}) this(uint handle) @safe @nogc nothrow {{
             __handle = handle;
         }}
@@ -2004,7 +2008,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         .push_str("static private extern(C) uint __import_makeNew(void*);\n\n");
 
                     self.src
-                        .push_str("T* rep(T)() const @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__import_rep(__handle);\n}\n");
+                        .push_str("pragma(inline, true) T* rep(T)() const @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__import_rep(__handle);\n}\n");
                     self.src.push_str(&format!(
                         "@wasmImport!(\"[export]{}\", \"[resource-rep]{}\")\n",
                         self.wasm_import_module.unwrap(),
@@ -2023,7 +2027,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     );
 
                     self.src.push_str(
-                        "void witDrop() @trusted @nogc nothrow {\nif (!__handle) return; __import_drop(__handle); __handle = 0;\n}\n",
+                        "pragma(inline, true) void witDrop() @trusted @nogc nothrow {\nif (!__handle) return; __import_drop(__handle); __handle = 0;\n}\n",
                     );
                     self.src.push_str(&format!(
                         "@wasmImport!(\"[export]{}\", \"[resource-drop]{}\")\n",
@@ -2041,36 +2045,38 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                     self.src.push_str(
                         "static private extern(C) void __import_drop(uint) @nogc nothrow;\n\n",
                     );
-                    self.src.push_str("void witFree() @safe @nogc nothrow {}\n");
+                    self.src.push_str("pragma(inline, true) void witFree() @safe @nogc nothrow {}\n");
 
-                    self.src.push_str("typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
+                    self.src.push_str("pragma(inline, true) typeof(this) witClone() const @safe @nogc nothrow { return typeof(this)(__handle); }\n");
 
                     self.src.push_str(&format!(
                         "// TODO: make RAII? disable copy for the own
-        Borrow borrow() const @trusted @nogc nothrow => Borrow(__import_rep(__handle));
+        pragma(inline, true) Borrow borrow() const @trusted @nogc nothrow => Borrow(__import_rep(__handle));
         //alias borrow this;
 
         struct Borrow {{
             package({}) void* __handle = null;
 
+            pragma(inline, true)
             package({0}) this(void* handle) @safe @nogc nothrow {{
                 __handle = handle;
             }}
 
+            pragma(inline, true)
             package({0}) this(uint handle) @safe @nogc nothrow {{
                 __handle = cast(void*)handle;
             }}
 
-            void witFree() @safe @nogc nothrow {{}}
-            void witDrop() @safe @nogc nothrow {{}}
-            Borrow witClone() const @trusted @nogc nothrow {{ return Borrow(cast(void*)__handle); }}
+            pragma(inline, true) void witFree() @safe @nogc nothrow {{}}
+            pragma(inline, true) void witDrop() @safe @nogc nothrow {{}}
+            pragma(inline, true) Borrow witClone() const @trusted @nogc nothrow {{ return Borrow(cast(void*)__handle); }}
 
                         ",
                         self.r#gen.root_pkg
                     ));
 
                     self.src
-                        .push_str("T* rep(T)() const @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__handle;\n}\n");
+                        .push_str("pragma(inline, true) T* rep(T)() const @nogc nothrow if (is(T == struct)) {\nreturn cast(T*)__handle;\n}\n");
 
                     self.src.push_str("}\n");
 
@@ -2211,7 +2217,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         self.src.push_str("}\n");
 
         self.src
-            .push_str("Tag tag() const @safe @nogc nothrow pure => _tag;\n");
+            .push_str("pragma(inline, true) Tag tag() const @safe @nogc nothrow pure => _tag;\n");
 
         for case in &variant.cases {
             self.src.push_str(&format!(
@@ -2228,7 +2234,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 "alias {escaped_lower_case_name} = _create!(Tag.{escaped_lower_case_name});\n",
             ));
             self.src.push_str(&format!(
-                "/// ditto\nbool is{escaped_upper_case_name}() const => _tag == Tag.{escaped_lower_case_name};\n",
+                "/// ditto\npragma(inline, true) bool is{escaped_upper_case_name}() const => _tag == Tag.{escaped_lower_case_name};\n",
             ));
 
             if case.ty.is_some() {

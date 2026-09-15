@@ -13,7 +13,7 @@ struct witExport { string name; }
 
 /// Thin CABI compliant wrapper over `T[]`
 struct WitList(T) {
-@safe @nogc pure nothrow:
+@safe @nogc pure nothrow pragma(inline, true):
     T* ptr;
     size_t length;
 
@@ -35,7 +35,7 @@ struct WitList(T) {
     bool opEquals(in T[] other) const => this[] == other;
     size_t toHash() const => this[].hashOf;
 }
-auto witList(T)(inout T[] slice) => inout WitList!T(slice);
+pragma(inline, true) auto witList(T)(inout T[] slice) => inout WitList!T(slice);
 
 // WIT ABI for string matches List,
 // except list<char> in WIT is actually List!(dchar)
@@ -58,7 +58,7 @@ mixin template WitFlags(T) if (__traits(isUnsigned, T)) {
 
     T bits;
 
-    @safe nothrow @nogc pure:
+    @safe nothrow @nogc pure pragma(inline, true):
 
     static typeof(this) opIndex(size_t i)
     in(i < T.sizeof*8) => F(cast(T)(1 << i));
@@ -115,22 +115,26 @@ private:
 
 
     @disable this();
-
+    
+    pragma(inline, true) 
     this(Tag tag, inout Storage storage = Storage.init) inout @nogc nothrow @trusted {
       _tag = tag;
       _storage = storage;
     }
 
-
+    pragma(inline, true) 
     static auto _create(Tag tag)() if (is(Types[tag] == void)) {
         return typeof(this)(tag);
     }
+
+    pragma(inline, true) 
     static auto _create(Tag tag)(inout Types[tag] val) if (!is(Types[tag] == void)) {
         Storage storage = Storage.init;
         storage.tupleof[tag+1] = cast(Types[tag])val;
         return inout typeof(this)(tag, cast(inout(Storage))storage);
     }
-
+    
+    pragma(inline, true) 
     ref auto _get(Tag tag)() inout return if (!is(Types[tag] == void))
     in (_tag == tag) do { return cast(inout)_storage.tupleof[tag+1]; }
 }
@@ -141,27 +145,34 @@ private:
     bool _present = false;
     T _value;
 
+    pragma(inline, true) 
     this(bool present, inout T value) inout @safe @nogc nothrow {
         _present = present;
         _value = value;
     }
 public:
+    pragma(inline, true) 
     static inout(Option) makeSome(inout T value) @safe @nogc nothrow {
         return inout Option(true, value);
     }
 
+    pragma(inline, true) 
     static Option makeNone() @safe @nogc nothrow {
         return Option(false, T.init);
     }
 
+    pragma(inline, true) 
     bool isSome() const @safe @nogc nothrow => _present;
     alias isSome this; // implicit conversion to bool
 
+    pragma(inline, true) 
     bool isNone() const @safe @nogc nothrow => !_present;
 
+    pragma(inline, true) 
     ref inout(T) unwrap() inout @trusted @nogc nothrow return
     in (_present) do { return _value; }
 
+    pragma(inline, true) 
     T unwrapOr(T fallback) @trusted @nogc nothrow => _present ? _value : fallback;
 
     T unwrapOrElse(D)(scope D fallback)
@@ -182,10 +193,12 @@ public:
     }
 }
 
+pragma(inline, true) 
 auto some(T)(inout T value) @safe @nogc nothrow {
     return Option!T.makeSome(value);
 }
 
+pragma(inline, true) 
 auto none(T)() @safe @nogc nothrow {
     return Option!T.makeNone;
 }
@@ -213,8 +226,10 @@ private:
 
 public:
     static if (is(T == void)) {
+        pragma(inline, true) 
         static Result makeOk() @safe @nogc nothrow => Result(false, Storage.init);
     } else {
+        pragma(inline, true) 
         static inout(Result) makeOk(inout(T) value) @trusted @nogc nothrow {
             Storage newStorage = Storage.init;
             newStorage.value = cast(T)value;
@@ -224,8 +239,10 @@ public:
     }
 
     static if (is(E == void)) {
+        pragma(inline, true) 
         static Result makeErr() @safe @nogc nothrow => Result(true, Storage.init);
     } else {
+        pragma(inline, true) 
         static inout(Result) makeErr(inout(E) error) @trusted @nogc nothrow {
             Storage newStorage = Storage.init;
             newStorage.error = cast(E)error;
@@ -234,15 +251,19 @@ public:
         }
     }
 
+    pragma(inline, true) 
     bool isOk() const @safe @nogc nothrow => !_hasError;
 
+    pragma(inline, true) 
     bool isErr() const @safe @nogc nothrow => _hasError;
     alias isErr this; // implicit conversion to bool
 
     static if (!is(T == void)) {
+        pragma(inline, true) 
         ref inout(T) unwrap() inout @trusted @nogc nothrow return
         in (isOk) do { return _storage.value; }
 
+        pragma(inline, true) 
         T unwrapOr(T fallback) @trusted @nogc nothrow => isOk ? _storage.value : fallback;
 
         T unwrapOrElse(D)(scope D fallback)
@@ -251,6 +272,7 @@ public:
     }
 
     static if (!is(E == void)) {
+        pragma(inline, true) 
         ref inout(E) unwrapErr() inout @trusted @nogc nothrow return
         in (isErr) do { return _storage.error; }
     }
@@ -279,36 +301,46 @@ public:
     }
 }
 
+pragma(inline, true) 
 auto ok(E, T)(inout T value) @safe @nogc nothrow {
     return Result!(T, E).makeOk(value);
 }
+pragma(inline, true) 
 auto ok(E)() @safe @nogc nothrow {
     return Result!(void, E).makeOk();
 }
 
+pragma(inline, true) 
 auto err(T, E)(inout E value) @safe @nogc nothrow {
     return Result!(T, E).makeErr(value);
 }
+pragma(inline, true) 
 auto err(T)() @safe @nogc nothrow {
     return Result!(T, void).makeErr();
 }
 
+pragma(inline, true) 
 void witFree(T)(scope ref T val) if (__traits(isArithmetic, T)) {
     // no-op
 }
+pragma(inline, true) 
 void witDrop(T)(scope ref T val) if (__traits(isArithmetic, T)) {
     // no-op
 }
+pragma(inline, true) 
 T witClone(T)(in T val) if (__traits(isArithmetic, T)) {
     return val;
 }
 
+pragma(inline, true) 
 void witFree(T : Option!U, U)(scope ref T val) {
     static if (!is(U == void)) if (val.isSome) val.unwrap.witFree;
 }
+pragma(inline, true)
 void witDrop(T : Option!U, U)(scope ref T val) {
     static if (!is(U == void)) if (val.isSome) val.unwrap.witDrop;
 }
+pragma(inline, true) 
 T witClone(T : Option!U, U)(in T val) {
     if (val.isSome) {
         static if (!is(U == void)) {
@@ -321,6 +353,7 @@ T witClone(T : Option!U, U)(in T val) {
     }
 }
 
+pragma(inline, true) 
 void witFree(T : Result!(U, V), U, V)(scope ref T val) {
     if (val.isErr) {
         static if (!is(V == void)) val.unwrapErr.witFree;
@@ -328,6 +361,7 @@ void witFree(T : Result!(U, V), U, V)(scope ref T val) {
         static if (!is(U == void)) val.unwrap.witFree;
     }
 }
+pragma(inline, true) 
 void witDrop(T : Result!(U, V), U, V)(scope ref T val) {
     if (val.isErr) {
         static if (!is(V == void)) val.unwrapErr.witDrop;
@@ -335,6 +369,7 @@ void witDrop(T : Result!(U, V), U, V)(scope ref T val) {
         static if (!is(U == void)) val.unwrap.witDrop;
     }
 }
+pragma(inline, true) 
 T witClone(T : Result!(U, V), U, V)(in T val) {
     if (val.isErr) {
         static if (!is(V == void)) {
@@ -351,6 +386,7 @@ T witClone(T : Result!(U, V), U, V)(in T val) {
     }
 }
 
+pragma(inline, true) 
 void witFree(T : WitList!U, U)(scope ref T val) {
     foreach (ref e; val) {
         e.witFree;
@@ -358,6 +394,7 @@ void witFree(T : WitList!U, U)(scope ref T val) {
     if (val.ptr && val.length) free(val.ptr);
     val = null;
 }
+pragma(inline, true) 
 void witDrop(T : WitList!U, U)(scope ref T val) {
     foreach (ref e; val) {
         e.witDrop;
@@ -376,16 +413,19 @@ T witClone(T : WitList!U, U)(in T val) @trusted {
     return clone.witList;
 }
 
+pragma(inline, true) 
 void witFree(T : Tuple!U, U...)(scope ref T val) {
     static foreach (F; T.tupleof) {
         __traits(child, val, F).witFree;
     }
 }
+pragma(inline, true) 
 void witDrop(T : Tuple!U, U...)(scope ref T val) {
     static foreach (F; T.tupleof) {
         __traits(child, val, F).witDrop;
     }
 }
+pragma(inline, true) 
 T witClone(T : Tuple!U, U...)(in T val) {
     T clone = void;
     static foreach (F; T.tupleof) {
@@ -395,16 +435,19 @@ T witClone(T : Tuple!U, U...)(in T val) {
 }
 
 
+pragma(inline, true) 
 void witFree(T, size_t L)(scope ref T[L] val) {
     foreach (ref e; val) {
         e.witFree;
     }
 }
+pragma(inline, true) 
 void witDrop(T, size_t L)(scope ref T[L] val) {
     foreach (ref e; val) {
         e.witDrop;
     }
 }
+pragma(inline, true) 
 T[L] witClone(T, size_t L)(in T[L] val) {
     T[L] clone;
     foreach (i, ref e; clone) {
@@ -433,6 +476,7 @@ auto ref T reinterpretCast(T, U)(auto ref U from) @trusted if (T.sizeof == U.siz
     return tmp(from).to;
 }
 
+pragma(inline, true)
 T[] mallocSlice(T)(size_t count) @nogc nothrow {
     if (count == 0) return [];
     auto ptr = malloc(count*T.sizeof);
