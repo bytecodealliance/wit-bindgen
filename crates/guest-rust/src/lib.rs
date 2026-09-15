@@ -917,4 +917,4 @@ pub use rt::async_support::{
     backpressure_inc, block_on, yield_async, yield_blocking,
 };
 #[cfg(feature = "async-spawn")]
-pub use rt::async_support::{Task, spawn_local};
+pub use rt::async_support::{JoinHandle, spawn_local};

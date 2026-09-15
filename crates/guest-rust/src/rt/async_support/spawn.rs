@@ -98,7 +98,7 @@ impl<'a> Tasks<'a> {
 ///   [`block_on`] spawned tasks will prevent the [`block_on`] function from
 ///   returning, even if a value is available to return. If `spawn_local` is
 ///   called within a component-model async task which is then terminated (e.g.
-///   by the host) before the future resolves, awating the `Task` will return
+///   by the host) before the future resolves, awating the `JoinHandle` will return
 ///   `None`.
 ///
 /// * The task spawned here is executed *concurrently*, not in *parallel*. This
@@ -112,13 +112,13 @@ impl<'a> Tasks<'a> {
 ///
 /// # Cancellation
 ///
-/// Dropping the resulting [`Task`] will cancel the spawned future. [`Task::detach`] will
-/// allow the future to continue running in the background and [`Task::cancel`] will
-/// explicitly wait for the cancelation to complete.
+/// Dropping the resulting [`JoinHandle`] will detach the task and allow it to
+/// continue running in the background. It can also be explicitly cancelled with
+/// [`JoinHandle::cancel`].
 ///
 /// [`block_on`]: crate::block_on
 /// [#1305]: https://github.com/bytecodealliance/wit-bindgen/issues/1305
-pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Task<T> {
+pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> JoinHandle<T> {
     let (sender, receiver) = oneshot::channel();
     unsafe {
         SPAWNED.push(Box::pin(async move {
@@ -129,7 +129,7 @@ pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Tas
             .await
         }));
     }
-    Task { receiver }
+    JoinHandle { receiver }
 }
 
 struct SpawnedFuture<F, T> {
@@ -151,7 +151,6 @@ where
         match sender {
             None => Poll::Ready(()),
             Some(mut sender) => {
-                std::println!("Polling sender");
                 if let Poll::Ready(()) = sender.poll_canceled(cx) {
                     return Poll::Ready(());
                 }
@@ -159,12 +158,10 @@ where
                 let fut = unsafe { Pin::new_unchecked(&mut inner.fut) };
                 match fut.poll(cx) {
                     Poll::Ready(t) => {
-                        std::println!("polled ready");
                         let _ = sender.send(t);
                         Poll::Ready(())
                     }
                     Poll::Pending => {
-                        std::println!("polled pending");
                         inner.sender = Some(sender);
                         Poll::Pending
                     }
@@ -181,20 +178,20 @@ where
 /// if the task was cancelled or otherwise terminated without producing a
 /// result.
 #[must_use = "dropping the handle cancels the spawned task"]
-pub struct Task<T> {
+pub struct JoinHandle<T> {
     receiver: oneshot::Receiver<T>,
 }
 
-impl<T> Task<T> {
-    /// Cancels the spawned task. It's possible the task resolved before
-    /// cancelation completed and the [`Task`] can still be awaited to check for
-    /// that case.
+impl<T> JoinHandle<T> {
+    /// Cancels the spawned task. It is possible the task resolved and produced
+    /// a result before cancelation completed and the [`JoinHandle`] can still
+    /// be awaited to check for that case.
     pub fn cancel(&mut self) {
         self.receiver.close();
     }
 }
 
-impl<T> Future for Task<T> {
+impl<T> Future for JoinHandle<T> {
     type Output = Option<T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<T>> {

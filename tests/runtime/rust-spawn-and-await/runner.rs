@@ -16,33 +16,33 @@ export!(Component);
 
 impl Guest for Component {
     async fn run() {
-        // Awaiting a `Task` works.
+        // Awaiting a `JoinHandle` works.
         let _cm_task = start_task();
         resolve().await;
         let result = await_task().await;
         assert_eq!(result, Some(42));
 
-        // Cancelling a `Task` before it completes returns `None`.
+        // Cancelling a `JoinHandle` before it completes returns `None`.
         let _cm_task = start_task();
         let result = cancel_task().await;
         resolve().await;
         assert_eq!(result, None);
 
-        // Cancelling a `Task` after it completes returns the result anyway.
+        // Cancelling a `JoinHandle` after it completes returns the result anyway.
         let _cm_task = start_task();
         resolve().await;
         await_resolve().await;
         let result = cancel_task().await;
         assert_eq!(result, Some(42));
 
-        // Check that awaiting a `Task` returns None after the CM-async task has
+        // Check that awaiting a `JoinHandle` returns None after the CM-async task has
         // been terminated.
         let cm_task = start_task();
         drop(cm_task);
         assert_eq!(await_task().await, None);
         resolve().await;
 
-        // Check that cancelling a `Task` returns None after the CM-async task
+        // Check that cancelling a `JoinHandle` returns None after the CM-async task
         // has been terminated.
         let cm_task = start_task();
         drop(cm_task);
