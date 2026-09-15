@@ -151,21 +151,17 @@ where
         match sender {
             None => Poll::Ready(()),
             Some(mut sender) => {
+                // SAFETY: `fut` has not been moved.
+                let fut = unsafe { Pin::new_unchecked(&mut inner.fut) };
+                if let Poll::Ready(t) = fut.poll(cx) {
+                    let _ = sender.send(t);
+                    return Poll::Ready(());
+                }
                 if let Poll::Ready(()) = sender.poll_canceled(cx) {
                     return Poll::Ready(());
                 }
-                // SAFETY: `fut` has not been moved.
-                let fut = unsafe { Pin::new_unchecked(&mut inner.fut) };
-                match fut.poll(cx) {
-                    Poll::Ready(t) => {
-                        let _ = sender.send(t);
-                        Poll::Ready(())
-                    }
-                    Poll::Pending => {
-                        inner.sender = Some(sender);
-                        Poll::Pending
-                    }
-                }
+                inner.sender = Some(sender);
+                Poll::Pending
             }
         }
     }
