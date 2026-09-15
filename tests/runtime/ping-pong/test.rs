@@ -10,7 +10,7 @@ impl crate::exports::my::test::i::Guest for Component {
     async fn ping(x: FutureReader<String>, y: String) -> FutureReader<String> {
         let msg = x.await + y.as_str();
         let (tx, rx) = wit_future::new(|| unreachable!());
-        let _ = wit_bindgen::spawn_local(async move {
+        wit_bindgen::spawn_local(async move {
             tx.write(msg).await.unwrap();
         });
         rx

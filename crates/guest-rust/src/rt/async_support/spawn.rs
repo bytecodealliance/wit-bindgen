@@ -173,11 +173,9 @@ where
 
 /// A handle to a spawned task which can be awaited for its result.
 ///
-/// Dropping this handle cancels the task. To drop the handle without cancelling
-/// the task, call [`detach`](Self::detach). Awaiting the handle returns `None`
-/// if the task was cancelled or otherwise terminated without producing a
-/// result.
-#[must_use = "dropping the handle cancels the spawned task"]
+/// Dropping the handle allows the task to continue running in the background.
+/// Awaiting the handle returns `None` if the task was cancelled or otherwise
+/// terminated without producing a result.
 pub struct JoinHandle<T> {
     receiver: oneshot::Receiver<T>,
 }

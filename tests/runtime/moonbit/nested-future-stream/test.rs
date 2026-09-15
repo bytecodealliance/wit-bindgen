@@ -31,7 +31,7 @@ impl Guest for Component {
         value: FutureReader<FutureReader<StreamReader<u8>>>,
     ) -> FutureReader<FutureReader<StreamReader<u8>>> {
         let (outer_writer, outer_reader) = wit_future::new(|| unreachable!());
-        let _ = wit_bindgen::spawn_local(async move {
+        wit_bindgen::spawn_local(async move {
             let input_inner = value.await;
             let (inner_writer, inner_reader) = wit_future::new(|| unreachable!());
             let outer_open = outer_writer.write(inner_reader).await.is_ok();
@@ -62,7 +62,7 @@ impl Guest for Component {
 
     async fn relay_stream(value: StreamReader<FutureReader<u8>>) -> StreamReader<FutureReader<u8>> {
         let (mut output_writer, output_reader) = wit_stream::new();
-        let _ = wit_bindgen::spawn_local(async move {
+        wit_bindgen::spawn_local(async move {
             let mut input = value;
             loop {
                 let (result, values) = input.read(Vec::with_capacity(1)).await;
@@ -87,7 +87,7 @@ impl Guest for Component {
 
     async fn concurrent_writes() -> StreamReader<u8> {
         let (mut writer, reader) = wit_stream::new();
-        let _ = wit_bindgen::spawn_local(async move {
+        wit_bindgen::spawn_local(async move {
             assert!(writer.write_all(vec![1, 2]).await.is_empty());
         });
         reader
@@ -95,7 +95,7 @@ impl Guest for Component {
 
     async fn post_return_lazy() -> StreamReader<u8> {
         let (mut writer, reader) = wit_stream::new();
-        let _ = wit_bindgen::spawn_local(async move {
+        wit_bindgen::spawn_local(async move {
             assert!(writer.write_one(42).await.is_none());
         });
         reader

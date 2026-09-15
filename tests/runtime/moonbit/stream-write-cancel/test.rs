@@ -77,7 +77,7 @@ impl Guest for Component {
         drop(holder::Leaf::new());
 
         let (mut writer, reader) = wit_stream::new::<holder::Leaf>();
-        let _ = wit_bindgen::spawn_local(async move {
+        wit_bindgen::spawn_local(async move {
             let _guard = ProducerGuard;
 
             assert!(writer.write_one(holder::Leaf::new()).await.is_none());
