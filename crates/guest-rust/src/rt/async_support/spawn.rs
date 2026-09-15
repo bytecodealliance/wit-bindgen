@@ -10,6 +10,7 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::channel::oneshot;
+use futures::future::{AbortHandle, Abortable, Aborted};
 use futures::stream::{FuturesUnordered, StreamExt};
 
 /// Any newly-deferred work queued by calls to the `spawn` function while
@@ -120,51 +121,13 @@ impl<'a> Tasks<'a> {
 /// [#1305]: https://github.com/bytecodealliance/wit-bindgen/issues/1305
 pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> JoinHandle<T> {
     let (sender, receiver) = oneshot::channel();
+    let (abort, registration) = AbortHandle::new_pair();
     unsafe {
         SPAWNED.push(Box::pin(async move {
-            SpawnedFuture {
-                fut: future,
-                sender: Some(sender),
-            }
-            .await
+            let _ = sender.send(Abortable::new(future, registration).await);
         }));
     }
-    JoinHandle { receiver }
-}
-
-struct SpawnedFuture<F, T> {
-    fut: F,
-    sender: Option<oneshot::Sender<T>>,
-}
-
-impl<F, T> Future for SpawnedFuture<F, T>
-where
-    F: Future<Output = T> + 'static,
-{
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
-        // SAFETY: `fut` is not moved and only used to be polled in place. All
-        // other fields are `Unpin`.
-        let inner = unsafe { self.get_unchecked_mut() };
-        let sender = inner.sender.take();
-        match sender {
-            None => Poll::Ready(()),
-            Some(mut sender) => {
-                // SAFETY: `fut` has not been moved.
-                let fut = unsafe { Pin::new_unchecked(&mut inner.fut) };
-                if let Poll::Ready(t) = fut.poll(cx) {
-                    let _ = sender.send(t);
-                    return Poll::Ready(());
-                }
-                if let Poll::Ready(()) = sender.poll_canceled(cx) {
-                    return Poll::Ready(());
-                }
-                inner.sender = Some(sender);
-                Poll::Pending
-            }
-        }
-    }
+    JoinHandle { receiver, abort }
 }
 
 /// A handle to a spawned task which can be awaited for its result.
@@ -173,7 +136,8 @@ where
 /// Awaiting the handle returns `None` if the task was cancelled or otherwise
 /// terminated without producing a result.
 pub struct JoinHandle<T> {
-    receiver: oneshot::Receiver<T>,
+    receiver: oneshot::Receiver<Result<T, Aborted>>,
+    abort: AbortHandle,
 }
 
 impl<T> JoinHandle<T> {
@@ -181,7 +145,7 @@ impl<T> JoinHandle<T> {
     /// a result before cancelation completed and the [`JoinHandle`] can still
     /// be awaited to check for that case.
     pub fn cancel(&mut self) {
-        self.receiver.close();
+        self.abort.abort();
     }
 }
 
@@ -190,8 +154,8 @@ impl<T> Future for JoinHandle<T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<T>> {
         match Pin::new(&mut self.receiver).poll(cx) {
-            Poll::Ready(Ok(result)) => Poll::Ready(Some(result)),
-            Poll::Ready(Err(_)) => Poll::Ready(None),
+            Poll::Ready(Ok(Ok(result))) => Poll::Ready(Some(result)),
+            Poll::Ready(Ok(Err(_)) | Err(_)) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
     }
