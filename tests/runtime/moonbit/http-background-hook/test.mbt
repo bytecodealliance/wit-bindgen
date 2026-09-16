@@ -56,7 +56,7 @@ pub async fn handle(
     Some(response_body),
     response_trailers,
   )
-  guard response.set_status_code(202U) is Ok(_) else {
+  guard response.set_status_code(202) is Ok(_) else {
     let error = @types.ErrorCode::InternalError(
       Some("failed to set hook response status"),
     )

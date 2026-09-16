@@ -127,10 +127,10 @@ pub fn list_typedefs(
 
 ///|
 pub fn list_of_variants(
-  _a : Array[Bool],
+  _a : FixedArray[Bool],
   _b : Array[Result[Unit, Unit]],
   _c : Array[MyErrno],
-) -> (Array[Bool], Array[Result[Unit, Unit]], Array[MyErrno]) {
+) -> (FixedArray[Bool], Array[Result[Unit, Unit]], Array[MyErrno]) {
   try {
     assert_eq(_a, [true, false])
     assert_eq(_b, [Ok(()), Err(())])

@@ -84,9 +84,9 @@ pub fn list_minmax8(
 
 ///|
 pub fn list_minmax16(
-  a : Array[UInt],
-  b : Array[Int]
-) -> (Array[UInt], Array[Int]) {
+  a : FixedArray[UInt16],
+  b : FixedArray[Int16]
+) -> (FixedArray[UInt16], FixedArray[Int16]) {
   (a, b)
 }
 

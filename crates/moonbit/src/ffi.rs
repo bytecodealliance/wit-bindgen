@@ -1,9 +1,3 @@
-pub(crate) const EXTEND16: &str = r#"
-///|
-extern "wasm" fn mbt_ffi_extend16(value : Int) -> Int =
-  #|(func (param i32) (result i32) local.get 0 i32.extend16_s)
-"#;
-
 pub(crate) const EXTEND8: &str = r#"
 ///|
 extern "wasm" fn mbt_ffi_extend8(value : Int) -> Int =
@@ -126,10 +120,24 @@ extern "wasm" fn mbt_ffi_ptr2bytes(ptr : Int, len : Int) -> FixedArray[Byte] =
   #| local.get 0)
 "#;
 
+pub(crate) const BOOL_ARRAY2PTR: &str = r#"
+///|
+#owned(array)
+extern "wasm" fn mbt_ffi_bool_array2ptr(array : FixedArray[Bool]) -> Int =
+  #|(func (param i32) (result i32) local.get 0)
+"#;
+
 pub(crate) const UINT_ARRAY2PTR: &str = r#"
 ///|
 #owned(array)
 extern "wasm" fn mbt_ffi_uint_array2ptr(array : FixedArray[UInt]) -> Int =
+  #|(func (param i32) (result i32) local.get 0)
+"#;
+
+pub(crate) const UINT16_ARRAY2PTR: &str = r#"
+///|
+#owned(array)
+extern "wasm" fn mbt_ffi_uint16_array2ptr(array : FixedArray[UInt16]) -> Int =
   #|(func (param i32) (result i32) local.get 0)
 "#;
 
@@ -144,6 +152,13 @@ pub(crate) const INT_ARRAY2PTR: &str = r#"
 ///|
 #owned(array)
 extern "wasm" fn mbt_ffi_int_array2ptr(array : FixedArray[Int]) -> Int =
+  #|(func (param i32) (result i32) local.get 0)
+"#;
+
+pub(crate) const INT16_ARRAY2PTR: &str = r#"
+///|
+#owned(array)
+extern "wasm" fn mbt_ffi_int16_array2ptr(array : FixedArray[Int16]) -> Int =
   #|(func (param i32) (result i32) local.get 0)
 "#;
 
@@ -168,6 +183,15 @@ extern "wasm" fn mbt_ffi_double_array2ptr(array : FixedArray[Double]) -> Int =
   #|(func (param i32) (result i32) local.get 0)
 "#;
 
+pub(crate) const PTR2BOOL_ARRAY: &str = r#"
+///|
+extern "wasm" fn mbt_ffi_ptr2bool_array(ptr : Int, len : Int) -> FixedArray[Bool] =
+  #|(func (param i32) (param i32) (result i32)
+  #| local.get 0
+  #| local.get 1 call $moonbit.init_array8
+  #| local.get 0)
+"#;
+
 pub(crate) const PTR2UINT_ARRAY: &str = r#"
 ///|
 extern "wasm" fn mbt_ffi_ptr2uint_array(ptr : Int, len : Int) -> FixedArray[UInt] =
@@ -177,12 +201,30 @@ extern "wasm" fn mbt_ffi_ptr2uint_array(ptr : Int, len : Int) -> FixedArray[UInt
   #| local.get 0)
 "#;
 
+pub(crate) const PTR2UINT16_ARRAY: &str = r#"
+///|
+extern "wasm" fn mbt_ffi_ptr2uint16_array(ptr : Int, len : Int) -> FixedArray[UInt16] =
+  #|(func (param i32) (param i32) (result i32)
+  #| local.get 0
+  #| local.get 1 call $moonbit.init_array16
+  #| local.get 0)
+"#;
+
 pub(crate) const PTR2INT_ARRAY: &str = r#"
 ///|
 extern "wasm" fn mbt_ffi_ptr2int_array(ptr : Int, len : Int) -> FixedArray[Int] =
   #|(func (param i32) (param i32) (result i32)
   #| local.get 0
   #| local.get 1 call $moonbit.init_array32
+  #| local.get 0)
+"#;
+
+pub(crate) const PTR2INT16_ARRAY: &str = r#"
+///|
+extern "wasm" fn mbt_ffi_ptr2int16_array(ptr : Int, len : Int) -> FixedArray[Int16] =
+  #|(func (param i32) (param i32) (result i32)
+  #| local.get 0
+  #| local.get 1 call $moonbit.init_array16
   #| local.get 0)
 "#;
 
