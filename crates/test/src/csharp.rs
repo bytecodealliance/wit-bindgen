@@ -1,12 +1,19 @@
 use crate::{Compile, LanguageMethods, Runner, Verify};
 use anyhow::Result;
 use heck::*;
+use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
 pub struct Csharp;
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct LangConfig {
+    skip_wit_component: bool,
+}
 
 fn dotnet() -> Command {
     let dotnet_cmd = match env::var("DOTNET_ROOT") {
@@ -60,6 +67,7 @@ impl LanguageMethods for Csharp {
     }
 
     fn compile(&self, runner: &Runner, compile: &Compile<'_>) -> Result<()> {
+        let config = compile.component.deserialize_lang_config::<LangConfig>()?;
         let world_name = &compile.component.bindgen.world;
         let path = &compile.component.path;
         let test_dir = &compile.bindings_dir;
@@ -76,6 +84,9 @@ impl LanguageMethods for Csharp {
         let mut csproj =
             wit_bindgen_csharp::CSProject::new(test_dir.to_path_buf(), &assembly_name, world_name);
         csproj.aot();
+        if config.skip_wit_component {
+            csproj.skip_wit_component();
+        }
         csproj.generate()?;
 
         let mut cmd = dotnet();
@@ -110,7 +121,11 @@ impl LanguageMethods for Csharp {
 
         runner.run_command(&mut cmd)?;
 
-        fs::copy(&wasm_filename, &compile.output)?;
+        if config.skip_wit_component {
+            runner.convert_p1_to_component_appending_type_metadata(&wasm_filename, compile)?;
+        } else {
+            fs::copy(&wasm_filename, &compile.output)?;
+        }
 
         Ok(())
     }
