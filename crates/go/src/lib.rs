@@ -122,20 +122,12 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", clap(long))]
     pub generate_stubs: bool,
 
-    /// If specified, organize the bindings into a package for use as a library;
-    /// otherwise (if `None`), the bindings will be organized for use as a
-    /// standalone executable.
+    /// If set, organize the bindings as a library package: `imports` and
+    /// `exports` (if stubs are generated) each get their own directory named
+    /// after them. If `None`, organize the bindings for a standalone executable
+    /// instead.
     #[cfg_attr(feature = "clap", clap(long))]
     pub pkg_name: Option<String>,
-
-    /// When `--pkg-name` is specified, optionally specify a different package
-    /// for exports.
-    ///
-    /// This allows you to put the exports and imports in separate packages when
-    /// building a library.  If only `--pkg-name` is specified, this will
-    /// default to that value.
-    #[cfg_attr(feature = "clap", clap(long, requires = "pkg_name"))]
-    pub export_pkg_name: Option<String>,
 
     /// Print the version of the remote package being used for the shared WIT types.
     ///
@@ -244,11 +236,15 @@ struct Go {
 impl Go {
     /// Adds the bindings module prefix to a package name.
     fn mod_pkg(&self, for_export: bool, name: &str) -> String {
-        let prefix = for_export
-            .then_some(())
-            .and(self.opts.export_pkg_name.as_deref())
-            .or(self.opts.pkg_name.as_deref())
-            .unwrap_or("wit_component");
+        let prefix = if let Some(pkg) = self.opts.pkg_name.as_ref() {
+            if for_export {
+                format!("{}/exports", pkg)
+            } else {
+                format!("{}/imports", pkg)
+            }
+        } else {
+            "wit_component".to_string()
+        };
         format!(r#""{prefix}/{name}""#)
     }
 
@@ -935,7 +931,7 @@ impl WorldGenerator for Go {
                 println!("{}", remote_pkg_version());
             }
             // If a module name is specified, the generated files will be used as a library.
-            ("wit_exports/wit_exports.go", "wit_exports", "")
+            ("exports/wit_exports/wit_exports.go", "wit_exports", "")
         } else {
             files.push(
                 "go.mod",
@@ -964,7 +960,7 @@ func main() {}
         };
 
         files.push(
-            exports_file_path,
+            &exports_file_path,
             &maybe_gofmt(
                 self.opts.format,
                 format!(
@@ -989,13 +985,22 @@ var {SYNC_EXPORT_PINNER} = runtime.Pinner{{}}
             ),
         );
 
-        for (prefix, interfaces) in [("export_", &self.export_interfaces), ("", &self.interfaces)] {
+        let (import_path_prefix, export_path_prefix) = if self.opts.pkg_name.is_some() {
+            ("imports/", "exports/")
+        } else {
+            ("", "")
+        };
+
+        for (prefix, interfaces, path_prefix) in [
+            ("export_", &self.export_interfaces, export_path_prefix),
+            ("", &self.interfaces, import_path_prefix),
+        ] {
             for (name, data) in interfaces {
                 let imports = data.imports();
                 let code = &data.code;
 
                 files.push(
-                    &format!("{prefix}{name}/wit_bindings.go"),
+                    &format!("{path_prefix}{prefix}{name}/wit_bindings.go"),
                     &maybe_gofmt(
                         self.opts.format,
                         format!(
@@ -1013,7 +1018,7 @@ import (
                 );
 
                 files.push(
-                    &format!("{prefix}{name}/empty.s"),
+                    &format!("{path_prefix}{prefix}{name}/empty.s"),
                     r#"// This file exists for testing this package without WebAssembly,
 // allowing empty function bodies with a //go:wasmimport directive.
 // See https://pkg.go.dev/cmd/compile for more information."#
