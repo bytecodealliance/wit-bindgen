@@ -37,7 +37,7 @@ impl LanguageMethods for Go {
         runner: &Runner,
         name: &str,
         config: &crate::config::WitConfig,
-        _args: &[String],
+        args: &[String],
     ) -> bool {
         if config.error_context {
             return true;
@@ -46,8 +46,15 @@ impl LanguageMethods for Go {
             return true;
         }
         if !runner.go_async_supported() {
-            return name.starts_with("async-trait-function.wit")
-                || name.starts_with("issue-1598.wit");
+            // The `--pkg-name` (library) verify path runs `go build ./...`
+            // with no link step, so the missing `runtime.wasiOnIdle` symbol
+            // never causes a failure and these tests compile fine even on an
+            // unpatched toolchain. Only the c-shared (non-pkg) path fails.
+            let pkg_mode = args.iter().any(|a| a == "--pkg-name");
+            if !pkg_mode {
+                return name.starts_with("async-trait-function.wit")
+                    || name.starts_with("issue-1598.wit");
+            }
         }
 
         false
