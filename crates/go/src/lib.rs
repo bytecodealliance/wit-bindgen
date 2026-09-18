@@ -238,9 +238,9 @@ impl Go {
     fn mod_pkg(&self, for_export: bool, name: &str) -> String {
         let prefix = if let Some(pkg) = self.opts.pkg_name.as_ref() {
             if for_export {
-                format!("{}/exports", pkg)
+                format!("{pkg}/exports")
             } else {
-                format!("{}/imports", pkg)
+                format!("{pkg}/imports")
             }
         } else {
             "wit_component".to_string()
