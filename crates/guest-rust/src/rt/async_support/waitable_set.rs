@@ -75,8 +75,8 @@ extern_wasm! {
         #[link_name = "[waitable-join]"]
         fn join(waitable: u32, set: u32);
         #[link_name = "[waitable-set-wait]"]
-        fn wait(_: u32, _: *mut [u32; 2]) -> u32;
+        fn wait(set: u32, event: *mut [u32; 2]) -> u32;
         #[link_name = "[waitable-set-poll]"]
-        fn poll(_: u32, _: *mut [u32; 2]) -> u32;
+        fn poll(set: u32, event: *mut [u32; 2]) -> u32;
     }
 }
