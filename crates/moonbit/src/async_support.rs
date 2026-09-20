@@ -754,6 +754,7 @@ impl<'a> InterfaceGenerator<'a> {
         uwrite!(
             self.ffi,
             r#"
+            ///|
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
                 {ffi}with_waitableset(async fn() {{
@@ -943,8 +944,10 @@ impl<'a> InterfaceGenerator<'a> {
         uwriteln!(
             self.ffi,
             r#"
+            ///|
             fn {export_func_name}TaskReturn({task_return_param_tys}) = "{task_return_module}" "{task_return_name}"
 
+            ///|
             fn {snake_func_name}_task_return({return_expr}) -> Unit {{
                 {task_return}
             }}
@@ -954,6 +957,7 @@ impl<'a> InterfaceGenerator<'a> {
         uwriteln!(
             self.ffi,
             r#"
+            ///|
             #doc(hidden)
             pub fn {export_func_name}(event_raw : Int, waitable : Int, code : Int) -> Int {{
                 {ffi}cb(event_raw, waitable, code)
@@ -968,6 +972,7 @@ impl<'a> InterfaceGenerator<'a> {
             .qualify_package(&gen_dir, self.name);
         let export = format!(
             r#"
+            ///|
             #doc(hidden)
             pub fn {export_func_name}(event_raw : Int, waitable : Int, code : Int) -> Int {{
                 {package}{export_func_name}(event_raw, waitable, code)
@@ -1363,6 +1368,7 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
+            ///|
             fn wasm{symbol_name}Lift(ptr : Int) -> {result} {{
                 {lift}
                 {lift_result}
@@ -1376,6 +1382,7 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
+            ///|
             fn wasm{symbol_name}Lower(value : {result}, ptr : Int) -> Unit {{
                 {lower}
             }}
@@ -1387,6 +1394,7 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
+                    ///|
                     fn wasm{symbol_name}ListLift(
                         ptr : Int,
                         length : Int,
@@ -1403,7 +1411,9 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
+                    ///|
                     fn wasmImport{symbol_name}Read(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{read_module}" "{read_field}"
+                    ///|
                     fn wasmImport{symbol_name}CancelRead(handle : Int) -> Int = "{cancel_read_module}" "{cancel_read_field}"
                     "#
                 )
@@ -1413,6 +1423,7 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
+                    ///|
                     fn wasmImport{symbol_name}DropReadable(handle : Int) = "{drop_readable_module}" "{drop_readable_field}"
                     "#
                 )
@@ -1423,6 +1434,7 @@ impl<'a> InterfaceGenerator<'a> {
         .then(|| {
             format!(
                 r#"
+                    ///|
                     fn wasmImport{symbol_name}CancelWrite(handle : Int) -> Int = "{cancel_write_module}" "{cancel_write_field}"
                     "#,
             )
@@ -1433,9 +1445,12 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
+                    ///|
                     fn wasmImport{symbol_name}New() -> UInt64 = "{new_module}" "{new_field}"
+                    ///|
                     fn wasmImport{symbol_name}Write(handle : Int, buffer_ptr : Int{payload_len_arg}) -> Int = "{write_module}" "{write_field}"
                     {cancel_write_intrinsic}
+                    ///|
                     fn wasmImport{symbol_name}DropWritable(handle : Int) = "{drop_writable_module}" "{drop_writable_field}"
                     "#
                 )
@@ -1447,6 +1462,7 @@ impl<'a> InterfaceGenerator<'a> {
             .then(|| {
                 format!(
                     r#"
+                    ///|
                     fn wasm{symbol_name}Commit(
                         ptr : Int,
                         start : Int,
@@ -1479,6 +1495,7 @@ impl<'a> InterfaceGenerator<'a> {
                     .then(|| {
                         format!(
                             r#"
+///|
 fn wasm{symbol_name}FutureRejectPrepared(handle : Int) -> Bool {{
     guard wasm{symbol_name}FutureProducers.get(handle) is Some(producer) else {{
         return false
@@ -1526,6 +1543,7 @@ fn wasm{symbol_name}FutureRejectPrepared(handle : Int) -> Bool {{
                     .then(|| {
                         format!(
                             r#"
+///|
 priv struct Wasm{symbol_name}FutureSource {{
     handle : Int
     mut closed : Bool
@@ -1537,6 +1555,7 @@ priv struct Wasm{symbol_name}FutureSource {{
     read_cleanup : {ffi}CondVar
 }}
 
+///|
 fn Wasm{symbol_name}FutureSource::finish_read(
     self : Wasm{symbol_name}FutureSource,
 ) -> Unit {{
@@ -1548,6 +1567,7 @@ fn Wasm{symbol_name}FutureSource::finish_read(
     // by the broadcast can observe it.
 }}
 
+///|
 async fn Wasm{symbol_name}FutureSource::wait_for_read_cleanup(
     self : Wasm{symbol_name}FutureSource,
 ) -> Unit noraise {{
@@ -1563,6 +1583,7 @@ async fn Wasm{symbol_name}FutureSource::wait_for_read_cleanup(
     }}
 }}
 
+///|
 async fn Wasm{symbol_name}FutureSource::cancel_active_read(
     self : Wasm{symbol_name}FutureSource,
 ) -> Unit noraise {{
@@ -1594,6 +1615,7 @@ async fn Wasm{symbol_name}FutureSource::cancel_active_read(
     self.read_cleanup.broadcast()
 }}
 
+///|
 async fn Wasm{symbol_name}FutureSource::close(
     self : Wasm{symbol_name}FutureSource,
 ) -> Unit noraise {{
@@ -1607,6 +1629,7 @@ async fn Wasm{symbol_name}FutureSource::close(
     wasmImport{symbol_name}DropReadable(self.handle)
 }}
 
+///|
 fn Wasm{symbol_name}FutureSource::close_sync(
     self : Wasm{symbol_name}FutureSource,
 ) -> Unit {{
@@ -1618,6 +1641,7 @@ fn Wasm{symbol_name}FutureSource::close_sync(
     wasmImport{symbol_name}DropReadable(self.handle)
 }}
 
+///|
 async fn Wasm{symbol_name}FutureSource::read(
     self : Wasm{symbol_name}FutureSource,
 ) -> {result} {{
@@ -1669,6 +1693,7 @@ async fn Wasm{symbol_name}FutureSource::read(
     value
 }}
 
+///|
 fn wasm{symbol_name}FutureLift(handle : Int) -> {ffi}Future[{result}] {{
     let source = Wasm{symbol_name}FutureSource::{{
         handle,
@@ -1695,6 +1720,7 @@ fn wasm{symbol_name}FutureLift(handle : Int) -> {ffi}Future[{result}] {{
                     .then(|| {
                         format!(
                             r#"
+///|
 fn wasm{symbol_name}FutureLowerCommitted(future : {ffi}Future[{result}]) -> Int {{
     let reader = wasm{symbol_name}FutureLower(future)
     wasm{symbol_name}FutureCommit(reader)
@@ -1707,15 +1733,18 @@ fn wasm{symbol_name}FutureLowerCommitted(future : {ffi}Future[{result}]) -> Int 
                 let lower_bridge = if endpoint_use.lower {
                     format!(
                         r#"
+///|
 priv struct Wasm{symbol_name}FutureProducer {{
     future : {ffi}Future[{result}]
     writer : Int
 }}
 
+///|
 let wasm{symbol_name}FutureProducers : Map[Int, Wasm{symbol_name}FutureProducer] = Map([])
 
 {reject_prepared_func}
 
+///|
 fn wasm{symbol_name}FutureCommit(handle : Int) -> Unit {{
     guard wasm{symbol_name}FutureProducers.get(handle) is Some(producer) else {{
         return
@@ -1754,6 +1783,7 @@ fn wasm{symbol_name}FutureCommit(handle : Int) -> Unit {{
     }})
 }}
 
+///|
 fn wasm{symbol_name}FutureLower(future : {ffi}Future[{result}]) -> Int {{
     if !{ffi}has_component_task_scope() {{
         abort("component future producer requires an async task scope")
@@ -1790,6 +1820,7 @@ fn wasm{symbol_name}FutureLower(future : {ffi}Future[{result}]) -> Int {{
                     .then(|| {
                         format!(
                             r#"
+///|
 fn wasm{symbol_name}StreamRejectPrepared(handle : Int) -> Bool {{
     guard wasm{symbol_name}StreamProducers.get(handle) is Some(prepared) else {{
         return false
@@ -1824,6 +1855,7 @@ fn wasm{symbol_name}StreamRejectPrepared(handle : Int) -> Bool {{
                     .then(|| {
                         format!(
                             r#"
+///|
 priv struct Wasm{symbol_name}StreamSource {{
     handle : Int
     mut closed : Bool
@@ -1835,6 +1867,7 @@ priv struct Wasm{symbol_name}StreamSource {{
     read_cleanup : {ffi}CondVar
 }}
 
+///|
 fn Wasm{symbol_name}StreamSource::finish_read(
     self : Wasm{symbol_name}StreamSource,
 ) -> Unit {{
@@ -1846,6 +1879,7 @@ fn Wasm{symbol_name}StreamSource::finish_read(
     // by the broadcast can observe it.
 }}
 
+///|
 async fn Wasm{symbol_name}StreamSource::wait_for_read_cleanup(
     self : Wasm{symbol_name}StreamSource,
 ) -> Unit noraise {{
@@ -1861,6 +1895,7 @@ async fn Wasm{symbol_name}StreamSource::wait_for_read_cleanup(
     }}
 }}
 
+///|
 async fn Wasm{symbol_name}StreamSource::cancel_active_read(
     self : Wasm{symbol_name}StreamSource,
 ) -> Unit noraise {{
@@ -1893,6 +1928,7 @@ async fn Wasm{symbol_name}StreamSource::cancel_active_read(
     self.read_cleanup.broadcast()
 }}
 
+///|
 async fn Wasm{symbol_name}StreamSource::close(
     self : Wasm{symbol_name}StreamSource,
 ) -> Unit noraise {{
@@ -1906,6 +1942,7 @@ async fn Wasm{symbol_name}StreamSource::close(
     wasmImport{symbol_name}DropReadable(self.handle)
 }}
 
+///|
 fn Wasm{symbol_name}StreamSource::close_sync(
     self : Wasm{symbol_name}StreamSource,
 ) -> Unit {{
@@ -1917,6 +1954,7 @@ fn Wasm{symbol_name}StreamSource::close_sync(
     wasmImport{symbol_name}DropReadable(self.handle)
 }}
 
+///|
 async fn Wasm{symbol_name}StreamSource::read(
     self : Wasm{symbol_name}StreamSource,
     count : Int,
@@ -1991,6 +2029,7 @@ async fn Wasm{symbol_name}StreamSource::read(
     Some(values)
 }}
 
+///|
 fn wasm{symbol_name}StreamLift(handle : Int) -> {ffi}Stream[{result}] {{
     let source = Wasm{symbol_name}StreamSource::{{
         handle,
@@ -2017,6 +2056,7 @@ fn wasm{symbol_name}StreamLift(handle : Int) -> {ffi}Stream[{result}] {{
                     .then(|| {
                         format!(
                             r#"
+///|
 fn wasm{symbol_name}StreamLowerCommitted(stream : {ffi}Stream[{result}]) -> Int {{
     let reader = wasm{symbol_name}StreamLower(stream)
     wasm{symbol_name}StreamCommit(reader)
@@ -2029,15 +2069,18 @@ fn wasm{symbol_name}StreamLowerCommitted(stream : {ffi}Stream[{result}]) -> Int 
                 let lower_bridge = if endpoint_use.lower {
                     format!(
                         r#"
+///|
 priv struct Wasm{symbol_name}StreamProducer {{
     stream : {ffi}Stream[{result}]
     writer : Int
 }}
 
+///|
 let wasm{symbol_name}StreamProducers : Map[Int, Wasm{symbol_name}StreamProducer] = Map([])
 
 {reject_prepared_func}
 
+///|
 fn wasm{symbol_name}StreamCommit(handle : Int) -> Unit {{
     guard wasm{symbol_name}StreamProducers.get(handle) is Some(prepared) else {{
         return
@@ -2181,6 +2224,7 @@ fn wasm{symbol_name}StreamCommit(handle : Int) -> Unit {{
     }})
 }}
 
+///|
 fn wasm{symbol_name}StreamLower(stream : {ffi}Stream[{result}]) -> Int {{
     if !{ffi}has_component_task_scope() {{
         abort("component stream producer requires an async task scope")
@@ -2209,6 +2253,7 @@ fn wasm{symbol_name}StreamLower(stream : {ffi}Stream[{result}]) -> Int {{
 {drop_readable_intrinsic}
 {lower_intrinsics}
 
+///|
 fn wasm{symbol_name}Malloc(length : Int) -> Int {{
     {malloc}
     ptr
@@ -2216,6 +2261,7 @@ fn wasm{symbol_name}Malloc(length : Int) -> Int {{
 
 {commit_func}
 
+///|
 fn wasm{symbol_name}Reject(
     ptr : Int,
     start : Int,

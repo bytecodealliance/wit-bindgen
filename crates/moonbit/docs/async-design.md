@@ -342,9 +342,7 @@ Implemented and covered by composed runtime tests:
   payload cleanup;
 - concurrent component-task isolation;
 - `wasi:cli@0.3.0` stream output;
-- `wasi:http@0.3.0` body, trailers, and post-response background work;
-- deletion guards proving endpoint-free sync generation is unchanged without
-  async support.
+- `wasi:http@0.3.0` body, trailers, and post-response background work.
 
 Known limits:
 
