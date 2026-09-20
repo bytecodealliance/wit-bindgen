@@ -981,15 +981,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             deriviation.push("Eq")
         }
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
-            "suberror"
+            format!("suberror {name} {{ {name}(Int) }}")
         } else {
-            "struct"
+            format!("struct {name}(Int)")
         };
 
         uwrite!(
             self.src,
             r#"
-            pub(all) {declaration} {name}(Int) derive({})
+            pub(all) {declaration} derive({})
             "#,
             deriviation.join(", "),
         );
@@ -1088,7 +1088,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 #doc(hidden)
                 pub fn {func_name}(handle : Int) -> Unit {{
-                    {name}::dtor(handle)
+                    {name}::dtor({name}(handle))
                 }}
                 "#,
             );
@@ -1169,17 +1169,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             deriviation.push("Eq")
         }
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
-            "suberror"
+            format!("suberror {name} {{ {name}({ty}) }}")
         } else {
-            "struct"
+            format!("struct {name}({ty})")
         };
 
         uwrite!(
             self.src,
             "
-            pub(all) {declaration} {name}({ty}) derive({})
+            pub(all) {declaration} derive({})
             pub fn {name}::default() -> {name} {{
-                {}
+                {name}({})
             }}
             pub(all) enum {name}Flag {{
                 {cases}
@@ -1191,11 +1191,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }}
             pub fn {name}::set(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
-              flag.lor(other.value())
+              {name}(flag.lor(other.value()))
             }}
             pub fn {name}::unset(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
-              flag.land(other.value().lnot())
+              {name}(flag.land(other.value().lnot()))
             }}
             pub fn {name}::is_set(self : Self, other: {name}Flag) -> Bool {{
               let {name}(flag) = self
