@@ -43,6 +43,10 @@ pub struct Promise[X] {
 pub(all) suberror PromiseClosed derive(Debug)
 
 ///|
+#deprecated
+pub extend PromiseClosed with Debug::{to_repr}
+
+///|
 fn[X] new_future_promise(cleanup : ((X) -> Unit)?) -> (Future[X], Promise[X]) {
   let cell : Ref[PromiseCell[X]] = {
     val: {

@@ -24,7 +24,7 @@ pub fn[X] Sink::from_callbacks(
   cleanup : ((X) -> Unit)?,
   write_window_size : Int,
 ) -> Sink[X] {
-  guard write_window_size > 0
+  guard! write_window_size > 0
   {
     write,
     close,
@@ -52,7 +52,7 @@ pub async fn[X] Sink::write(self : Sink[X], data : ArrayView[X]) -> Int {
   // The callback may suspend, so it must not retain the caller's borrowed view.
   let buffer = FixedArray::from_array(data[:length])
   let written = (self.write)(buffer[:])
-  guard written >= 0 && written <= length
+  guard! written >= 0 && written <= length
   if !(self.is_open)() && written < length && (self.has_cleanup)() {
     self.cleanup_unaccepted(buffer[:], written)
     return length
@@ -77,7 +77,7 @@ pub async fn Sink::write_bytes(self : Sink[Byte], data : BytesView) -> Int {
   }
   let buffer = data[:length].to_fixedarray()
   let written = (self.write)(buffer[:])
-  guard written >= 0 && written <= length
+  guard! written >= 0 && written <= length
   if !(self.is_open)() && written < length && (self.has_cleanup)() {
     self.cleanup_unaccepted(buffer[:], written)
     return length
@@ -143,7 +143,7 @@ pub async fn[X] Sink::write_all(self : Sink[X], data : ArrayView[X]) -> Bool {
       self.cleanup_unaccepted(data, offset)
       return false
     }
-    guard written > 0
+    guard! written > 0
   }
 }
 
@@ -164,7 +164,7 @@ pub async fn Sink::write_all_bytes(self : Sink[Byte], data : BytesView) -> Bool 
       self.cleanup_unaccepted_bytes(data, offset)
       return false
     }
-    guard written > 0
+    guard! written > 0
   }
 }
 

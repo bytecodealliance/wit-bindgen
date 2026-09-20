@@ -26,6 +26,10 @@ pub struct Task[X] {
 pub suberror TaskCancelled derive(Debug)
 
 ///|
+#deprecated
+pub extend TaskCancelled with Debug::{to_repr}
+
+///|
 /// Wait for a task and retrieve its result value.
 /// If the task fails, `wait` will also fail with the same error.
 ///

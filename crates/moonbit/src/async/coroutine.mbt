@@ -46,7 +46,7 @@ impl Eq for Coroutine with fn equal(c1, c2) {
 
 ///|
 impl Hash for Coroutine with fn hash_combine(self, hasher) {
-  self.coro_id.hash_combine(hasher)
+  Hash::hash_combine(self.coro_id, hasher)
 }
 
 ///|
@@ -85,7 +85,7 @@ fn Coroutine::cancel(self : Coroutine) -> Unit {
 
 ///|
 async fn suspend_check_cancel() -> SuspendResult noraise {
-  guard scheduler.curr_coro is Some(coro)
+  guard! scheduler.curr_coro is Some(coro)
   if coro.cancelled && !coro.shielded {
     return Cancelled
   }
@@ -94,7 +94,7 @@ async fn suspend_check_cancel() -> SuspendResult noraise {
     coro.lane.blocking -= 1
   }
   async_suspend(fn(cont) {
-    guard coro.state is Running
+    guard! coro.state is Running
     coro.state = Suspend(cont)
   })
 }
@@ -170,8 +170,8 @@ fn Coroutine::unwrap(self : Coroutine) -> SuspendResult raise {
 
 ///|
 async fn Coroutine::wait(target : Coroutine) -> SuspendResult {
-  guard scheduler.curr_coro is Some(coro)
-  guard !physical_equal(coro, target)
+  guard! scheduler.curr_coro is Some(coro)
+  guard! !physical_equal(coro, target)
   match target.state {
     Done => return Continue
     Cancelled => return Cancelled
@@ -194,7 +194,7 @@ fn Coroutine::check_error(coro : Coroutine) -> Unit raise {
 
 ///|
 pub async fn[X] protect_from_cancel(f : async () -> X) -> X nocancel {
-  guard scheduler.curr_coro is Some(coro)
+  guard! scheduler.curr_coro is Some(coro)
   // The shield prevents delivery; capture_cancellation expresses that invariant
   // in the effect type without changing normal error propagation.
   capture_cancellation(handler=() => panic(), () => {

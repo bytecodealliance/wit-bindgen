@@ -105,6 +105,14 @@ extern "wasm" fn int_array2ptr(array : FixedArray[Int]) -> Int =
 struct WaitableSet(Int) derive(Eq, Hash)
 
 ///|
+#deprecated
+pub extend WaitableSet with Eq::{not_equal, equal}
+
+///|
+#deprecated
+pub extend WaitableSet with Hash::{hash, hash_combine}
+
+///|
 fn WaitableSet::new() -> WaitableSet {
   WaitableSet(waitable_set_new())
 }

@@ -1330,8 +1330,8 @@ impl<'a> InterfaceGenerator<'a> {
                 lift: "ignore(ptr)".into(),
                 lift_result: String::new(),
                 lower: "ignore((ptr, value))".into(),
-                malloc: "let ptr = 0".into(),
-                lift_list: "FixedArray::make(length, Unit::default())".into(),
+                malloc: "ignore(length)\nlet ptr = 0".into(),
+                lift_list: "ignore(ptr)\nFixedArray::make(length, Unit::default())".into(),
                 commit: String::new(),
                 reject: String::new(),
                 free_outer: "ignore(ptr)".into(),
@@ -1522,7 +1522,7 @@ fn wasm{symbol_name}FutureRejectPrepared(handle : Int) -> Bool {{
                         wasmImport{symbol_name}Write(writer, ptr),
                     )
                 }}
-                guard terminal.val is Some(transferred)
+                guard! terminal.val is Some(transferred)
                 if transferred {{
                     abort("rejected component future unexpectedly transferred a value")
                 }}
@@ -1655,21 +1655,22 @@ async fn Wasm{symbol_name}FutureSource::read(
     self.read_buffer = ptr
     self.read_discarding = false
     self.read_cleanup_done = false
+    // Capture cancellation below so canonical read cleanup can inspect the
+    // active read state before this reset runs.
+    errdefer self.finish_read()
     let outcome = {ffi}handle_cancellation(() =>
         {ffi}suspend_for_future_read(
             self.handle,
             wasmImport{symbol_name}Read(self.handle, ptr),
         ),
     ) catch {{
-        err => {{
+        err =>
             if self.read_discarding {{
                 self.wait_for_read_cleanup()
-                self.finish_read()
                 raise {ffi}FutureReadError::Dropped
+            }} else {{
+                raise err
             }}
-            self.finish_read()
-            raise err
-        }}
     }}
     match outcome {{
         Some(result) => result
@@ -1679,13 +1680,11 @@ async fn Wasm{symbol_name}FutureSource::read(
                 self.closed = true
                 wasmImport{symbol_name}DropReadable(self.handle)
             }}
-            self.finish_read()
             {ffi}raise_cancellation_signal()
         }}
     }}
     if self.read_discarding {{
         self.wait_for_read_cleanup()
-        self.finish_read()
         raise {ffi}FutureReadError::Dropped
     }}
     let value = wasm{symbol_name}Lift(ptr)
@@ -1771,7 +1770,7 @@ fn wasm{symbol_name}FutureCommit(handle : Int) -> Unit {{
                         wasmImport{symbol_name}Write(writer, ptr),
                     )
                 }}
-                guard terminal.val is Some(transferred)
+                guard! terminal.val is Some(transferred)
                 if transferred {{
                     wasm{symbol_name}Commit(ptr, 0, 1)
                 }} else {{
@@ -1986,21 +1985,23 @@ async fn Wasm{symbol_name}StreamSource::read(
     self.read_buffer = ptr
     self.read_discarding = false
     self.read_cleanup_done = false
+    // Capture cancellation below so canonical read cleanup can inspect the
+    // active read state before this reset runs.
+    errdefer self.finish_read()
     let outcome = {ffi}handle_cancellation(() =>
         {ffi}suspend_for_stream_read(
             self.handle,
             wasmImport{symbol_name}Read(self.handle, ptr, read_count),
         ),
     ) catch {{
-        err => {{
+        err =>
             if self.read_discarding {{
                 self.wait_for_read_cleanup()
                 self.finish_read()
                 return None
+            }} else {{
+                raise err
             }}
-            self.finish_read()
-            raise err
-        }}
     }}
     let (progress, end) = match outcome {{
         Some(result) => result
@@ -2010,7 +2011,6 @@ async fn Wasm{symbol_name}StreamSource::read(
                 self.closed = true
                 wasmImport{symbol_name}DropReadable(self.handle)
             }}
-            self.finish_read()
             {ffi}raise_cancellation_signal()
         }}
     }}

@@ -602,6 +602,25 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    fn emit_derived_methods(&mut self, name: &str, traits: &[&str]) {
+        // MoonBit used to attach trait methods to types automatically through
+        // `impl`, including derived implementations. During the transition to
+        // separate `impl` and `extend` semantics, keep those methods as deprecated
+        // compatibility aliases. New callers should use `Trait::method` instead.
+        for trait_ in traits {
+            let methods = match *trait_ {
+                "Debug" => "Debug::{to_repr}",
+                "Show" => "Show::{to_string, output}",
+                "Eq" => "Eq::{not_equal, equal}",
+                _ => unreachable!(),
+            };
+            uwriteln!(
+                self.src,
+                "///|\n#deprecated\npub extend {name} with {methods}\n"
+            );
+        }
+    }
+
     fn finish(self) -> InterfaceFragment {
         InterfaceFragment {
             src: self.src,
@@ -971,6 +990,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }}{derivation}
             "
         );
+        self.emit_derived_methods(&name, &deriviation);
     }
 
     fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
@@ -1000,6 +1020,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "#,
             deriviation.join(", "),
         );
+        self.emit_derived_methods(&name, &deriviation);
 
         if self.direction == Direction::Import {
             let (drop_module, drop_name) = self.resolve.wasm_import_name(
@@ -1234,6 +1255,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 _ => unreachable!(),
             }
         );
+        self.emit_derived_methods(&name, &deriviation);
     }
 
     fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
@@ -1295,6 +1317,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }}{derivation}
             "
         );
+        self.emit_derived_methods(&name, &deriviation);
     }
 
     fn type_option(&mut self, _id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
@@ -1343,6 +1366,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             ",
             deriviation.join(", ")
         );
+        self.emit_derived_methods(&name, &deriviation);
 
         // Case to integer
         let cases = enum_
@@ -2833,7 +2857,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    let {map} : Map[{key_ty}, {value_ty}] = {{}}
+                    let {map} : Map[{key_ty}, {value_ty}] = Map([])
                     for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
                         let iter_base = ({address}) + ({index} * {size})
                         {body}
@@ -2943,9 +2967,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("({op}).reinterpret_as_float()")
+            format!("Float::reinterpret_from_int({op})")
         }
-        Bitcast::I64ToF32 => format!("({op}).to_int().reinterpret_as_float()"),
+        Bitcast::I64ToF32 => format!("Float::reinterpret_from_int(({op}).to_int())"),
         Bitcast::F32ToI32 => {
             format!("({op}).reinterpret_as_int()")
         }
@@ -3858,7 +3882,7 @@ mod tests {
         let event_loop = file(&files, "async-core/async_ev.mbt");
         assert!(
             event_loop.contains("let resolution = task_state.resolution")
-                && event_loop.contains("guard resolution is Resolved")
+                && event_loop.contains("guard! resolution is Resolved")
                 && !event_loop.contains("abort("),
             "{event_loop}"
         );
