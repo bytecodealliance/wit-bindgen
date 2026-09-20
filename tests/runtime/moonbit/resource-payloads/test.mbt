@@ -417,7 +417,7 @@ pub async fn cancel_future_read(
   }
   reader.cancel()
   try reader.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
@@ -451,7 +451,7 @@ pub async fn cancel_stream_read(
   }
   reader.cancel()
   try reader.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false

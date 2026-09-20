@@ -3689,9 +3689,7 @@ mod tests {
         assert!(ffi.contains("let close_writer_serialized = async fn()"));
         assert!(ffi.contains("writer_lock.acquire()"));
         assert!(ffi.contains("defer writer_lock.release()"));
-        assert!(
-            ffi.contains("() => close_writer_serialized(),\n            resume_on_cancel=true,")
-        );
+        assert!(ffi.contains("protect_from_cancel(() => close_writer_serialized())"));
         assert!(!ffi.contains("defer close_writer()"));
         assert!(ffi.contains("read_cleanup : @async-core.CondVar"));
         assert!(ffi.contains("let read_count = if count < 64"));
@@ -3878,7 +3876,7 @@ mod tests {
 
         let coroutine = file(&files, "async-core/async_coroutine.mbt");
         assert!(
-            coroutine.contains("Done | Fail(_) => return"),
+            coroutine.contains("Done | Fail(_) | Cancelled => return"),
             "{coroutine}"
         );
     }

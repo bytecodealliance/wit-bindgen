@@ -231,7 +231,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   }
   future_cancel.cancel()
   let future_was_cancelled = try future_cancel.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
@@ -274,7 +274,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   }
   stream_cancel.cancel()
   let stream_was_cancelled = try stream_cancel.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false

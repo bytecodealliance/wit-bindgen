@@ -34,8 +34,8 @@ component `future` endpoint, and it works for arbitrary MoonBit `T`.
   and wakes the reader, completion wins a simultaneous cancellation race and the
   reader receives the value.
 - Explicit `Future::drop()` follows the same race rule while `get()` is pending:
-  dropping before settlement wakes the reader with `Cancelled`, while an
-  already-assigned value or error remains owned by the waiting reader.
+  dropping before settlement wakes the reader with `FutureReadError::Dropped`,
+  while an already-assigned value or error remains owned by the waiting reader.
 - A local failure or close cannot settle an already-exposed component future
   without a value. If such an outcome is expected across WIT, it belongs in the
   payload type, for example `Future[Result[V, E]]`.

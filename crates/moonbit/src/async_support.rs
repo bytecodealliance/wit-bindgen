@@ -1527,7 +1527,6 @@ fn wasm{symbol_name}FutureRejectPrepared(handle : Int) -> Bool {{
                     abort("rejected component future unexpectedly transferred a value")
                 }}
             }},
-            resume_on_cancel=true,
         ) catch {{
             _ => abort("failed to reject component future producer")
         }}
@@ -1577,7 +1576,6 @@ async fn Wasm{symbol_name}FutureSource::wait_for_read_cleanup(
                 self.read_cleanup.wait()
             }}
         }},
-        resume_on_cancel=true,
     ) catch {{
         _ => ()
     }}
@@ -1604,7 +1602,6 @@ async fn Wasm{symbol_name}FutureSource::cancel_active_read(
                 () => wasmImport{symbol_name}CancelRead(self.handle),
             )
         }},
-        resume_on_cancel=true,
     ) catch {{
         _ => ()
     }}
@@ -1658,9 +1655,11 @@ async fn Wasm{symbol_name}FutureSource::read(
     self.read_buffer = ptr
     self.read_discarding = false
     self.read_cleanup_done = false
-    {ffi}suspend_for_future_read(
-        self.handle,
-        wasmImport{symbol_name}Read(self.handle, ptr),
+    let outcome = {ffi}handle_cancellation(() =>
+        {ffi}suspend_for_future_read(
+            self.handle,
+            wasmImport{symbol_name}Read(self.handle, ptr),
+        ),
     ) catch {{
         err => {{
             if self.read_discarding {{
@@ -1668,15 +1667,20 @@ async fn Wasm{symbol_name}FutureSource::read(
                 self.finish_read()
                 raise {ffi}FutureReadError::Dropped
             }}
-            if err is {ffi}Cancelled::Cancelled {{
-                self.cancel_active_read()
-                if !self.closed {{
-                    self.closed = true
-                    wasmImport{symbol_name}DropReadable(self.handle)
-                }}
-            }}
             self.finish_read()
             raise err
+        }}
+    }}
+    match outcome {{
+        Some(result) => result
+        None => {{
+            self.cancel_active_read()
+            if !self.closed {{
+                self.closed = true
+                wasmImport{symbol_name}DropReadable(self.handle)
+            }}
+            self.finish_read()
+            {ffi}raise_cancellation_signal()
         }}
     }}
     if self.read_discarding {{
@@ -1776,7 +1780,6 @@ fn wasm{symbol_name}FutureCommit(handle : Int) -> Unit {{
                 {free_outer}
                 wasmImport{symbol_name}DropWritable(writer)
             }},
-            resume_on_cancel=true,
         ) catch {{
             _ => abort("component future producer ended without a value")
         }}
@@ -1839,7 +1842,6 @@ fn wasm{symbol_name}StreamRejectPrepared(handle : Int) -> Bool {{
                         {free_outer}
                     }})
             }},
-            resume_on_cancel=true,
         ) catch {{
             _ => ()
         }}
@@ -1889,7 +1891,6 @@ async fn Wasm{symbol_name}StreamSource::wait_for_read_cleanup(
                 self.read_cleanup.wait()
             }}
         }},
-        resume_on_cancel=true,
     ) catch {{
         _ => ()
     }}
@@ -1916,7 +1917,6 @@ async fn Wasm{symbol_name}StreamSource::cancel_active_read(
                 () => wasmImport{symbol_name}CancelRead(self.handle),
             )
         }},
-        resume_on_cancel=true,
     ) catch {{
         _ => ()
     }}
@@ -1986,9 +1986,11 @@ async fn Wasm{symbol_name}StreamSource::read(
     self.read_buffer = ptr
     self.read_discarding = false
     self.read_cleanup_done = false
-    let (progress, end) = {ffi}suspend_for_stream_read(
-        self.handle,
-        wasmImport{symbol_name}Read(self.handle, ptr, read_count),
+    let outcome = {ffi}handle_cancellation(() =>
+        {ffi}suspend_for_stream_read(
+            self.handle,
+            wasmImport{symbol_name}Read(self.handle, ptr, read_count),
+        ),
     ) catch {{
         err => {{
             if self.read_discarding {{
@@ -1996,15 +1998,20 @@ async fn Wasm{symbol_name}StreamSource::read(
                 self.finish_read()
                 return None
             }}
-            if err is {ffi}Cancelled::Cancelled {{
-                self.cancel_active_read()
-                if !self.closed {{
-                    self.closed = true
-                    wasmImport{symbol_name}DropReadable(self.handle)
-                }}
-            }}
             self.finish_read()
             raise err
+        }}
+    }}
+    let (progress, end) = match outcome {{
+        Some(result) => result
+        None => {{
+            self.cancel_active_read()
+            if !self.closed {{
+                self.closed = true
+                wasmImport{symbol_name}DropReadable(self.handle)
+            }}
+            self.finish_read()
+            {ffi}raise_cancellation_signal()
         }}
     }}
     if self.read_discarding {{
@@ -2143,21 +2150,28 @@ fn wasm{symbol_name}StreamCommit(handle : Int) -> Unit {{
                 let mut total = 0
                 let mut dropped = false
                 while total < data_len {{
-                    let (progress, end) = {ffi}suspend_for_stream_write(
-                        writer,
-                        wasmImport{symbol_name}Write(
+                    let outcome = {ffi}handle_cancellation(() =>
+                        {ffi}suspend_for_stream_write(
                             writer,
-                            ptr + total * {elem_size},
-                            data_len - total,
+                            wasmImport{symbol_name}Write(
+                                writer,
+                                ptr + total * {elem_size},
+                                data_len - total,
+                            ),
                         ),
-                    ) catch {{
-                        _ => {{
+                    ) catch {{ _ => None }}
+                    let (progress, end) = match outcome {{
+                        Some(result) => result
+                        None => {{
                             total = total + {ffi}cancel_stream_write(
                                 writer,
                                 () => wasmImport{symbol_name}CancelWrite(writer),
                             )
                             settle_staging(total)
                             close_writer()
+                            // This callback owns the entire staging window,
+                            // including the rejected suffix. Return its consumed
+                            // length so Sink::write_all cannot clean it twice.
                             return data_len
                         }}
                     }}
@@ -2203,24 +2217,22 @@ fn wasm{symbol_name}StreamCommit(handle : Int) -> Unit {{
                     }}
             }}
         }}
-        run_producer() catch {{
-            _ =>
+        // A retained Sink may still own an in-flight canonical write after its
+        // producer returns or is cancelled. Wait for its terminal event before
+        // dropping the writable endpoint, even when cancellation bypasses catch.
+        defer {{
+            {ffi}protect_from_cancel(() => close_writer_serialized())
+        }}
+        try {{
+            errdefer {{
                 if relay_source {{
                     {ffi}protect_from_cancel(
                         () => stream.reject(cleanup_value),
-                        resume_on_cancel=true,
-                    ) catch {{
-                        _ => ()
-                    }}
+                    ) catch {{ _ => () }}
                 }}
-        }}
-        // A retained Sink may still own an in-flight canonical write after its
-        // producer returns. Do not drop the writable endpoint until that write
-        // has reached a terminal event and released its staging buffer.
-        {ffi}protect_from_cancel(
-            () => close_writer_serialized(),
-            resume_on_cancel=true,
-        )
+            }}
+            run_producer()
+        }} catch {{ _ => () }}
     }})
 }}
 

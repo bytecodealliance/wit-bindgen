@@ -76,7 +76,7 @@ fn acknowledge_cancellation(task_state : ComponentTaskState) -> Unit {
   guard task_state.cancellation_pending else { return }
   match task_state.task.state {
     Done => () // The generated wrapper already called task.return.
-    Fail(_) =>
+    Fail(_) | Cancelled =>
       if task_state.resolution is Pending {
         task_cancel()
         task_state.resolution = Resolved
@@ -120,7 +120,8 @@ fn next_callback(
     reschedule(task_state.lane)
   }
   acknowledge_cancellation(task_state)
-  if task_state.task.state is (Done | Fail(_)) && no_more_work(task_state.lane) {
+  if task_state.task.state is (Done | Fail(_) | Cancelled) &&
+    no_more_work(task_state.lane) {
     let resolution = task_state.resolution
     finish_waitableset(waitable_set, task_state)
     guard resolution is Resolved
@@ -397,16 +398,15 @@ async fn waitable_event(waitable_id : Int, immediate : Events?) -> Events {
       let coro = current_coroutine()
       subscriber.coro.add(coro)
       defer subscriber.coro.remove(coro)
-      let event = try suspend() catch {
-        err =>
+      let event = match suspend_check_cancel() {
+        Continue => subscriber.event.unwrap()
+        Cancelled =>
           match subscriber.event {
             // Completion owns the canonical buffer once its event is
             // delivered, even if local cancellation wakes the same coroutine.
             Some(event) => event
-            None => raise err
+            None => raise_cancellation_signal()
           }
-      } noraise {
-        _ => subscriber.event.unwrap()
       }
       subscribers.remove(waitable_id)
       event
@@ -473,40 +473,32 @@ pub async fn suspend_for_subtask(
     guard subscribers.get(task.handle) is None
     subscribers.set(task.handle, subscriber)
     waitable_join(task.handle, waitable_set.0)
-    suspend() catch {
-      Cancelled::Cancelled =>
-        // Cancel the subtask
-        return protect_from_cancel(() => {
-          detach_waitable(task_state, task.handle)
-          // A terminal event can race with local cancellation after waking
-          // this coroutine. Once delivered, cancelling the subtask again
-          // traps, so consume that event before requesting cancellation.
-          if subscriber.event is Some(Subtask(i, state)) {
-            guard i == task.handle
-            settle_arguments(state)
-            match state {
-              Returned => {
-                drop_returned_result()
-                return
-              }
-              Cancelled_before_started | Cancelled_before_returned =>
-                raise Cancelled::Cancelled
-              Starting | Started => subscriber.event = None
-            }
-          }
-          let state = task.cancel()
+    if suspend_check_cancel() is Cancelled {
+      protect_from_cancel(() => {
+        detach_waitable(task_state, task.handle)
+        // Consume a delivered terminal event before requesting cancellation:
+        // cancelling an already terminal canonical operation traps.
+        if subscriber.event is Some(Subtask(i, state)) {
+          guard i == task.handle
           settle_arguments(state)
           match state {
             Returned => {
               drop_returned_result()
               return
             }
-            Cancelled_before_started | Cancelled_before_returned =>
-              raise Cancelled::Cancelled
-            Starting | Started => panic()
+            Cancelled_before_started | Cancelled_before_returned => return
+            Starting | Started => subscriber.event = None
           }
-        })
-      err => raise err
+        }
+        let state = task.cancel()
+        settle_arguments(state)
+        match state {
+          Returned => drop_returned_result()
+          Cancelled_before_started | Cancelled_before_returned => ()
+          Starting | Started => panic()
+        }
+      })
+      raise_cancellation_signal()
     }
 
     task_state.subscribers.remove(task.handle)

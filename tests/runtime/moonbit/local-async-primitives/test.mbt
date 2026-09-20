@@ -76,7 +76,7 @@ pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
   let condition_wait_was_cancelled = try
     cancelled_condition_waiter.wait()
   catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
@@ -176,7 +176,7 @@ pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
   cancel_started.get()
   cancelled_waiter.cancel()
   let observed_cancel = try cancelled_waiter.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
@@ -190,7 +190,7 @@ pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
     async fn() -> Bool {
       guard drop_read_started_promise.complete(()) else { panic() }
       dropped_while_reading.get() catch {
-        @async-core.Cancelled::Cancelled => return true
+        @async-core.FutureReadError::Dropped => return true
         _ => return false
       }
       false
@@ -270,11 +270,26 @@ pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
   guard phase.val == 2 else { return false }
 
   let cancellable = @async-core.Semaphore(1, initial_value=0)
+  let caught_cancellation = Ref(false)
+  let cancellation_deferred = Ref(false)
+  let cancellation_error_deferred = Ref(false)
   let (cancelled_acquire_started, cancelled_acquire_started_promise) = @async-core.Future::new()
   let cancelled_acquire = background_group.spawn(
     async fn() -> Bool {
-      guard cancelled_acquire_started_promise.complete(()) else { return false }
-      cancellable.acquire()
+      defer {
+        cancellation_deferred.val = true
+      }
+      try {
+        errdefer {
+          cancellation_error_deferred.val = true
+        }
+        guard cancelled_acquire_started_promise.complete(()) else {
+          raise ExpectedPromiseFailure
+        }
+        cancellable.acquire()
+      } catch {
+        _ => caught_cancellation.val = true
+      }
       false
     },
     allow_failure=true,
@@ -282,12 +297,15 @@ pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
   cancelled_acquire_started.get()
   cancelled_acquire.cancel()
   let acquire_was_cancelled = try cancelled_acquire.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
   }
   guard acquire_was_cancelled else { return false }
+  guard !caught_cancellation.val else { return false }
+  guard cancellation_deferred.val else { return false }
+  guard cancellation_error_deferred.val else { return false }
 
   let (survivor_started, survivor_started_promise) = @async-core.Future::new()
   let survivor = background_group.spawn(
@@ -301,6 +319,54 @@ pub async fn exercise(background_group : @async-core.TaskGroup[Unit]) -> Bool {
   survivor_started.get()
   cancellable.release()
   guard survivor.wait() else { return false }
+
+  // A shield finishes normally. The next unshielded check still cancels,
+  // including after handle_cancellation has observed an earlier cancellation.
+  let shield_started = @async-core.Semaphore(1, initial_value=0)
+  let shield_gate = @async-core.Semaphore(1, initial_value=0)
+  let shielded = background_group.spawn(async fn() -> Bool {
+    @async-core.protect_from_cancel(() => {
+      shield_started.release()
+      shield_gate.acquire()
+      @async-core.check_cancellation()
+    })
+    guard @async-core.handle_cancellation(() => @async-core.check_cancellation())
+      is None else {
+      return false
+    }
+    guard @async-core.handle_cancellation(() => @async-core.check_cancellation())
+      is None else {
+      return false
+    }
+    true
+  })
+  shield_started.acquire()
+  shielded.cancel()
+  shield_gate.release()
+  guard shielded.wait() else { return false }
+
+  // Cancelling the group drains its children before running nocancel defers.
+  let group_started = @async-core.Semaphore(1, initial_value=0)
+  let group_blocked = @async-core.Semaphore(1, initial_value=0)
+  let group_cleanup : Array[Int] = []
+  let cancelled_group = background_group.spawn(async fn() -> Unit {
+    @async-core.with_task_group(group => {
+      group.add_defer(() => group_cleanup.push(2))
+      group.add_defer(() => group_cleanup.push(1))
+      defer group_cleanup.push(0)
+      group_started.release()
+      group_blocked.acquire()
+    })
+  })
+  group_started.acquire()
+  cancelled_group.cancel()
+  let group_was_cancelled = try cancelled_group.wait() catch {
+    @async-core.TaskCancelled::TaskCancelled => true
+    _ => false
+  } noraise {
+    _ => false
+  }
+  guard group_was_cancelled && group_cleanup == [0, 1, 2] else { return false }
 
   let assigned = @async-core.Semaphore(1, initial_value=0)
   let (assigned_started, assigned_started_promise) = @async-core.Future::new()
