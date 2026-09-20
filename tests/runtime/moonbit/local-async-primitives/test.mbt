@@ -6,6 +6,12 @@
 suberror ExpectedPromiseFailure derive(Debug)
 
 ///|
+// During the transition from implicit method attachment to separate `impl`
+// and `extend`, keep compatibility while preferring `Debug::to_repr`.
+#deprecated
+pub extend ExpectedPromiseFailure with Debug::{to_repr}
+
+///|
 priv struct LocalOnlyValue {
   marker : Int
 }

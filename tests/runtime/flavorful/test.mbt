@@ -53,7 +53,7 @@ pub fn f_list_in_variant3(_a : String?) -> String? {
   Some("output3".to_string())
 }
 
-let first : Ref[Bool] = Ref::new(true);
+let first : Ref[Bool] = Ref(true);
 
 ///|
 pub fn errno_result() -> Result[Unit, MyErrno] {
@@ -65,7 +65,7 @@ pub fn errno_result() -> Result[Unit, MyErrno] {
   }
 }
 
-pub fn write_utf8_char(buf : @buffer.Buffer, value : Char) -> Unit {
+pub fn write_utf8_char(buf : Buffer, value : Char) -> Unit {
   let code = value.to_uint()
   match code {
     _..<0x80 => {
@@ -103,7 +103,7 @@ pub fn write_utf8_char(buf : @buffer.Buffer, value : Char) -> Unit {
 pub fn encode_to_utf8(
   src : String,
 ) -> Bytes{ 
-  let buf = @buffer.new(size_hint=src.length() * 4)
+  let buf = Buffer(size_hint=src.length() * 4)
   for c in src {
     write_utf8_char(buf, c);
   }

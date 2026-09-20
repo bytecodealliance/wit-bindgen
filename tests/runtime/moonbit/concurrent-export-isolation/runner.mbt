@@ -26,7 +26,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
     async fn() -> Unit {
       @operations.wait_for_gate(
         @async-core.Future::from(async fn() {
-          guard gate.read(1) is Some(signal) && signal.length() == 1
+          guard! gate.read(1) is Some(signal) && signal.length() == 1
         }),
       )
     },

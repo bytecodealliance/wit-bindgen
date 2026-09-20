@@ -3,13 +3,13 @@
 
 ///|
 pub fn empty_list_param(a : FixedArray[Byte]) -> Unit {
-  guard a is []
+  guard! a is []
 
 }
 
 ///|
 pub fn empty_string_param(a : String) -> Unit {
-  guard a is ""
+  guard! a is ""
 
 }
 
@@ -25,37 +25,37 @@ pub fn empty_string_result() -> String {
 
 ///|
 pub fn list_param(a : FixedArray[Byte]) -> Unit {
-  guard a is [1, 2, 3, 4]
+  guard! a is [1, 2, 3, 4]
 
 }
 
 ///|
 pub fn list_param2(a : String) -> Unit {
-  guard a is "foo"
+  guard! a is "foo"
 
 }
 
 ///|
 pub fn list_param3(a : Array[String]) -> Unit {
-  guard a is ["foo", "bar", "baz"]
+  guard! a is ["foo", "bar", "baz"]
 
 }
 
 ///|
 pub fn list_param4(a : Array[Array[String]]) -> Unit {
-  guard a is [["foo", "bar"], ["baz"]]
+  guard! a is [["foo", "bar"], ["baz"]]
 
 }
 
 ///|
 pub fn list_param5(a : Array[(Byte, UInt, Byte)]) -> Unit {
-  guard a is [(1, 2, 3), (4, 5, 6)]
+  guard! a is [(1, 2, 3), (4, 5, 6)]
 
 }
 
 ///|
 pub fn list_param_large(a : Array[String]) -> Unit {
-  guard a.length() == 1000
+  guard! a.length() == 1000
 
 }
 

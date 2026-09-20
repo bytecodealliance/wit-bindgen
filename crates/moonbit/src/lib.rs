@@ -3392,7 +3392,7 @@ mod tests {
             opts: Opts {
                 derive: DeriveOpts {
                     derive_debug: true,
-                    derive_show: true,
+                    derive_show: false,
                     derive_eq: true,
                     derive_error: false,
                 },
@@ -3405,7 +3405,7 @@ mod tests {
 
         let source = file(&files, "interface/a/b/types/top.mbt");
         assert!(
-            source.contains("struct Plain {\n      value : UInt\n} derive(Debug, Show, Eq)"),
+            source.contains("struct Plain {\n      value : UInt\n} derive(Debug, Eq)"),
             "{source}"
         );
         assert!(

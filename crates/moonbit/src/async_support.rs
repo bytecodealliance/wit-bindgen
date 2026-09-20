@@ -1004,7 +1004,6 @@ impl<'a> InterfaceGenerator<'a> {
         for (name, _) in &mbt_sig.params {
             local_names.tmp(name);
         }
-        self.ffi_imports.insert(ffi::FREE);
         let ffi = self
             .world_gen
             .pkg_resolver
@@ -1015,6 +1014,7 @@ impl<'a> InterfaceGenerator<'a> {
             match &func.params[..] {
                 [] => {}
                 [Param { name, ty, .. }] => {
+                    self.ffi_imports.insert(ffi::FREE);
                     body.push_str(&self.malloc_memory(&lower_ptr, "1", ty));
                     body.push_str(&format!("\ndefer mbt_ffi_free({lower_ptr})\n"));
                     body.push_str(&self.lower_to_memory(
@@ -1031,6 +1031,7 @@ impl<'a> InterfaceGenerator<'a> {
                     let offsets = self.world_gen.sizes.field_offsets(params.clone());
                     let elem_info = self.world_gen.sizes.params(params);
                     self.ffi_imports.insert(ffi::MALLOC);
+                    self.ffi_imports.insert(ffi::FREE);
                     body.push_str(&format!(
                         r#"
                         let {lower_ptr} : Int = mbt_ffi_malloc({})
@@ -1167,6 +1168,7 @@ impl<'a> InterfaceGenerator<'a> {
         };
         match &func.result {
             Some(ty) => {
+                self.ffi_imports.insert(ffi::FREE);
                 let result_ptr = local_names.tmp("result_ptr");
                 lower_params.push(result_ptr.clone());
                 let (drop_returned_result, drop_result_state) = self
@@ -1262,6 +1264,10 @@ impl<'a> InterfaceGenerator<'a> {
             .map(|ty| self.world_gen.sizes.size(ty).size_wasm32())
             .unwrap_or(0);
         let read_chunk_owns_buffer = result_type.is_some_and(|ty| self.is_list_canonical(ty));
+        let needs_lift = endpoint_use.lift
+            && (matches!(site.kind, PayloadFor::Future)
+                || (result_type.is_some() && !read_chunk_owns_buffer));
+        let needs_list_lift = endpoint_use.lift && matches!(site.kind, PayloadFor::Stream);
         let primitive_window = result_type
             .filter(|ty| is_fixed_primitive(self.resolve, ty))
             .map(|_| (PRIMITIVE_STREAM_BUFFER_BYTES / elem_size).max(1));
@@ -1282,24 +1288,38 @@ impl<'a> InterfaceGenerator<'a> {
             reject,
             free_outer,
         } = if let Some(result_type) = result_type {
-            let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
-            let (lift, lift_result) =
-                self.lift_from_memory("ptr", result_type, &helper_package, &mut payload_state);
-            let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
-            let lower = self.lower_to_memory(
-                "ptr",
-                "value",
-                result_type,
-                &helper_package,
-                &mut payload_state,
-            );
-            let (commit, _) = self.commit_lists_and_endpoints_with_state(
-                std::slice::from_ref(result_type),
-                &[String::from("elem_ptr")],
-                true,
-                &helper_package,
-                payload_sites.clone(),
-            );
+            // Building a fragment also registers its FFI helpers, so only build
+            // conversions that will actually be emitted below.
+            let (lift, lift_result) = if needs_lift {
+                let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
+                self.lift_from_memory("ptr", result_type, &helper_package, &mut payload_state)
+            } else {
+                Default::default()
+            };
+            let lower = if endpoint_use.lower {
+                let mut payload_state = AsyncFunctionState::from_sites(payload_sites.clone());
+                self.lower_to_memory(
+                    "ptr",
+                    "value",
+                    result_type,
+                    &helper_package,
+                    &mut payload_state,
+                )
+            } else {
+                String::new()
+            };
+            let commit = if endpoint_use.lower {
+                self.commit_lists_and_endpoints_with_state(
+                    std::slice::from_ref(result_type),
+                    &[String::from("elem_ptr")],
+                    true,
+                    &helper_package,
+                    payload_sites.clone(),
+                )
+                .0
+            } else {
+                String::new()
+            };
             let reject = self.deallocate_lists_and_own(
                 std::slice::from_ref(result_type),
                 &[String::from("elem_ptr")],
@@ -1307,12 +1327,16 @@ impl<'a> InterfaceGenerator<'a> {
                 &helper_package,
                 payload_sites.clone(),
             );
-            let lift_list = self.list_lift_from_memory(
-                "ptr",
-                "length",
-                &format!("wasm{symbol_name}Lift"),
-                result_type,
-            );
+            let lift_list = if needs_list_lift {
+                self.list_lift_from_memory(
+                    "ptr",
+                    "length",
+                    &format!("wasm{symbol_name}Lift"),
+                    result_type,
+                )
+            } else {
+                String::new()
+            };
             let malloc = self.malloc_memory("ptr", "length", result_type);
             self.ffi_imports.insert(ffi::FREE);
             EndpointPayloadFragments {
@@ -1331,7 +1355,7 @@ impl<'a> InterfaceGenerator<'a> {
                 lift_result: String::new(),
                 lower: "ignore((ptr, value))".into(),
                 malloc: "ignore(length)\nlet ptr = 0".into(),
-                lift_list: "ignore(ptr)\nFixedArray::make(length, Unit::default())".into(),
+                lift_list: "ignore(ptr)\nFixedArray::make(length, ())".into(),
                 commit: String::new(),
                 reject: String::new(),
                 free_outer: "ignore(ptr)".into(),
@@ -1363,8 +1387,7 @@ impl<'a> InterfaceGenerator<'a> {
             )
         };
 
-        let lift_func = (endpoint_use.lift
-            && !(matches!(site.kind, PayloadFor::Stream) && read_chunk_owns_buffer))
+        let lift_func = needs_lift
             .then(|| {
                 format!(
                     r#"
@@ -1390,7 +1413,7 @@ impl<'a> InterfaceGenerator<'a> {
                 )
             })
             .unwrap_or_default();
-        let list_lift_func = (endpoint_use.lift && matches!(site.kind, PayloadFor::Stream))
+        let list_lift_func = needs_list_lift
             .then(|| {
                 format!(
                     r#"
@@ -1419,7 +1442,8 @@ impl<'a> InterfaceGenerator<'a> {
                 )
             })
             .unwrap_or_default();
-        let drop_readable_intrinsic = (endpoint_use.lift || endpoint_use.lower)
+        let drop_readable_intrinsic = endpoint_use
+            .lift
             .then(|| {
                 format!(
                     r#"

@@ -28,7 +28,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   let leaf = @pending.Leaf::leaf()
   let future_producer_ran = Ref(false)
   let future = @async-core.Future::from(
-    async fn() {
+    fn() {
       future_producer_ran.val = true
       leaf
     },

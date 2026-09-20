@@ -3,13 +3,13 @@
 //@ pkg_config = """{ "warn-list": "-44", "import": ["test/resources/interface/imports"] }"""
 
 ///|
-let x : Map[Int, Int] = {}
+let x : Map[Int, Int] = Map([])
 
 ///|
 let x_counter : Ref[Int] = { val: 1 }
 
 ///|
-let z : Map[Int, Int] = {}
+let z : Map[Int, Int] = Map([])
 
 ///|
 let z_counter : Ref[Int] = { val: 1 }
@@ -18,7 +18,7 @@ let z_counter : Ref[Int] = { val: 1 }
 let z_dropped : Ref[UInt] = { val: 1 }
 
 ///|
-let k : Map[Int, UInt] = {}
+let k : Map[Int, UInt] = Map([])
 
 ///|
 let k_counter : Ref[Int] = { val: 1 }
@@ -120,26 +120,26 @@ pub fn KebabCase::take_owned(self : KebabCase) -> UInt {
 pub fn test_imports() -> Result[Unit, String] {
   let y = @imports.Y::y(10)
   defer y.drop()
-  guard y.get_a() == 10
+  guard! y.get_a() == 10
   y.set_a(20)
-  guard y.get_a() == 20
+  guard! y.get_a() == 20
   let y2 = @imports.Y::add(y, 20)
-  guard y2.get_a() == 40
+  guard! y2.get_a() == 40
 
   // test multiple instances
   let y1 = @imports.Y::y(1)
   defer y1.drop()
   let y2 = @imports.Y::y(2)
   defer y2.drop()
-  guard y1.get_a() == 1
-  guard y2.get_a() == 2
+  guard! y1.get_a() == 1
+  guard! y2.get_a() == 2
   y1.set_a(10)
   y2.set_a(20)
-  guard y1.get_a() == 10
-  guard y2.get_a() == 20
+  guard! y1.get_a() == 10
+  guard! y2.get_a() == 20
   let y3 = y1.add(20)
   let y4 = y2.add(30)
-  guard y3.get_a() == 30
-  guard y4.get_a() == 50
+  guard! y3.get_a() == 30
+  guard! y4.get_a() == 50
   Ok(())
 }

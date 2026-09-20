@@ -7,5 +7,5 @@ pub async fn read_stream(
 ) -> Unit {
       let _ = x.read(1) catch { _ => None }
       let _ = x.read(2) catch { _ => None }
-      let _ = x.drop() catch { _ => () }
+      x.drop()
 }

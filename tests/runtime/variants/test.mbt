@@ -21,7 +21,7 @@ pub fn roundtrip_enum(a : E1) -> E1 {
 
 ///|
 pub fn invert_bool(a : Bool) -> Bool {
-  not(a)
+  !a
 }
 
 ///|
@@ -36,9 +36,9 @@ pub fn variant_zeros(a : (Z1, Z2, Z3, Z4)) -> (Z1, Z2, Z3, Z4) {
 
 ///|
 pub fn variant_typedefs(a : UInt?, b : Bool, c : Result[UInt, Unit]) -> Unit {
-  guard a is None
-  guard b is false
-  guard c is Err(_)
+  guard! a is None
+  guard! b is false
+  guard! c is Err(_)
 
 }
 
@@ -48,8 +48,8 @@ pub fn variant_enums(
   b : Result[Unit, Unit],
   c : MyErrno
 ) -> (Bool, Result[Unit, Unit], MyErrno) {
-  guard a is true
-  guard b is Ok(_)
-  guard c is SUCCESS
+  guard! a is true
+  guard! b is Ok(_)
+  guard! c is SUCCESS
   (a, b, c)
 }
