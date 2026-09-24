@@ -666,9 +666,12 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                 drop(state);
                 break result.unwrap();
             }
+            // When yielding there's not much else to do here other than just go
+            // back and poll again -- the `callback` function will already poll
+            // the waitable set if applicable so just turn the loop and deliver
+            // an `EVENT_NONE` event.
             CallbackCode::Yield => {
-                let set = state.shared.waitable_set.try_lock().unwrap();
-                event = set.as_ref().unwrap().poll()
+                event = (EVENT_NONE, 0, 0);
             }
             CallbackCode::Wait(_) => {
                 let set = state.shared.waitable_set.try_lock().unwrap();
