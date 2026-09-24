@@ -123,6 +123,7 @@ struct TaskState<'a> {
     inter_task_wakeup: inter_task_wakeup::State,
 }
 
+#[derive(Default)]
 struct SharedTaskState {
     /// One of `SLEEP_STATE_*` indicating the current status.
     sleep_state: AtomicU32,
@@ -159,12 +160,7 @@ unsafe impl Send for CabiWaitable {}
 
 impl TaskState<'_> {
     fn new(future: BoxFuture<'_>) -> TaskState<'_> {
-        let shared = Arc::new(SharedTaskState {
-            sleep_state: AtomicU32::new(0),
-            inter_task_stream: Default::default(),
-            waitables: Default::default(),
-            waitable_set: Default::default(),
-        });
+        let shared = Arc::new(SharedTaskState::default());
         TaskState {
             waker: shared.clone().into(),
             shared,
@@ -325,12 +321,12 @@ impl TaskState<'_> {
         // The `ptr` field of `wasip3_task` is to `SharedTaskState` which is
         // what's cloned/handed out/etc.
         let shared_raw: *const SharedTaskState = &*self.shared;
-        let mut wasip3_task = cabi::wasip3_task_v2 {
+        let mut wasip3_task = cabi::wasip3_task_v3 {
             v1: cabi::wasip3_task {
                 ptr: shared_raw.cast_mut().cast(),
-                version: cabi::WASIP3_TASK_V2,
-                waitable_register: SharedTaskState::CABI_VTABLE.waitable_register,
-                waitable_unregister: SharedTaskState::CABI_VTABLE.waitable_unregister,
+                version: cabi::WASIP3_TASK_V3,
+                waitable_register: SharedTaskState::CABI_VTABLE.v2.waitable_register,
+                waitable_unregister: SharedTaskState::CABI_VTABLE.v2.waitable_unregister,
             },
             vtable: &SharedTaskState::CABI_VTABLE,
         };
@@ -339,7 +335,7 @@ impl TaskState<'_> {
         // structure, and then cast its raw pointer to the "smaller" historical
         // version, ensuring the final pointer has provenace over the entire
         // structure.
-        let wasip3_task: *mut cabi::wasip3_task_v2 = &mut wasip3_task;
+        let wasip3_task: *mut cabi::wasip3_task_v3 = &mut wasip3_task;
         let prev = unsafe { cabi::wasip3_task_set(wasip3_task.cast::<cabi::wasip3_task>()) };
         let _reset = ResetTask(prev);
 
@@ -367,11 +363,17 @@ impl Drop for TaskState<'_> {
 }
 
 impl SharedTaskState {
-    const CABI_VTABLE: cabi::wasip3_task_vtable = cabi::wasip3_task_vtable {
-        waitable_register: Self::cabi_waitable_register,
-        waitable_unregister: Self::cabi_waitable_unregister,
-        drop: Self::cabi_drop,
-        clone: Self::cabi_clone,
+    const CABI_VTABLE: cabi::wasip3_task_vtable_v3 = cabi::wasip3_task_vtable_v3 {
+        v2: cabi::wasip3_task_vtable {
+            waitable_register: Self::cabi_waitable_register,
+            waitable_unregister: Self::cabi_waitable_unregister,
+            drop: Self::cabi_drop,
+            clone: Self::cabi_clone,
+        },
+        #[cfg(feature = "async-spawn")]
+        rust_spawn: Some(Self::cabi_rust_spawn),
+        #[cfg(not(feature = "async-spawn"))]
+        rust_spawn: None,
     };
 
     /// Adds the `waitable` provided to this task's waitable set.
@@ -438,6 +440,11 @@ impl SharedTaskState {
     unsafe extern "C" fn cabi_drop(ptr: *mut c_void) {
         let mut me = unsafe { Self::cabi_to_self(ptr) };
         unsafe { ManuallyDrop::drop(&mut me) }
+    }
+
+    #[cfg(feature = "async-spawn")]
+    unsafe fn cabi_rust_spawn(_ptr: *mut c_void, task: Box<dyn Future<Output = ()>>) {
+        spawn::push(Pin::from(task))
     }
 }
 
