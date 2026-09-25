@@ -35,6 +35,7 @@ impl LanguageMethods for D {
             || config.error_context
             || name == "map.wit"
             || name == "map-in-world.wit"
+            || name == "map-named-wit-map.wit"
             || name == "issue1642.wit"
     }
 

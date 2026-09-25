@@ -1,0 +1,10 @@
+package foo:foo;
+
+interface wit-map {
+  type wit-map = map<string, u32>;
+  f: func(a: wit-map);
+}
+
+world map-named-wit-map {
+  import wit-map;
+}
