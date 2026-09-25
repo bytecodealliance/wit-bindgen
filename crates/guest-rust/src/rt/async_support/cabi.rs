@@ -201,10 +201,12 @@ pub struct wasip3_task_vtable {
 pub struct wasip3_task_vtable_v3 {
     pub v2: wasip3_task_vtable,
 
-    /// Drops and deallocates the provided pointer previously created by a
-    /// call to the `clone` callback above.
+    /// Optionally-specified hook to spawn a rust future as a task.
     ///
-    /// This must not be called on the `ptr` value within `wasip3_task::ptr` as
-    /// that's not managed with this lifetime.
+    /// This takes the `task.ptr` field as the first argument and the
+    /// task-to-spawn as the second argument. This is Rust-specific and hence
+    /// uses the "Rust" ABI. This additionally is optionally specified because
+    /// not all versions of `wit-bindgen` have support for spawning (it's a
+    /// crate feature).
     pub rust_spawn: Option<unsafe fn(ptr: *mut c_void, Box<dyn Future<Output = ()>>)>,
 }
