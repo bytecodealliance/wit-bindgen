@@ -31,7 +31,11 @@ impl LanguageMethods for D {
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        config.async_ || config.error_context || name == "map.wit" || name == "issue1642.wit"
+        config.async_
+            || config.error_context
+            || name == "map.wit"
+            || name == "map-in-world.wit"
+            || name == "issue1642.wit"
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {
