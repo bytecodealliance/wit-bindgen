@@ -25,11 +25,16 @@ public class RunnerWorldExportsImpl
             var testTask = IIImports.StartReadThenCancel(dataReader, signalReader);
             async Task WriterAsync()
             {
-                await signalWriter.Write();
+                // Make the data read ready first so that completing the signal
+                // synchronously cancels the last other operation.
                 await dataWriter.Write(4);
+                await signalWriter.Write();
             }
 
             await WriterAsync();
+            await testTask;
+            dataWriter.Dispose();
+            signalWriter.Dispose();
         }
     }
 }
