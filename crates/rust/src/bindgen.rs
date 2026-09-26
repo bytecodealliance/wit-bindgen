@@ -1004,6 +1004,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         Some((ty, return_type))
                     }
+                    _ => todo!(),
                 };
                 self.push_str("(");
                 for (i, operand) in operands.iter().enumerate() {

@@ -1034,6 +1034,7 @@ macro_rules! __export_{world_name}_impl {{
             world_id,
             wit_component::StringEncoding::UTF8,
             Some(&producers),
+            todo!(),
         )
         .unwrap();
 

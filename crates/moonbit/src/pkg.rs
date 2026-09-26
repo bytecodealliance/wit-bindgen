@@ -112,6 +112,7 @@ impl PkgResolver {
                     func.name.split(".").last().unwrap().to_moonbit_ident()
                 )
             }
+            _ => todo!(),
         }
     }
 

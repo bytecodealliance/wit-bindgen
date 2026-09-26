@@ -64,6 +64,7 @@ impl Parse for Config {
         let mut opts = Opts::default();
         let mut world = None;
         let mut source = None;
+        let mut deps = None;
         let mut features = Vec::new();
         let mut async_configured = false;
         let mut method_chaining_configured = false;
@@ -132,6 +133,7 @@ impl Parse for Config {
                     Opt::AdditionalMemberAttributes(list) => {
                         opts.additional_member_attributes = list
                     }
+                    Opt::Deps(path) => deps = path.into(),
                     Opt::With(with) => opts.with.extend(with),
                     Opt::GenerateAll => {
                         opts.generate_all = true;
@@ -193,8 +195,9 @@ impl Parse for Config {
                 )]));
             }
         }
+
         let (resolve, main_packages, files) =
-            parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
+            parse_source(&source, &deps, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
         let world = resolve
             .select_world(&main_packages, world.as_deref())
             .map_err(|e| anyhow_to_syn(call_site, e))?;
@@ -211,6 +214,7 @@ impl Parse for Config {
 /// Parse the source
 fn parse_source(
     source: &Option<Source>,
+    deps: &Option<PathBuf>,
     features: &[String],
 ) -> anyhow::Result<(Resolve, Vec<PackageId>, Vec<PathBuf>)> {
     let mut resolve = Resolve::default();
@@ -228,7 +232,11 @@ fn parse_source(
                 Ok(p) => p,
                 Err(_) => p.to_path_buf(),
             };
-            let (pkg, sources) = resolve.push_path(normalized_path)?;
+            let (pkg, sources) = if let Some(deps) = deps {
+                resolve.push_path_with_deps(&normalized_path, deps)?
+            } else {
+                resolve.push_path(&normalized_path)?
+            };
             pkgs.push(pkg);
             files.extend(sources.paths().map(|p| p.to_owned()));
         }
@@ -326,6 +334,7 @@ mod kw {
     syn::custom_keyword!(additional_derives_ignore);
     syn::custom_keyword!(additional_type_attributes);
     syn::custom_keyword!(additional_member_attributes);
+    syn::custom_keyword!(deps);
     syn::custom_keyword!(with);
     syn::custom_keyword!(generate_all);
     syn::custom_keyword!(type_section_suffix);
@@ -410,6 +419,7 @@ enum Opt {
     AdditionalDerivesIgnore(Vec<syn::LitStr>),
     AdditionalTypeAttributes(Vec<(String, String)>),
     AdditionalMemberAttributes(Vec<(String, String)>),
+    Deps(Option<PathBuf>),
     With(HashMap<String, WithOption>),
     GenerateAll,
     TypeSectionSuffix(syn::LitStr),
@@ -566,6 +576,12 @@ impl Parse for Opt {
             let fields: Punctuated<_, Token![,]> =
                 contents.parse_terminated(with_field_parse, Token![,])?;
             Ok(Opt::With(HashMap::from_iter(fields)))
+        } else if l.peek(kw::deps) {
+            input.parse::<kw::deps>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::Deps(Some(PathBuf::from(
+                input.parse::<syn::LitStr>()?.value(),
+            ))))
         } else if l.peek(kw::generate_all) {
             input.parse::<kw::generate_all>()?;
             Ok(Opt::GenerateAll)

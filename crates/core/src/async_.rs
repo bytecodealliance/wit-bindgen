@@ -109,6 +109,7 @@ impl AsyncFilterSet {
             FunctionKind::AsyncFreestanding
             | FunctionKind::AsyncMethod(_)
             | FunctionKind::AsyncStatic(_) => true,
+            _ => todo!(),
         }
     }
 

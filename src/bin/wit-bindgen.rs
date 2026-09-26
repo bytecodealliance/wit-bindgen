@@ -121,6 +121,12 @@ struct Common {
     #[clap(short, long)]
     world: Option<String>,
 
+    /// Location of the dependency directory which will be used.
+    ///
+    /// Defaults to the `deps` derictory relative to the root WIT package.
+    #[clap(long)]
+    deps: Option<PathBuf>,
+
     /// Indicates that no files are written and instead files are checked if
     /// they're up-to-date with the source files.
     #[clap(long)]
@@ -239,7 +245,11 @@ fn gen_world(
     }
     let mut main_packages = Vec::new();
     for wit in &opts.wit {
-        let (pkg, _files) = resolve.push_path(wit)?;
+        let (pkg, _files) = if let Some(deps) = &opts.deps {
+            resolve.push_path_with_deps(wit, deps)?
+        } else {
+            resolve.push_path(wit)?
+        };
         main_packages.push(pkg);
     }
     let world = resolve.select_world(&main_packages, opts.world.as_deref())?;

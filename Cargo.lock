@@ -1143,7 +1143,7 @@ name = "test-helpers"
 version = "0.0.0"
 dependencies = [
  "codegen-macro",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wit-bindgen-core",
  "wit-component",
  "wit-parser",
@@ -1361,8 +1361,7 @@ checksum = "d0094c9d281ca1ee9434e1287601ef8442cb23341b1cda917755619694814ba5"
 [[package]]
 name = "wasm-compose"
 version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aea3892e99cd163b7ac32984bbd434328928d63a9305ef1c55b1de3a42ae530"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
 dependencies = [
  "anyhow",
  "indexmap",
@@ -1372,9 +1371,9 @@ dependencies = [
  "serde_derive",
  "serde_yaml2",
  "smallvec",
- "wasm-encoder 0.259.0",
- "wasmparser 0.259.0",
- "wat",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
+ "wasmparser 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
+ "wat 1.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
 ]
 
 [[package]]
@@ -1394,7 +1393,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1d0246511d901aacf25d2dc9111f0054947de5e093fe662099e709ff7530dc3"
 dependencies = [
  "leb128fmt",
- "wasmparser 0.259.0",
+ "wasmparser 0.259.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "wasm-encoder"
+version = "0.259.0"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
+dependencies = [
+ "leb128fmt",
+ "wasmparser 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
 ]
 
 [[package]]
@@ -1419,13 +1427,12 @@ dependencies = [
 [[package]]
 name = "wasm-metadata"
 version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7bf119eb01f4a246864c10bd87c8f26c566350abb25aa4d5273c415bbab338"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
 dependencies = [
  "anyhow",
  "indexmap",
- "wasm-encoder 0.259.0",
- "wasmparser 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
+ "wasmparser 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
 ]
 
 [[package]]
@@ -1448,6 +1455,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f7c12eac7bb587801590f6a67ff0bc84d0748513864b71108e4b311cc3df694"
 dependencies = [
  "bitflags 2.13.1",
+ "indexmap",
+ "semver",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.259.0"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
+dependencies = [
+ "bitflags 2.13.1",
  "hashbrown 0.17.1",
  "indexmap",
  "semver",
@@ -1464,7 +1481,19 @@ dependencies = [
  "leb128fmt",
  "memchr",
  "unicode-width 0.2.2",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "wast"
+version = "259.0.0"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
+dependencies = [
+ "bumpalo",
+ "leb128fmt",
+ "memchr",
+ "unicode-width 0.2.2",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
 ]
 
 [[package]]
@@ -1473,7 +1502,15 @@ version = "1.259.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6eec44b0c80391b20fb7ad9ea440c72c5d382385bdf74444bb18321c425017e"
 dependencies = [
- "wast",
+ "wast 259.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "wat"
+version = "1.259.0"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
+dependencies = [
+ "wast 259.0.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
 ]
 
 [[package]]
@@ -1516,7 +1553,7 @@ dependencies = [
  "clap",
  "heck",
  "indexmap",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wasm-metadata 0.259.0",
  "wit-bindgen-core",
  "wit-component",
@@ -1529,7 +1566,7 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-bindgen-cpp",
@@ -1563,7 +1600,7 @@ dependencies = [
  "heck",
  "indexmap",
  "test-helpers",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wasm-metadata 0.259.0",
  "wit-bindgen-c",
  "wit-bindgen-core",
@@ -1594,7 +1631,7 @@ dependencies = [
  "clap",
  "heck",
  "indexmap",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wasm-metadata 0.259.0",
  "wit-bindgen-core",
  "wit-component",
@@ -1607,7 +1644,7 @@ dependencies = [
  "anyhow",
  "clap",
  "heck",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wasm-metadata 0.259.0",
  "wit-bindgen-core",
  "wit-component",
@@ -1688,9 +1725,9 @@ dependencies = [
  "wac-types",
  "wasi-preview1-component-adapter-provider",
  "wasm-compose",
- "wasm-encoder 0.259.0",
- "wasmparser 0.259.0",
- "wat",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
+ "wasmparser 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
+ "wat 1.259.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wit-bindgen-csharp",
  "wit-component",
  "wit-parser",
@@ -1699,8 +1736,7 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092f783dee3253265fcde131475055f8c275ac0176a9c0396db1dc7b5544bfb4"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
@@ -1709,18 +1745,17 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "wasm-encoder 0.259.0",
+ "wasm-encoder 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wasm-metadata 0.259.0",
- "wasmparser 0.259.0",
- "wat",
+ "wasmparser 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
+ "wat 1.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
  "wit-parser",
 ]
 
 [[package]]
 name = "wit-parser"
 version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6390f4f02493ce678d509c859cf1698e38929fb75c8012a6ee2f7d6b6cb66cd7"
+source = "git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps#69a3106ac6b834fc7e231f3840895a6f5ed0cdbe"
 dependencies = [
  "anyhow",
  "hashbrown 0.17.1",
@@ -1732,7 +1767,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "unicode-ident",
- "wasmparser 0.259.0",
+ "wasmparser 0.259.0 (git+https://github.com/wpbs-rs/wasm-tools.git?branch=feat%2Fwit-file-deps)",
 ]
 
 [[package]]

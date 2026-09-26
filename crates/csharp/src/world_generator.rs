@@ -841,9 +841,14 @@ impl WorldGenerator for CSharp {
                 // intended to be used non-interactively at link time, the
                 // linker will have no additional information to resolve such
                 // ambiguity.
-                let (resolve, world) = wit_parser::decoding::decode_world(
-                    &wit_component::metadata::encode(resolve, id, self.opts.string_encoding, None)?,
-                )?;
+                let (resolve, world) =
+                    wit_parser::decoding::decode_world(&wit_component::metadata::encode(
+                        resolve,
+                        id,
+                        self.opts.string_encoding,
+                        None,
+                        todo!(),
+                    )?)?;
                 let pkg = resolve.worlds[world].package.unwrap();
 
                 let mut printer = WitPrinter::default();

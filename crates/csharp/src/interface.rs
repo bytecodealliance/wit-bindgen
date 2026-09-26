@@ -496,6 +496,7 @@ impl InterfaceGenerator<'_> {
             FunctionKind::Constructor(id) => {
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case()
             }
+            _ => todo!(),
         };
 
         let access = self.csharp_gen.access_modifier();
@@ -851,6 +852,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             FunctionKind::Constructor(id) => {
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case()
             }
+            _ => todo!(),
         };
 
         let modifiers = modifiers(func, &camel_name, Direction::Export);
@@ -1579,6 +1581,7 @@ var {async_status_var} = {raw_name}({wasm_params});
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
                 "",
             ),
+            _ => todo!(),
         };
 
         let access = self.csharp_gen.access_modifier();

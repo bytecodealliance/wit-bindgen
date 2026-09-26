@@ -950,6 +950,7 @@ impl CppInterfaceGenerator<'_> {
             FunctionKind::AsyncFreestanding => todo!(),
             FunctionKind::AsyncMethod(_id) => todo!(),
             FunctionKind::AsyncStatic(_id) => todo!(),
+            _ => todo!(),
         }
         .map(|i| {
             let ty = &self.resolve.types[*i];
@@ -1434,6 +1435,7 @@ impl CppInterfaceGenerator<'_> {
                             FunctionKind::AsyncFreestanding => todo!(),
                             FunctionKind::AsyncMethod(_id) => todo!(),
                             FunctionKind::AsyncStatic(_id) => todo!(),
+                            _ => todo!(),
                         }]
                         .clone();
                         let mut namespace = namespace(
@@ -2010,6 +2012,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     FunctionKind::AsyncFreestanding => todo!(),
                     FunctionKind::AsyncMethod(_id) => todo!(),
                     FunctionKind::AsyncStatic(_id) => todo!(),
+                    _ => todo!(),
                 } {
                     self.generate_function(func, &TypeOwner::Interface(intf), variant);
                     // For non-fallible constructors on export side, generate a New allocator method
