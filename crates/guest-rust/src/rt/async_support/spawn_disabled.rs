@@ -7,6 +7,10 @@ use core::task::{Context, Poll};
 pub struct Spawned;
 
 impl Spawned {
+    pub fn detached() -> Spawned {
+        Spawned
+    }
+
     pub fn take(&self) {}
 }
 

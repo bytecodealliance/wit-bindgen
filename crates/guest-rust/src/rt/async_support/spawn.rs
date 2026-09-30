@@ -17,18 +17,49 @@ use futures::stream::{FuturesUnordered, StreamExt};
 #[derive(Default)]
 pub struct Spawned {
     queue: TryLock<Vec<BoxFuture<'static>>>,
+    /// The task that `push` spawns tasks onto instead of queueing them, if
+    /// set. Null if no task enclosed the `block_on_detached` call.
+    forward_to: Option<*mut cabi::wasip3_task>,
 }
 
-// Note: the queued futures are `!Send`. Component model threads never run in
-// parallel, and only switch inside built-ins such as `waitable-set.wait`, none
-// of which are called while `queue` is locked. Futures are only pushed and
-// polled on the thread that polls the task.
+// Note: the queued futures are `!Send`, and `forward_to` is a raw pointer.
+// Component model threads never run in parallel, and only switch inside
+// built-ins such as `waitable-set.wait`, none of which are called while `queue`
+// is locked. Futures are only pushed and polled, and `forward_to` is only
+// used, on the thread that polls the task.
 unsafe impl Send for Spawned {}
 unsafe impl Sync for Spawned {}
 
 impl Spawned {
-    pub fn push(&self, task: BoxFuture<'static>) {
-        self.queue.try_lock().unwrap().push(task);
+    /// Returns a `Spawned` for a `block_on_detached` call, which spawns tasks
+    /// onto the current task.
+    ///
+    /// The current task must outlive the `block_on_detached` call.
+    pub fn detached() -> Spawned {
+        let current = unsafe {
+            let task = cabi::wasip3_task_set(ptr::null_mut());
+            cabi::wasip3_task_set(task);
+            task
+        };
+        Spawned {
+            queue: Default::default(),
+            forward_to: Some(current),
+        }
+    }
+
+    pub fn push(&self, task: Box<dyn Future<Output = ()>>) {
+        let Some(parent) = self.forward_to else {
+            self.queue.try_lock().unwrap().push(Pin::from(task));
+            return;
+        };
+        assert!(
+            !parent.is_null(),
+            "`spawn_local` was called in a `block_on_detached` call that no \
+             task encloses"
+        );
+        if !unsafe { spawn_onto(parent, task) } {
+            spawn_unsupported();
+        }
     }
 
     pub fn take(&self) -> Vec<BoxFuture<'static>> {
@@ -129,7 +160,8 @@ impl<'a> Tasks<'a> {
 ///   computations executing within a [`block_on`] call, however, the spawned
 ///   tasks will be executed within that scope. This notably means that for
 ///   [`block_on`] spawned tasks will prevent the [`block_on`] function from
-///   returning, even if a value is available to return. If `spawn_local` is
+///   returning, even if a value is available to return. [`block_on_detached`]
+///   spawns them onto the enclosing task instead. If `spawn_local` is
 ///   called within a component-model async task which is then terminated (e.g.
 ///   by the host) before the future resolves, awating the `JoinHandle` will return
 ///   `None`.
@@ -150,6 +182,7 @@ impl<'a> Tasks<'a> {
 /// [`JoinHandle::cancel`].
 ///
 /// [`block_on`]: crate::block_on
+/// [`block_on_detached`]: crate::block_on_detached
 /// [#1305]: https://github.com/bytecodealliance/wit-bindgen/issues/1305
 pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> JoinHandle<T> {
     let (sender, receiver) = oneshot::channel();
@@ -189,9 +222,24 @@ pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Joi
     let ok = unsafe {
         let task = cabi::wasip3_task_set(ptr::null_mut());
         assert!(!task.is_null());
+        let ok = spawn_onto(task, future);
+        cabi::wasip3_task_set(task);
+        ok
+    };
+
+    if !ok {
+        spawn_unsupported();
+    }
+    JoinHandle { receiver, abort }
+}
+
+/// Spawns `future` onto `task` through its `rust_spawn` hook. Returns `false`
+/// if `task` has no `rust_spawn` hook.
+unsafe fn spawn_onto(task: *mut cabi::wasip3_task, future: Box<dyn Future<Output = ()>>) -> bool {
+    unsafe {
         assert!((*task).version >= cabi::WASIP3_TASK_V1);
 
-        let ok = if (*task).version >= cabi::WASIP3_TASK_V3 {
+        if (*task).version >= cabi::WASIP3_TASK_V3 {
             let task = task.cast::<cabi::wasip3_task_v3>();
             match (*task).vtable.rust_spawn {
                 Some(f) => {
@@ -202,20 +250,17 @@ pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Joi
             }
         } else {
             false
-        };
-        cabi::wasip3_task_set(task);
-        ok
-    };
-
-    if !ok {
-        panic!(
-            "failed to `spawn_local` because there's a different version of \
-             the `wit-bindgen` crate running the export than this \
-             `wit-bindgen` crate and that one is either too old \
-             or has the `async-spawn` feature disabled"
-        );
+        }
     }
-    JoinHandle { receiver, abort }
+}
+
+fn spawn_unsupported() -> ! {
+    panic!(
+        "failed to `spawn_local` because there's a different version of \
+         the `wit-bindgen` crate running the export than this \
+         `wit-bindgen` crate and that one is either too old \
+         or has the `async-spawn` feature disabled"
+    );
 }
 
 /// A handle to a spawned task which can be awaited for its result.

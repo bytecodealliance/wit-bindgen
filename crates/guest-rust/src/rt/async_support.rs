@@ -162,8 +162,11 @@ struct CabiWaitable {
 unsafe impl Send for CabiWaitable {}
 
 impl<'a> TaskState<'a> {
-    fn new(future: impl Future<Output = ()> + 'a) -> TaskState<'a> {
-        let shared = Arc::new(SharedTaskState::default());
+    fn new(future: impl Future<Output = ()> + 'a, spawned: spawn::Spawned) -> TaskState<'a> {
+        let shared = Arc::new(SharedTaskState {
+            spawned,
+            ..Default::default()
+        });
         TaskState {
             waker: shared.clone().into(),
             shared,
@@ -457,7 +460,7 @@ impl SharedTaskState {
     #[cfg(feature = "async-spawn")]
     unsafe fn cabi_rust_spawn(ptr: *mut c_void, task: Box<dyn Future<Output = ()>>) {
         let me = unsafe { Self::cabi_to_self(ptr) };
-        me.spawned.push(Pin::from(task))
+        me.spawned.push(task)
     }
 }
 
@@ -615,7 +618,7 @@ mod task_state {
 pub fn start_task(task: impl Future<Output = ()> + 'static) -> i32 {
     // Allocate a new `TaskState` which will track all state necessary for
     // our exported task.
-    let state = Box::into_raw(Box::new(TaskState::new(task)));
+    let state = Box::into_raw(Box::new(TaskState::new(task, Default::default())));
 
     // Store our `TaskState` into our context-local-storage slot and then
     // pretend we got EVENT_NONE to kick off everything.
@@ -668,10 +671,28 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
 /// This uses `waitable-set.wait` to poll for progress on any in-progress calls
 /// to async-lowered imports as necessary.
 pub fn block_on<T>(future: impl Future<Output = T>) -> T {
+    block_on_with(future, Default::default())
+}
+
+/// Like [`block_on`], but tasks spawned with `spawn_local` during the call are
+/// spawned onto the task that encloses the call, and that task's executor runs
+/// them after this returns.
+///
+/// `spawn_local` panics if no task encloses the call, or if that task's
+/// executor can't spawn tasks. If `future` awaits the `JoinHandle` of a task
+/// spawned during the call, this call never returns.
+pub fn block_on_detached<T>(future: impl Future<Output = T>) -> T {
+    block_on_with(future, spawn::Spawned::detached())
+}
+
+fn block_on_with<T>(future: impl Future<Output = T>, spawned: spawn::Spawned) -> T {
     let mut result = None;
-    let mut state = TaskState::new(async {
-        result = Some(future.await);
-    });
+    let mut state = TaskState::new(
+        async {
+            result = Some(future.await);
+        },
+        spawned,
+    );
     let mut event = (EVENT_NONE, 0, 0);
     loop {
         match state.callback(event.0, event.1, event.2) {

@@ -913,7 +913,7 @@ pub use rt::async_support::{
     FutureWriteError, FutureWriter, RawFutureRead, RawFutureReader, RawFutureWrite,
     RawFutureWriter, RawStreamRead, RawStreamReader, RawStreamWrite, RawStreamWriter, StreamOps,
     StreamRead, StreamReader, StreamResult, StreamWrite, StreamWriter, backpressure_dec,
-    backpressure_inc, block_on, yield_async, yield_blocking,
+    backpressure_inc, block_on, block_on_detached, yield_async, yield_blocking,
 };
 #[cfg(feature = "async-spawn")]
 pub use rt::async_support::{JoinHandle, spawn_local};

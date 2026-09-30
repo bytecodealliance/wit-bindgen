@@ -2,7 +2,7 @@ include!(env!("BINDINGS"));
 
 use std::cell::Cell;
 use std::rc::Rc;
-use wit_bindgen::{block_on, spawn_local};
+use wit_bindgen::{block_on, block_on_detached, spawn_local};
 
 struct Component;
 
@@ -26,5 +26,15 @@ impl Guest for Component {
 
         before.await;
         assert_eq!(ran.get(), 1);
+
+        let during = block_on_detached(async {
+            let during = spawn_local(count());
+            foo::hi().await;
+            during
+        });
+        assert_eq!(ran.get(), 1, "`block_on_detached` ran a task spawned in it");
+
+        during.await;
+        assert_eq!(ran.get(), 2);
     }
 }
