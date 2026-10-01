@@ -3257,7 +3257,7 @@ mod tests {
     }
 
     #[test]
-    fn async_filters_respect_import_export_direction() {
+    fn sync_filters_respect_import_export_direction() {
         // The world both imports and exports `run` so that each directional
         // filter below matches something; an unmatched filter is now an error
         // (see `AsyncFilterSet::ensure_all_used`), which would mask what this
@@ -3265,8 +3265,8 @@ mod tests {
         let wit = r#"
             package a:b;
             world runner {
-                import run: func();
-                export run: func();
+                import run: async func();
+                export run: async func();
             }
         "#;
 
@@ -3278,8 +3278,9 @@ mod tests {
         let import_files = try_generate_with_opts(wit, "runner", import_opts).unwrap();
         let import = file(&import_files, "world/runner/import.mbt");
         let import_ffi = file(&import_files, "world/runner/ffi_import.mbt");
-        assert!(import.contains("pub async fn run("), "{import}");
-        assert!(import_ffi.contains("[async-lower]run"), "{import_ffi}");
+        assert!(import.contains("pub fn run("), "{import}");
+        assert!(!import.contains("pub async fn run("), "{import}");
+        assert!(!import_ffi.contains("[async-lower]run"), "{import_ffi}");
 
         let mut export_opts = Opts {
             gen_dir: "gen".into(),
@@ -3289,9 +3290,8 @@ mod tests {
         let export_files = try_generate_with_opts(wit, "runner", export_opts).unwrap();
         let import = file(&export_files, "world/runner/import.mbt");
         let import_ffi = file(&export_files, "world/runner/ffi_import.mbt");
-        assert!(import.contains("pub fn run("), "{import}");
-        assert!(!import.contains("pub async fn run("), "{import}");
-        assert!(!import_ffi.contains("[async-lower]run"), "{import_ffi}");
+        assert!(import.contains("pub async fn run("), "{import}");
+        assert!(import_ffi.contains("[async-lower]run"), "{import_ffi}");
     }
 
     #[test]

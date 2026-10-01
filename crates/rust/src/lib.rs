@@ -1225,7 +1225,7 @@ impl WorldGenerator for RustWasm {
             );
         }
         for opt in self.opts.async_.debug_opts() {
-            uwriteln!(self.src_preamble, "//   * async: {opt}");
+            uwriteln!(self.src_preamble, "//   * sync: {opt}");
         }
         for opt in self.opts.chainable_methods.debug_opts() {
             uwriteln!(self.src_preamble, "//   * chainable-methods: {opt}");
