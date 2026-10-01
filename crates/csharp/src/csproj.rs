@@ -12,6 +12,7 @@ pub struct CSProjectLLVMBuilder {
     clean_targets: bool,
     world_name: String,
     binary: bool,
+    skip_wit_component: bool,
 }
 
 pub struct CSProjectMonoBuilder {
@@ -31,6 +32,7 @@ impl CSProject {
             clean_targets: false,
             world_name: world_name.to_string(),
             binary: false,
+            skip_wit_component: false,
         }
     }
 
@@ -69,6 +71,14 @@ impl CSProjectLLVMBuilder {
             "<OutputType>Library</OutputType>"
         };
 
+        let component_type_linker_arg = if self.skip_wit_component {
+            "<CustomLinkerArg Include=\"-Wl,--skip-wit-component\" />".to_string()
+        } else {
+            format!(
+                "<CustomLinkerArg Include=\"-Wl,--component-type,{camel}_component_type.wit\" />"
+            )
+        };
+
         let mut csproj = format!(
             "<Project Sdk=\"Microsoft.NET.Sdk\">
 
@@ -94,7 +104,7 @@ impl CSProjectLLVMBuilder {
         </ItemGroup>
 
         <ItemGroup>
-            <CustomLinkerArg Include=\"-Wl,--component-type,{camel}_component_type.wit\" />
+            {component_type_linker_arg}
         </ItemGroup>
         "
         );
@@ -176,6 +186,10 @@ impl CSProjectLLVMBuilder {
 
     pub fn binary(&mut self) {
         self.binary = true;
+    }
+
+    pub fn skip_wit_component(&mut self) {
+        self.skip_wit_component = true;
     }
 
     pub fn clean(&mut self) -> &mut Self {
