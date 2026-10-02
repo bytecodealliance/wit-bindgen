@@ -1,0 +1,35 @@
+package test:accessors;
+
+interface i {
+  counter: get() -> u32;
+  counter: set(value: u32);
+
+  read-only: get() -> string;
+
+  bounded: get() -> u32;
+  bounded: set(value: u32) -> result<_, string>;
+
+  resource blob {
+    constructor(init: list<u8>);
+    contents: func() -> list<u8>;
+
+    position: get() -> u64;
+    position: set(value: u64);
+
+    label: get() -> string;
+    label: set(value: string) -> result<_, string>;
+
+    max-size: static get() -> u64;
+    max-size: static set(value: u64) -> result<_, string>;
+  }
+}
+
+world runner {
+  import i;
+
+  export run: func();
+}
+
+world test {
+  export i;
+}
