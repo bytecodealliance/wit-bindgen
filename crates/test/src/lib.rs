@@ -1090,7 +1090,7 @@ status: {}",
     /// Converts the list of dynamic libraries in `dylibs` into a component and places it
     /// in the destination specified by `compile`.
     ///
-    /// This is similar to `convert_p1_to_component` except usese a
+    /// This is similar to `convert_core_module_to_component` except uses a
     /// `wit_component::Linker` instead of a `wit_component::ComponentEncoder`.
     fn link_dylibs_to_component(&self, dylibs: &[PathBuf], compile: &Compile<'_>) -> Result<()> {
         let mut linker = wit_component::Linker::default();
@@ -1110,17 +1110,19 @@ status: {}",
         Ok(())
     }
 
-    /// Converts the WASIp1 module at `p1` to a component using the information
-    /// stored within `compile`.
+    /// Converts the core module at `path` (wasip1 or otherwise) to a component
+    /// using the information stored within `compile`. Can handle both wasip1
+    /// modules and modules built with components in mind (e.g. those built
+    /// with --skip-wit-component in wasm-component-ld).
     ///
     /// Stores the output at `compile.output`.
-    fn convert_p1_to_component(&self, p1: &Path, compile: &Compile<'_>) -> Result<()> {
+    fn convert_core_module_to_component(&self, path: &Path, compile: &Compile<'_>) -> Result<()> {
         let mut resolve = wit_parser::Resolve::default();
         let (pkg, _) = resolve
             .push_path(&compile.component.bindgen.wit_path)
             .context("failed to load WIT")?;
         let world = resolve.select_world(&[pkg], Some(&compile.component.bindgen.world))?;
-        let mut module = fs::read(&p1).context("failed to read wasm file")?;
+        let mut module = fs::read(&path).context("failed to read wasm file")?;
 
         if !has_component_type_sections(&module) {
             let encoded = wit_component::metadata::encode(
