@@ -189,7 +189,7 @@ func main() {}
                 .arg("-ldflags=-checklinkname=0"),
         )?;
 
-        runner.convert_p1_to_component(&output, compile)?;
+        runner.convert_core_module_to_component(&output, compile)?;
 
         Ok(())
     }
