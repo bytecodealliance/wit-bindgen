@@ -675,6 +675,12 @@ impl WorldGenerator for D {
                                     r#gen.export_func(func);
                                 }
                             }
+                            FunctionKind::Getter
+                            | FunctionKind::Setter
+                            | FunctionKind::MethodGetter(_)
+                            | FunctionKind::MethodSetter(_)
+                            | FunctionKind::StaticGetter(_)
+                            | FunctionKind::StaticSetter(_) => todo!(),
                         }
                     }
 
@@ -904,6 +910,7 @@ impl WorldGenerator for D {
                 world_id,
                 wit_component::StringEncoding::UTF8,
                 Some(&producers),
+                false,
             )
             .unwrap();
 
@@ -1238,9 +1245,13 @@ impl<'a> DInterfaceGenerator<'a> {
 
             FunctionKind::AsyncFreestanding
             | FunctionKind::AsyncMethod(_)
-            | FunctionKind::AsyncStatic(_) => {
-                todo!()
-            }
+            | FunctionKind::AsyncStatic(_)
+            | FunctionKind::Getter
+            | FunctionKind::Setter
+            | FunctionKind::MethodGetter(_)
+            | FunctionKind::MethodSetter(_)
+            | FunctionKind::StaticGetter(_)
+            | FunctionKind::StaticSetter(_) => todo!(),
         }
 
         let mut res = DSig::default();
@@ -1252,6 +1263,12 @@ impl<'a> DInterfaceGenerator<'a> {
             | FunctionKind::Static(_)
             | FunctionKind::AsyncMethod(_)
             | FunctionKind::AsyncStatic(_) => func.name.split(".").skip(1).next().unwrap(),
+            FunctionKind::Getter
+            | FunctionKind::Setter
+            | FunctionKind::MethodGetter(_)
+            | FunctionKind::MethodSetter(_)
+            | FunctionKind::StaticGetter(_)
+            | FunctionKind::StaticSetter(_) => todo!(),
         };
 
         let lower_name = split_name.to_lower_camel_case();
@@ -1832,7 +1849,13 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                                 FunctionKind::Constructor(mid) => *mid == id,
                                 FunctionKind::AsyncFreestanding => false,
                                 FunctionKind::AsyncMethod(_) => false,
-                                FunctionKind::AsyncStatic(_) => todo!(),
+                                FunctionKind::AsyncStatic(_)
+                                | FunctionKind::Getter
+                                | FunctionKind::Setter
+                                | FunctionKind::MethodGetter(_)
+                                | FunctionKind::MethodSetter(_)
+                                | FunctionKind::StaticGetter(_)
+                                | FunctionKind::StaticSetter(_) => todo!(),
                             } {
                                 self.import_func(func);
                             }
@@ -1849,7 +1872,13 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                                         FunctionKind::Constructor(mid) => *mid == id,
                                         FunctionKind::AsyncFreestanding => false,
                                         FunctionKind::AsyncMethod(_) => false,
-                                        FunctionKind::AsyncStatic(_) => todo!(),
+                                        FunctionKind::AsyncStatic(_)
+                                        | FunctionKind::Getter
+                                        | FunctionKind::Setter
+                                        | FunctionKind::MethodGetter(_)
+                                        | FunctionKind::MethodSetter(_)
+                                        | FunctionKind::StaticGetter(_)
+                                        | FunctionKind::StaticSetter(_) => todo!(),
                                     } {
                                         self.import_func(func);
                                     }
@@ -1920,8 +1949,14 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                                 FunctionKind::Static(_) => false,
                                 FunctionKind::Constructor(_) => false,
                                 FunctionKind::AsyncFreestanding => false,
-                                FunctionKind::AsyncMethod(_) => todo!(),
                                 FunctionKind::AsyncStatic(_) => false,
+                                FunctionKind::AsyncMethod(_)
+                                | FunctionKind::Getter
+                                | FunctionKind::Setter
+                                | FunctionKind::MethodGetter(_)
+                                | FunctionKind::MethodSetter(_)
+                                | FunctionKind::StaticGetter(_)
+                                | FunctionKind::StaticSetter(_) => todo!(),
                             } {
                                 self.import_func(func);
                             }
@@ -1937,8 +1972,14 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                                         FunctionKind::Static(_) => false,
                                         FunctionKind::Constructor(_) => false,
                                         FunctionKind::AsyncFreestanding => false,
-                                        FunctionKind::AsyncMethod(_) => todo!(),
                                         FunctionKind::AsyncStatic(_) => false,
+                                        FunctionKind::AsyncMethod(_)
+                                        | FunctionKind::Getter
+                                        | FunctionKind::Setter
+                                        | FunctionKind::MethodGetter(_)
+                                        | FunctionKind::MethodSetter(_)
+                                        | FunctionKind::StaticGetter(_)
+                                        | FunctionKind::StaticSetter(_) => todo!(),
                                     } {
                                         self.import_func(func);
                                     }
@@ -3398,6 +3439,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     | FunctionKind::Static(_)
                     | FunctionKind::AsyncMethod(_)
                     | FunctionKind::AsyncStatic(_) => func.name.split(".").skip(1).next().unwrap(),
+                    FunctionKind::Getter
+                    | FunctionKind::Setter
+                    | FunctionKind::MethodGetter(_)
+                    | FunctionKind::MethodSetter(_)
+                    | FunctionKind::StaticGetter(_)
+                    | FunctionKind::StaticSetter(_) => todo!(),
                 };
 
                 let lower_name = split_name.to_lower_camel_case();
@@ -3422,6 +3469,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         ));
                         true
                     }
+                    FunctionKind::Getter
+                    | FunctionKind::Setter
+                    | FunctionKind::MethodGetter(_)
+                    | FunctionKind::MethodSetter(_)
+                    | FunctionKind::StaticGetter(_)
+                    | FunctionKind::StaticSetter(_) => todo!(),
                 };
                 self.src.push_str(
                     &operands

@@ -560,7 +560,10 @@ impl WorldGenerator for Cpp {
                 r#gen.types(id);
 
                 for (_name, func) in resolve.interfaces[id].functions.iter() {
-                    if matches!(func.kind, FunctionKind::Freestanding) {
+                    if matches!(
+                        func.kind,
+                        FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+                    ) {
                         r#gen.r#gen.h_src.change_namespace(&namespace);
                         r#gen.generate_function(
                             func,
@@ -616,7 +619,10 @@ impl WorldGenerator for Cpp {
         r#gen.types(id);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
+            if matches!(
+                func.kind,
+                FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+            ) {
                 r#gen.r#gen.h_src.change_namespace(&namespace);
                 r#gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestExport);
             }
@@ -641,7 +647,10 @@ impl WorldGenerator for Cpp {
         let namespace = namespace(resolve, &TypeOwner::World(world), false, &*r#gen.r#gen);
 
         for (_name, func) in funcs.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
+            if matches!(
+                func.kind,
+                FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+            ) {
                 r#gen.r#gen.h_src.change_namespace(&namespace);
                 r#gen.generate_function(func, &TypeOwner::World(world), AbiVariant::GuestImport);
             }
@@ -662,7 +671,10 @@ impl WorldGenerator for Cpp {
         let namespace = namespace(resolve, &TypeOwner::World(world), true, &*r#gen.r#gen);
 
         for (_name, func) in funcs.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
+            if matches!(
+                func.kind,
+                FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+            ) {
                 r#gen.r#gen.h_src.change_namespace(&namespace);
                 r#gen.generate_function(func, &TypeOwner::World(world), AbiVariant::GuestExport);
             }
@@ -944,8 +956,14 @@ impl CppInterfaceGenerator<'_> {
     ) -> (Vec<String>, String) {
         let (object, owner) = match &func.kind {
             FunctionKind::Freestanding => None,
+            FunctionKind::Getter => None,
+            FunctionKind::Setter => None,
             FunctionKind::Method(i) => Some(i),
+            FunctionKind::MethodGetter(i) => Some(i),
+            FunctionKind::MethodSetter(i) => Some(i),
             FunctionKind::Static(i) => Some(i),
+            FunctionKind::StaticGetter(i) => Some(i),
+            FunctionKind::StaticSetter(i) => Some(i),
             FunctionKind::Constructor(i) => Some(i),
             FunctionKind::AsyncFreestanding => todo!(),
             FunctionKind::AsyncMethod(_id) => todo!(),
@@ -963,7 +981,10 @@ impl CppInterfaceGenerator<'_> {
         ));
         let mut namespace = namespace(self.resolve, &owner, guest_export, &*self.r#gen);
         let is_drop = is_special_method(func);
-        let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
+        let func_name_h = if !matches!(
+            &func.kind,
+            FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+        ) {
             namespace.push(object.clone());
             if let FunctionKind::Constructor(_i) = &func.kind {
                 // Fallible constructors return result<T, E> and are static factory methods
@@ -990,11 +1011,18 @@ impl CppInterfaceGenerator<'_> {
                     SpecialMethod::ResourceNew => "ResourceNew".to_string(),
                     SpecialMethod::ResourceRep => "ResourceRep".to_string(),
                     SpecialMethod::Allocate => "New".to_string(),
-                    SpecialMethod::None => func.item_name().to_pascal_case(),
+                    SpecialMethod::None => match &func.kind {
+                        FunctionKind::MethodSetter(_) | FunctionKind::StaticSetter(_) => {
+                            format!("set-{}", func.item_name()).to_pascal_case()
+                        }
+                        _ => func.item_name().to_pascal_case(),
+                    },
                 }
             }
+        } else if let FunctionKind::Setter = &func.kind {
+            format!("set-{}", func.item_name()).to_pascal_case()
         } else {
-            func.name.to_pascal_case()
+            func.item_name().to_pascal_case()
         };
         (namespace, func_name_h)
     }
@@ -1152,7 +1180,10 @@ impl CppInterfaceGenerator<'_> {
                 res.post_return = true;
             }
         }
-        if (matches!(func.kind, FunctionKind::Static(_)) || is_fallible_constructor)
+        if (matches!(
+            func.kind,
+            FunctionKind::Static(_) | FunctionKind::StaticGetter(_) | FunctionKind::StaticSetter(_)
+        ) || is_fallible_constructor)
             && !(matches!(&is_drop, SpecialMethod::ResourceDrop)
                 && matches!(abi_variant, AbiVariant::GuestImport))
         {
@@ -1167,9 +1198,13 @@ impl CppInterfaceGenerator<'_> {
         {
             if i == 0
                 && name == "self"
-                && (matches!(&func.kind, FunctionKind::Method(_))
-                    || (matches!(&is_drop, SpecialMethod::ResourceDrop)
-                        && matches!(abi_variant, AbiVariant::GuestImport)))
+                && (matches!(
+                    &func.kind,
+                    FunctionKind::Method(_)
+                        | FunctionKind::MethodGetter(_)
+                        | FunctionKind::MethodSetter(_)
+                ) || (matches!(&is_drop, SpecialMethod::ResourceDrop)
+                    && matches!(abi_variant, AbiVariant::GuestImport)))
             {
                 res.implicit_self = true;
                 continue;
@@ -1190,7 +1225,11 @@ impl CppInterfaceGenerator<'_> {
         }
         // default to non-const when exporting a method
         let import = matches!(abi_variant, AbiVariant::GuestImport);
-        if matches!(func.kind, FunctionKind::Method(_)) && import {
+        if matches!(
+            func.kind,
+            FunctionKind::Method(_) | FunctionKind::MethodGetter(_) | FunctionKind::MethodSetter(_)
+        ) && import
+        {
             res.const_member = true;
         }
         res
@@ -1418,7 +1457,10 @@ impl CppInterfaceGenerator<'_> {
                 SpecialMethod::Allocate => unreachable!(),
                 SpecialMethod::None => {
                     // normal methods
-                    let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
+                    let namespace = if matches!(
+                        func.kind,
+                        FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+                    ) {
                         namespace(
                             self.resolve,
                             owner,
@@ -1428,9 +1470,15 @@ impl CppInterfaceGenerator<'_> {
                     } else {
                         let owner = &self.resolve.types[match &func.kind {
                             FunctionKind::Static(id) => *id,
+                            FunctionKind::StaticGetter(id) => *id,
+                            FunctionKind::StaticSetter(id) => *id,
                             FunctionKind::Constructor(id) => *id,
                             FunctionKind::Method(id) => *id,
+                            FunctionKind::MethodGetter(id) => *id,
+                            FunctionKind::MethodSetter(id) => *id,
                             FunctionKind::Freestanding => unreachable!(),
+                            FunctionKind::Getter => unreachable!(),
+                            FunctionKind::Setter => unreachable!(),
                             FunctionKind::AsyncFreestanding => todo!(),
                             FunctionKind::AsyncMethod(_id) => todo!(),
                             FunctionKind::AsyncStatic(_id) => todo!(),
@@ -2004,8 +2052,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             for func in funcs {
                 if match &func.kind {
                     FunctionKind::Freestanding => false,
+                    FunctionKind::Getter => false,
+                    FunctionKind::Setter => false,
                     FunctionKind::Method(mid) => *mid == id,
+                    FunctionKind::MethodGetter(mid) => *mid == id,
+                    FunctionKind::MethodSetter(mid) => *mid == id,
                     FunctionKind::Static(mid) => *mid == id,
+                    FunctionKind::StaticGetter(mid) => *mid == id,
+                    FunctionKind::StaticSetter(mid) => *mid == id,
                     FunctionKind::Constructor(mid) => *mid == id,
                     FunctionKind::AsyncFreestanding => todo!(),
                     FunctionKind::AsyncMethod(_id) => todo!(),
@@ -3417,7 +3471,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // dbg!(func);
                 self.let_results(if func.result.is_some() { 1 } else { 0 }, results);
                 let (namespace, func_name_h) = self.r#gen.func_namespace_name(func, true, true);
-                if matches!(func.kind, FunctionKind::Method(_)) {
+                if matches!(
+                    func.kind,
+                    FunctionKind::Method(_)
+                        | FunctionKind::MethodGetter(_)
+                        | FunctionKind::MethodSetter(_)
+                ) {
                     let this = operands.remove(0);
                     uwrite!(self.src, "({this}).get().");
                 } else {

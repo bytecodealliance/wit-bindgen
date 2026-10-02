@@ -1123,8 +1123,13 @@ status: {}",
         let mut module = fs::read(&p1).context("failed to read wasm file")?;
 
         if !has_component_type_sections(&module) {
-            let encoded =
-                wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
+            let encoded = wit_component::metadata::encode(
+                &resolve,
+                world,
+                StringEncoding::UTF8,
+                None,
+                false,
+            )?;
             let section = wasm_encoder::CustomSection {
                 name: Cow::Borrowed("component-type"),
                 data: Cow::Borrowed(&encoded),

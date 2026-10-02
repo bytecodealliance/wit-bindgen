@@ -105,7 +105,13 @@ impl AsyncFilterSet {
             FunctionKind::Freestanding
             | FunctionKind::Method(_)
             | FunctionKind::Static(_)
-            | FunctionKind::Constructor(_) => false,
+            | FunctionKind::Constructor(_)
+            | FunctionKind::Getter
+            | FunctionKind::MethodGetter(_)
+            | FunctionKind::StaticGetter(_)
+            | FunctionKind::Setter
+            | FunctionKind::MethodSetter(_)
+            | FunctionKind::StaticSetter(_) => false,
             FunctionKind::AsyncFreestanding
             | FunctionKind::AsyncMethod(_)
             | FunctionKind::AsyncStatic(_) => true,

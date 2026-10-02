@@ -422,3 +422,142 @@ mod versioned_selectors {
         assert!(Alpha { x: 1 } < Alpha { x: 2 });
     }
 }
+
+mod accessors {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:accessors;
+
+        interface i {
+            prop: get() -> u64;
+            prop: set(value: u64);
+
+            read-only: get() -> string;
+
+            fallible: get() -> u32;
+            fallible: set(value: u32) -> result<_, string>;
+
+            %type: get() -> u32;
+            %type: set(value: u32);
+
+            get: func();
+            set: func(value: u32);
+
+            resource blob {
+                constructor();
+                position: get() -> u64;
+                position: set(value: u64);
+                label: get() -> string;
+                label: set(value: string) -> result<_, string>;
+                max-size: static get() -> u64;
+                max-size: static set(value: u64) -> result<_, string>;
+            }
+        }
+
+        world test {
+            import i;
+            export i;
+
+            import world-prop: get() -> u64;
+            import world-prop: set(value: u64);
+            export other-prop: get() -> string;
+            export other-prop: set(value: string) -> result<_, string>;
+        }
+        "#,
+        generate_all,
+    });
+
+    fn use_imports() {
+        use test::accessors::i::*;
+
+        let _: u64 = prop();
+        let _: () = set_prop(1);
+        let _: String = read_only();
+        let _: u32 = fallible();
+        let _: Result<(), String> = set_fallible(1);
+        let _: u32 = type_();
+        let _: () = set_type(1);
+        let _: () = get();
+        let _: () = set(1);
+
+        let b = Blob::new();
+        let _: u64 = b.position();
+        let _: () = b.set_position(1);
+        let _: String = b.label();
+        let _: Result<(), String> = b.set_label("x");
+        let _: u64 = Blob::max_size();
+        let _: Result<(), String> = Blob::set_max_size(1);
+
+        let _: u64 = world_prop();
+        let _: () = set_world_prop(1);
+    }
+
+    struct Component;
+
+    impl Guest for Component {
+        fn other_prop() -> String {
+            todo!()
+        }
+        fn set_other_prop(value: String) -> Result<(), String> {
+            todo!()
+        }
+    }
+
+    impl exports::test::accessors::i::Guest for Component {
+        type Blob = MyBlob;
+
+        fn prop() -> u64 {
+            todo!()
+        }
+        fn set_prop(value: u64) {
+            todo!()
+        }
+        fn read_only() -> String {
+            todo!()
+        }
+        fn fallible() -> u32 {
+            todo!()
+        }
+        fn set_fallible(value: u32) -> Result<(), String> {
+            todo!()
+        }
+        fn type_() -> u32 {
+            todo!()
+        }
+        fn set_type(value: u32) {
+            todo!()
+        }
+        fn get() {
+            todo!()
+        }
+        fn set(value: u32) {
+            todo!()
+        }
+    }
+
+    struct MyBlob;
+
+    impl exports::test::accessors::i::GuestBlob for MyBlob {
+        fn new() -> MyBlob {
+            todo!()
+        }
+        fn position(&self) -> u64 {
+            todo!()
+        }
+        fn set_position(&self, value: u64) {
+            todo!()
+        }
+        fn label(&self) -> String {
+            todo!()
+        }
+        fn set_label(&self, value: String) -> Result<(), String> {
+            todo!()
+        }
+        fn max_size() -> u64 {
+            todo!()
+        }
+        fn set_max_size(value: u64) -> Result<(), String> {
+            todo!()
+        }
+    }
+}

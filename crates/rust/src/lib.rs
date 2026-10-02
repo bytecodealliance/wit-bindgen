@@ -1034,6 +1034,7 @@ macro_rules! __export_{world_name}_impl {{
             world_id,
             wit_component::StringEncoding::UTF8,
             Some(&producers),
+            false,
         )
         .unwrap();
 
@@ -1778,7 +1779,6 @@ struct FnSig {
     async_: bool,
     unsafe_: bool,
     private: bool,
-    use_item_name: bool,
     generics: Option<String>,
     self_arg: Option<String>,
     self_is_first_param: bool,
@@ -1786,7 +1786,11 @@ struct FnSig {
 
 impl FnSig {
     fn update_for_func(&mut self, func: &Function, return_self: Option<ChainingMode>) {
-        if let FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) = &func.kind {
+        if let FunctionKind::Method(_)
+        | FunctionKind::AsyncMethod(_)
+        | FunctionKind::MethodGetter(_)
+        | FunctionKind::MethodSetter(_) = &func.kind
+        {
             self.self_arg = Some(
                 match return_self {
                     Some(ChainingMode::Owning) => "self",

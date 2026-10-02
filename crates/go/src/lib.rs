@@ -1720,6 +1720,12 @@ func wasm_export_{name}({params}) {results} {{
                 let camel = func.item_name().to_upper_camel_case();
                 (format!("{ty}{camel}"), false, "".to_string())
             }
+            FunctionKind::Getter
+            | FunctionKind::Setter
+            | FunctionKind::MethodGetter(_)
+            | FunctionKind::MethodSetter(_)
+            | FunctionKind::StaticGetter(_)
+            | FunctionKind::StaticSetter(_) => todo!(),
         }
     }
 }
@@ -2048,6 +2054,12 @@ for index := 0; index < int({length}); index++ {{
                         let ty = self.type_name(resolve, Type::Id(*ty));
                         format!("{ty}{name}({args})")
                     }
+                    FunctionKind::Getter
+                    | FunctionKind::Setter
+                    | FunctionKind::MethodGetter(_)
+                    | FunctionKind::MethodSetter(_)
+                    | FunctionKind::StaticGetter(_)
+                    | FunctionKind::StaticSetter(_) => todo!(),
                 };
 
                 if let Some(ty) = func.result {

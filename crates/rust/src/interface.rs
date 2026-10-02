@@ -177,7 +177,6 @@ impl<'i> InterfaceGenerator<'i> {
             let prev = mem::take(&mut self.src);
             let mut sig = FnSig {
                 async_,
-                use_item_name: true,
                 private: true,
                 ..Default::default()
             };
@@ -843,7 +842,6 @@ pub mod vtable{ordinal} {{
             let name = self.resolve.types[id].name.as_ref().unwrap();
             let name = to_upper_camel_case(name);
             uwriteln!(self.src, "impl {name} {{");
-            sig.use_item_name = true;
             sig.update_for_func(&func, should_return_self);
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
@@ -1487,7 +1485,6 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 .is_async(self.resolve, interface.map(|p| p.1), func, false);
             let mut sig = FnSig {
                 async_,
-                use_item_name: true,
                 private: true,
                 ..Default::default()
             };
@@ -1612,16 +1609,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.push_str("async ");
         }
         self.push_str("fn ");
-        let func_name = if sig.use_item_name {
-            if let FunctionKind::Constructor(_) = &func.kind {
-                "new"
-            } else {
-                func.item_name()
-            }
-        } else {
-            func.item_name()
+        let func_name = match &func.kind {
+            FunctionKind::Constructor(_) => "new".to_string(),
+            FunctionKind::Setter
+            | FunctionKind::MethodSetter(_)
+            | FunctionKind::StaticSetter(_) => format!("set-{}", func.item_name()),
+            _ => func.item_name().to_owned(),
         };
-        self.push_str(&to_rust_ident(func_name));
+        self.push_str(&to_rust_ident(&func_name));
         if let Some(generics) = &sig.generics {
             self.push_str(generics);
         }
