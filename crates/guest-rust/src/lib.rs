@@ -894,6 +894,49 @@ extern crate std;
 /// });
 /// ```
 ///
+/// ## Native (non-WebAssembly) targets
+///
+/// Generated bindings also compile for native targets, which is useful for
+/// testing component code without a wasm runtime or for building it as a
+/// `cdylib` plugin. Native linkers don't accept the `:`, `/`, `#`, `[` and
+/// `]` characters that canonical ABI symbol names use, so on native targets
+/// symbols are hex-encoded with the scheme in
+/// `wit_bindgen_core::symbol_name` (the same one the C++ generator uses).
+///
+/// Imports are not resolved by the native linker. Each import instead calls
+/// through a function pointer looked up on first use from a host-installed
+/// resolver. After loading the library a host calls the exported
+///
+/// ```c
+/// void __wit_bindgen_set_import_resolver(
+///     void *(*resolver)(void *ctx, const char *module, const char *name),
+///     void *ctx);
+/// ```
+///
+/// with a callback mapping an import's core module and function name (e.g.
+/// `my:pkg/iface@1.0.0` and `[method]res.frob`) to a function pointer with
+/// the import's core signature, or null if the host doesn't implement it
+/// (see `wit_bindgen::rt::ImportResolver`). Everything links whether or not
+/// a host is present, and calling an import with no implementation aborts
+/// with a message naming it. Install the resolver once, before calling any
+/// export: each import caches the pointer it was given.
+///
+/// Exports, including post-return functions, async callbacks, and resource
+/// destructors, are exported under their hex-encoded core export names. The
+/// runtime crate also exports `__wit_bindgen_cabi_realloc` so hosts can
+/// allocate guest-owned memory when lowering arguments.
+///
+/// Each world additionally exports a marker
+/// `const char *__wit_bindgen_world_<world>(void)`, where `<world>` is the
+/// hex-encoded `<package>/<world><type_section_suffix>` (e.g.
+/// `my:pkg@1.0.0/my-world`), which returns that name. `dlsym` can't otherwise
+/// tell a host whether a library implements the world it expects, and calling
+/// into the wrong world corrupts memory rather than failing, so hosts should
+/// look this symbol up before anything else. The marker is keyed like the
+/// `component-type` custom section on wasm: binding the same world twice in
+/// one binary needs a `type_section_suffix` (and `export_prefix` for the
+/// export names).
+///
 /// [WIT package]: https://component-model.bytecodealliance.org/design/packages.html
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::generate;
