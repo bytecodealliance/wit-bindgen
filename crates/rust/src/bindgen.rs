@@ -973,15 +973,25 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 self.push_str(&prev_src);
                 let constructor_type = match &func.kind {
-                    FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
-                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
-                        None
-                    }
-                    FunctionKind::Method(_)
+                    FunctionKind::Freestanding
+                    | FunctionKind::AsyncFreestanding
+                    | FunctionKind::Getter
+                    | FunctionKind::Method(_)
+                    | FunctionKind::MethodGetter(_)
                     | FunctionKind::Static(_)
+                    | FunctionKind::StaticGetter(_)
                     | FunctionKind::AsyncMethod(_)
                     | FunctionKind::AsyncStatic(_) => {
                         self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
+                        None
+                    }
+                    FunctionKind::Setter
+                    | FunctionKind::MethodSetter(_)
+                    | FunctionKind::StaticSetter(_) => {
+                        self.push_str(&format!(
+                            "T_::{}",
+                            to_rust_ident(&format!("set-{}", func.item_name()))
+                        ));
                         None
                     }
                     FunctionKind::Constructor(ty) => {
@@ -1017,8 +1027,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // `&Self` since traits have `&self` as their
                     // first arguments.
                     if i == 0
-                        && (matches!(func.kind, FunctionKind::Method(_))
-                            || matches!(func.kind, FunctionKind::AsyncMethod(_)))
+                        && matches!(
+                            func.kind,
+                            FunctionKind::Method(_)
+                                | FunctionKind::AsyncMethod(_)
+                                | FunctionKind::MethodGetter(_)
+                                | FunctionKind::MethodSetter(_)
+                        )
                     {
                         self.push_str(".get()")
                     }
