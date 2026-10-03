@@ -1,4 +1,4 @@
-//@ args = '--async=-all'
+//@ args = '--sync=all'
 //@ wasmtime-flags = '-Wcomponent-model-async'
 
 include!(env!("BINDINGS"));

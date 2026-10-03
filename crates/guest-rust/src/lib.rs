@@ -860,22 +860,18 @@ extern crate std;
 ///     // the specific `generate!` call where it is used.
 ///     debug: true,
 ///
-///     // Generate async import and/or export bindings.
+///     // Generate sync bindings for functions that are `async` in WIT.
 ///     //
-///     // The resulting bindings will use the component model
-///     // [async ABI](https://github.com/WebAssembly/component-model/blob/main/design/mvp/Async.md).
-///     //
-///     // If this option is not provided then the WIT's source annotation will
-///     // be used instead.
-///     async: true,    // all bindings are async
-///     async: false,   // all bindings are sync
-///     // With an array per-function configuration can be specified. A leading
-///     // '-' will disable async for that particular function.
-///     async: [
+///     // Functions that are `async` in WIT get bindings using the component
+///     // model [async ABI](https://github.com/WebAssembly/component-model/blob/main/design/mvp/Async.md)
+///     // by default, and all other functions get sync bindings. This option
+///     // switches `async` functions back to sync bindings.
+///     sync: true,    // all bindings are sync
+///     // With an array per-function configuration can be specified.
+///     sync: [
 ///         "wasi:http/types@0.3.0-draft#[static]body.finish",
 ///         "import:wasi:http/handler@0.3.0-draft#handle",
-///         "-export:wasi:http/handler@0.3.0-draft#handle",
-///         "all",
+///         "export:wasi:http/handler@0.3.0-draft#handle",
 ///     ],
 ///
 ///     // All resource methods with empty returns are instead generated as

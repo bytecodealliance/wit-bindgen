@@ -98,11 +98,6 @@ impl LanguageMethods for Rust {
             return true;
         }
 
-        // Named fixed-length lists don't work with async yet.
-        if name == "named-fixed-length-list.wit-async" {
-            return true;
-        }
-
         false
     }
 
@@ -113,7 +108,6 @@ impl LanguageMethods for Rust {
                 "borrowed-duplicate",
                 &["--ownership=borrowing-duplicate-if-necessary"],
             ),
-            ("async", &["--async=all"]),
             ("no-std", &["--std-feature"]),
             ("merge-equal", &["--merge-structurally-equal-types"]),
             ("hashmap", &["--map-type=std::collections::HashMap"]),

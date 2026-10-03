@@ -29,7 +29,7 @@ impl LanguageMethods for MoonBit {
     }
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
-        &[("async", &["--async=all"])]
+        &[]
     }
 
     fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {
@@ -120,11 +120,11 @@ impl LanguageMethods for MoonBit {
     fn should_fail_verify(
         &self,
         _runner: &Runner,
-        name: &str,
+        _name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        name == "named-fixed-length-list.wit-async" || config.error_context
+        config.error_context
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {
