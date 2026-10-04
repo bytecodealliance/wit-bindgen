@@ -204,7 +204,7 @@ extern crate std;
 /// });
 ///
 /// // `my` and `test` are from `package my:test;` and `logging` is for the
-/// // interfac name.
+/// // interface name.
 /// use my::test::logging::Level;
 ///
 /// fn test() {
@@ -508,7 +508,7 @@ extern crate std;
 /// Components are created by having exported WebAssembly functions with
 /// specific names, and these functions are not created when `generate!` is
 /// invoked. Instead these functions are created afterwards once you've defined
-/// your own type an implemented the various `trait`s for it. The
+/// your own type and implemented the various `trait`s for it. The
 /// `#[unsafe(no_mangle)]` functions that will become the component are created
 /// with the generated `export!` macro.
 ///
