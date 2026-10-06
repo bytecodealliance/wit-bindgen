@@ -111,7 +111,7 @@ impl<K: core::hash::Hash + Eq, V> WitMap<K, V> for std::collections::HashMap<K, 
 }
 
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
-#[cfg(any(target_env = "p1", target_env = ""))]
+#[cfg(any(not(target_family = "wasm"), target_env = "p1", target_env = ""))]
 mod wit_bindgen_cabi_realloc;
 
 /// This function is called from generated bindings and will be deleted by
@@ -153,7 +153,7 @@ pub fn maybe_link_cabi_realloc() {
 /// `cabi_realloc` module above. It's otherwise never explicitly called.
 ///
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
-#[cfg(any(target_env = "p1", target_env = ""))]
+#[cfg(any(not(target_family = "wasm"), target_env = "p1", target_env = ""))]
 pub unsafe fn cabi_realloc(
     old_ptr: *mut u8,
     old_len: usize,
