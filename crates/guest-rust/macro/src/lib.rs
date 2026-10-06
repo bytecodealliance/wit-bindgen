@@ -153,7 +153,14 @@ impl Parse for Config {
                     Opt::AdditionalMemberAttributes(list) => {
                         opts.additional_member_attributes = list
                     }
-                    Opt::With(with) => opts.with.extend(with),
+                    Opt::With(with) => {
+                        // `HashMap` iteration order is non-deterministic, which can cause
+                        // non-determinism in crates that invoke the macro. Sort by key so the
+                        // output is stable.
+                        let mut with: Vec<_> = with.into_iter().collect();
+                        with.sort_by(|a, b| a.0.cmp(&b.0));
+                        opts.with.extend(with)
+                    }
                     Opt::GenerateAll => {
                         opts.generate_all = true;
                     }
