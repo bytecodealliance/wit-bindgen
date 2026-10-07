@@ -108,6 +108,7 @@ impl LanguageMethods for Rust {
                 "borrowed-duplicate",
                 &["--ownership=borrowing-duplicate-if-necessary"],
             ),
+            ("sync", &["--sync=all"]),
             ("no-std", &["--std-feature"]),
             ("merge-equal", &["--merge-structurally-equal-types"]),
             ("hashmap", &["--map-type=std::collections::HashMap"]),
