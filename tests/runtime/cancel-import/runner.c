@@ -1,4 +1,4 @@
-//@ args = '--rename my:test/i=test --async=-run'
+//@ args = '--rename my:test/i=test --sync=run'
 //@ wasmtime-flags = '-Wcomponent-model-async'
 
 #include <assert.h>

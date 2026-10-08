@@ -86,7 +86,7 @@ impl Parse for Config {
         let mut world = None;
         let mut source = None;
         let mut features = Vec::new();
-        let mut async_configured = false;
+        let mut sync_configured = false;
         let mut method_chaining_configured = false;
         let mut debug = false;
 
@@ -191,11 +191,11 @@ impl Parse for Config {
                     Opt::Debug(enable) => {
                         debug = enable.value();
                     }
-                    Opt::Async(val, span) => {
-                        if async_configured {
-                            return Err(Error::new(span, "cannot specify second async config"));
+                    Opt::Sync(val, span) => {
+                        if sync_configured {
+                            return Err(Error::new(span, "cannot specify second sync config"));
                         }
-                        async_configured = true;
+                        sync_configured = true;
                         opts.async_ = val;
                     }
                     Opt::ChainableMethods(val, span) => {
@@ -373,6 +373,7 @@ mod kw {
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
     syn::custom_keyword!(chainable_methods);
+    syn::custom_keyword!(sync);
     syn::custom_keyword!(merge_structurally_equal_types);
 }
 
@@ -454,7 +455,7 @@ enum Opt {
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
-    Async(AsyncFilterSet, Span),
+    Sync(AsyncFilterSet, Span),
     Debug(syn::LitBool),
     ChainableMethods(ChainableMethodFilterSet, Span),
     MergeStructurallyEqualTypes(syn::LitBool),
@@ -653,21 +654,29 @@ impl Parse for Opt {
                 set.push(&val.value());
             }
             Ok(Opt::ChainableMethods(set, span))
-        } else if l.peek(Token![async]) {
-            let span = input.parse::<Token![async]>()?.span;
+        } else if l.peek(kw::sync) {
+            let span = input.parse::<kw::sync>()?.span;
             input.parse::<Token![:]>()?;
+            let mut set = AsyncFilterSet::default();
             if input.peek(syn::LitBool) {
-                let enabled = input.parse::<syn::LitBool>()?.value;
-                Ok(Opt::Async(AsyncFilterSet::all(enabled), span))
+                if input.parse::<syn::LitBool>()?.value {
+                    set.push("all");
+                }
             } else {
-                let mut set = AsyncFilterSet::default();
                 let contents;
                 syn::bracketed!(contents in input);
                 for val in contents.parse_terminated(|p| p.parse::<syn::LitStr>(), Token![,])? {
                     set.push(&val.value());
                 }
-                Ok(Opt::Async(set, span))
             }
+            Ok(Opt::Sync(set, span))
+        } else if input.peek(Token![async]) {
+            let span = input.parse::<Token![async]>()?.span;
+            Err(Error::new(
+                span,
+                "the `async` option has been removed: functions that are `async` \
+                 in WIT get async bindings by default, and `sync` opts them out",
+            ))
         } else if l.peek(kw::merge_structurally_equal_types) {
             input.parse::<kw::merge_structurally_equal_types>()?;
             input.parse::<Token![:]>()?;

@@ -64,7 +64,7 @@ impl LanguageMethods for C {
         &[
             ("no-sig-flattening", &["--no-sig-flattening"]),
             ("autodrop", &["--autodrop-borrows=yes"]),
-            ("async", &["--async=all"]),
+            ("sync", &["--sync=all"]),
         ]
     }
 
