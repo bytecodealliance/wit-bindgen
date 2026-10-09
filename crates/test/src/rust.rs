@@ -316,7 +316,7 @@ path = 'lib.rs'
                 .with_context(|| format!("failed to link {output:?}"))?;
         } else {
             runner
-                .convert_p1_to_component(&output, compile)
+                .convert_core_module_to_component(&output, compile)
                 .with_context(|| format!("failed to convert {output:?}"))?;
         }
 
