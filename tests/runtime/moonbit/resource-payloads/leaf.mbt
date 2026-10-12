@@ -3,63 +3,50 @@
 //@ pkg_config = """{ "warn-list": "-44", "supported-targets": "+wasm", "import": [{ "path": "my/test/async-core", "alias": "async-core" }, { "path": "moonbitlang/core/encoding/utf8", "alias": "utf8" }] }"""
 
 ///|
-priv struct BodyState {
+struct Body {
   mut contents : @async-core.Stream[Byte]?
-  mut trailers : @async-core.Future[Fields]?
+  mut trailers : @async-core.Future[FieldsHandle]?
 }
 
 ///|
-priv struct ResponseState {
-  mut body : BodyState?
+struct Response {
+  mut body : BodyHandle?
 }
 
 ///|
-let leaf_values : Map[Int, String] = Map([])
+struct LeafThing(String)
 
 ///|
-let fields_values : Map[Int, String] = Map([])
+struct Fields(String)
 
 ///|
-let body_values : Map[Int, BodyState] = Map([])
+let leaf_drops : Ref[UInt] = { val: 0, }
 
 ///|
-let response_values : Map[Int, ResponseState] = Map([])
+let leaf_live : Ref[UInt] = { val: 0, }
 
 ///|
-let next_resource_rep : Ref[Int] = Ref(1)
+let fields_live : Ref[UInt] = { val: 0, }
 
 ///|
-let leaf_drops : Ref[UInt] = { val: 0 }
+let body_live : Ref[UInt] = { val: 0, }
 
 ///|
-let leaf_live : Ref[UInt] = { val: 0 }
-
-///|
-let fields_live : Ref[UInt] = { val: 0 }
-
-///|
-let body_live : Ref[UInt] = { val: 0 }
-
-///|
-let response_live : Ref[UInt] = { val: 0 }
+let response_live : Ref[UInt] = { val: 0, }
 
 ///|
 pub fn LeafThing::leaf_thing(value : String) -> LeafThing {
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  leaf_values[rep] = value
   leaf_live.val += 1
-  LeafThing::new(rep)
+  LeafThing(value)
 }
 
 ///|
 pub fn LeafThing::get(self : LeafThing) -> String {
-  leaf_values[self.0]
+  self.0
 }
 
 ///|
-pub fn LeafThing::dtor(self : LeafThing) -> Unit {
-  leaf_values.remove(self.0)
+fn LeafThing::dtor(_self : LeafThing) -> Unit {
   leaf_drops.val += 1
   leaf_live.val -= 1
 }
@@ -76,38 +63,31 @@ pub fn leaf_live_count() -> UInt {
 
 ///|
 pub fn Fields::fields(value : String) -> Fields {
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  fields_values[rep] = value
   fields_live.val += 1
-  Fields::new(rep)
+  Fields(value)
 }
 
 ///|
 pub fn Fields::get(self : Fields) -> String {
-  fields_values[self.0]
+  self.0
 }
 
 ///|
-pub fn Fields::dtor(self : Fields) -> Unit {
-  fields_values.remove(self.0)
+fn Fields::dtor(_self : Fields) -> Unit {
   fields_live.val -= 1
 }
 
 ///|
 pub fn Body::body(
   contents : @async-core.Stream[Byte],
-  trailers : @async-core.Future[Fields]?,
+  trailers : @async-core.Future[FieldsHandle]?,
 ) -> Body {
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  body_values[rep] = { contents: Some(contents), trailers }
   body_live.val += 1
-  Body::new(rep)
+  { contents: Some(contents), trailers, }
 }
 
 ///|
-async fn collect_body_state(state : BodyState) -> (String, String?) {
+async fn collect_body_state(state : Body) -> (String, String?) {
   guard state.contents is Some(contents) else { panic() }
   state.contents = None
 
@@ -127,7 +107,7 @@ async fn collect_body_state(state : BodyState) -> (String, String?) {
     Some(future) => {
       state.trailers = None
       let fields = future.get()
-      let value = fields_values[fields.rep()]
+      let value = fields.get()
       fields.drop()
       future.drop()
       Some(value)
@@ -142,58 +122,38 @@ pub async fn Body::collect(
   self : Body,
   _background_group : @async-core.TaskGroup[Unit],
 ) -> (String, String?) {
-  collect_body_state(body_values[self.0])
+  collect_body_state(self)
 }
 
 ///|
-pub fn Body::dtor(self : Body) -> Unit {
-  match body_values.get(self.0) {
-    Some(state) => {
-      body_values.remove(self.0)
-      guard state.contents is None && state.trailers is None else {
-        abort("test body dropped before collect")
-      }
-      body_live.val -= 1
-    }
-    None => ()
+fn Body::dtor(self : Body) -> Unit {
+  guard self.contents is None && self.trailers is None else {
+    abort("test body dropped before collect")
   }
+  body_live.val -= 1
 }
 
 ///|
-pub fn Response::response(body : Body) -> Response {
-  // Move the owned body's representation into the response before releasing
-  // its handle. The body remains live until `Response::collect` consumes it.
-  let body_rep = body.rep()
-  guard body_values.get(body_rep) is Some(body_state) else { panic() }
-  body_values.remove(body_rep)
-  body.drop()
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  response_values[rep] = { body: Some(body_state) }
+pub fn Response::response(body : BodyHandle) -> Response {
   response_live.val += 1
-  Response::new(rep)
+  { body: Some(body), }
 }
 
 ///|
 pub async fn Response::collect(
   self : Response,
-  _background_group : @async-core.TaskGroup[Unit],
+  background_group : @async-core.TaskGroup[Unit],
 ) -> (String, String?) {
-  let state = response_values[self.0]
-  guard state.body is Some(body_state) else { panic() }
-  state.body = None
-  let result = collect_body_state(body_state)
-  body_live.val -= 1
+  guard self.body is Some(body) else { panic() }
+  self.body = None
+  let result = body.collect(background_group)
+  body.drop()
   result
 }
 
 ///|
-pub fn Response::dtor(self : Response) -> Unit {
-  let state = response_values[self.0]
-  guard state.body is None else {
-    abort("test response dropped before collect")
-  }
-  response_values.remove(self.0)
+fn Response::dtor(self : Response) -> Unit {
+  guard self.body is None else { abort("test response dropped before collect") }
   response_live.val -= 1
 }
 

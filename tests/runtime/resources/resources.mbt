@@ -3,80 +3,67 @@
 //@ pkg_config = """{ "warn-list": "-44", "import": ["test/resources/interface/imports"] }"""
 
 ///|
-let x : Map[Int, Int] = Map([])
-
-///|
-let x_counter : Ref[Int] = { val: 1 }
-
-///|
-let z : Map[Int, Int] = Map([])
-
-///|
-let z_counter : Ref[Int] = { val: 1 }
-
-///|
-let z_dropped : Ref[UInt] = { val: 1 }
-
-///|
-let k : Map[Int, UInt] = Map([])
-
-///|
-let k_counter : Ref[Int] = { val: 1 }
-
-///|
-/// Destructor of the resource.
-pub fn X::dtor(self : X) -> Unit {
-  x.remove(self.0)
+struct X {
+  mut value : Int
 }
 
 ///|
-/// Destructor of the resource.
-pub fn Z::dtor(self : Z) -> Unit {
+struct Z {
+  value : Int
+}
+
+///|
+struct KebabCase {
+  value : UInt
+}
+
+///|
+let z_dropped : Ref[UInt] = Ref(1)
+
+///|
+fn X::dtor(_self : X) -> Unit {
+  ()
+}
+
+///|
+fn Z::dtor(_self : Z) -> Unit {
   z_dropped.val += 1
-  z.remove(self.0)
 }
 
 ///|
-/// Destructor of the resource.
-pub fn KebabCase::dtor(self : KebabCase) -> Unit {
-  k.remove(self.rep())
+fn KebabCase::dtor(_self : KebabCase) -> Unit {
+  ()
 }
 
 ///|
 pub fn X::x(a : Int) -> X {
-  let rep = x_counter.val
-  x_counter.val += 1
-  x[rep] = a
-  X::new(rep)
+  { value: a, }
 }
 
 ///|
 pub fn X::get_a(self : X) -> Int {
-  x[self.0]
+  self.value
 }
 
 ///|
 pub fn X::set_a(self : X, a : Int) -> Unit {
-  x[self.0] = a
+  self.value = a
 }
 
 ///|
-pub fn X::add(self : X, a : Int) -> X {
-  x[self.rep()] += a
+pub fn X::add(self : XHandle, a : Int) -> XHandle {
+  self.payload().value += a
   self
 }
 
 ///|
 pub fn Z::z(a : Int) -> Z {
-  let rep = z_counter.val
-  z_counter.val += 1
-  z[rep] = a
-  Z::new(rep)
+  { value: a, }
 }
 
 ///|
 pub fn Z::get_a(self : Z) -> Int {
-  z[self.0]
+  self.value
 }
 
 ///|
@@ -85,35 +72,29 @@ pub fn Z::num_dropped() -> UInt {
 }
 
 ///|
-pub fn add(a : Z, b : Z) -> Z {
-  let rep = z_counter.val
-  z_counter.val += 1
-  z[rep] = z[a.0] + z[b.0]
-  Z::new(rep)
+pub fn add(a : Z, b : Z) -> ZHandle {
+  ZHandle::new({ value: a.value + b.value, })
 }
 
 ///|
-pub fn consume(x : X) -> Unit {
+pub fn consume(x : XHandle) -> Unit {
   x.drop()
 }
 
 ///|
 pub fn KebabCase::kebab_case(a : UInt) -> KebabCase {
-  let rep = k_counter.val
-  k_counter.val += 1
-  k[rep] = a
-  KebabCase::new(rep)
+  { value: a, }
 }
 
 ///|
 pub fn KebabCase::get_a(self : KebabCase) -> UInt {
-  k[self.rep()]
+  self.value
 }
 
 ///|
-pub fn KebabCase::take_owned(self : KebabCase) -> UInt {
+pub fn KebabCase::take_owned(self : KebabCaseHandle) -> UInt {
   defer self.drop()
-  k[self.rep()]
+  self.payload().value
 }
 
 ///|
