@@ -5,7 +5,7 @@ use wit_bindgen_core::{
     Ns, dealias,
     wit_parser::{
         Function, FunctionKind, Handle, InterfaceId, Param, Resolve, Type, TypeDef, TypeDefKind,
-        TypeOwner, WorldId, WorldKey,
+        TypeId, TypeOwner, WorldId, WorldKey,
     },
 };
 
@@ -30,9 +30,39 @@ pub(crate) struct PkgResolver {
     pub package_import: HashMap<String, Imports>,
     pub import_interface_names: HashMap<InterfaceId, String>,
     pub export_interface_names: HashMap<InterfaceId, String>,
+    pub resource_handle_names: HashMap<TypeId, String>,
 }
 
 impl PkgResolver {
+    pub(crate) fn resource_impl_name(&mut self, this: &str, id: TypeId) -> Option<String> {
+        let id = dealias(&self.resolve, id);
+        self.resource_handle_names.get(&id)?;
+        let ty = self.resolve.types[id].clone();
+        let name = ty.name.as_ref()?.to_moonbit_type_ident();
+        Some(format!("{}{name}", self.qualifier(this, &ty)))
+    }
+
+    // WIT methods keep their names. Lifecycle and ABI helpers get a suffix when
+    // necessary, so a resource may itself have a method named `drop` or `new`.
+    pub(crate) fn resource_helper_name(&self, id: TypeId, helper: &str) -> String {
+        let id = dealias(&self.resolve, id);
+        let mut names = Ns::default();
+        if let TypeOwner::Interface(interface) = self.resolve.types[id].owner {
+            for func in self.resolve.interfaces[interface].functions.values() {
+                if func.kind.resource() == Some(id) {
+                    let name = match func.kind {
+                        FunctionKind::Constructor(_) => {
+                            func.name.replace("[constructor]", "").to_moonbit_ident()
+                        }
+                        _ => func.name.split('.').next_back().unwrap().to_moonbit_ident(),
+                    };
+                    let _ = names.insert(&name);
+                }
+            }
+        }
+        names.tmp(helper)
+    }
+
     pub(crate) fn qualify_package(&mut self, this: &str, name: &str) -> String {
         if name != this {
             let imports = self.package_import.entry(this.to_string()).or_default();
@@ -105,7 +135,9 @@ impl PkgResolver {
             | FunctionKind::Static(ty)
             | FunctionKind::AsyncMethod(ty)
             | FunctionKind::AsyncStatic(ty) => {
-                let name = self.type_constructor(this, &Type::Id(ty));
+                let name = self
+                    .resource_impl_name(this, ty)
+                    .unwrap_or_else(|| self.type_constructor(this, &Type::Id(ty)));
                 format!(
                     "{}::{}",
                     name,
@@ -125,7 +157,11 @@ impl PkgResolver {
         match ty {
             Type::ErrorContext => unimplemented!("moonbit error context type name"),
             Type::Id(id) => {
-                let ty = self.resolve.types[dealias(&self.resolve, *id)].clone();
+                let id = dealias(&self.resolve, *id);
+                let ty = self.resolve.types[id].clone();
+                if let Some(name) = self.resource_handle_names.get(&id).cloned() {
+                    return format!("{}{name}", self.qualifier(this, &ty));
+                }
                 match ty.kind {
                     TypeDefKind::Type(ty) => self.type_constructor(this, &ty),
                     TypeDefKind::Handle(handle) => {
@@ -133,16 +169,7 @@ impl PkgResolver {
                             Handle::Own(ty) => ty,
                             Handle::Borrow(ty) => ty,
                         };
-                        let ty = self.resolve.types[dealias(&self.resolve, ty)].clone();
-                        if let Some(name) = &ty.name {
-                            format!(
-                                "{}{}",
-                                self.qualifier(this, &ty),
-                                name.to_moonbit_type_ident()
-                            )
-                        } else {
-                            unreachable!()
-                        }
+                        self.type_constructor(this, &Type::Id(ty))
                     }
                     TypeDefKind::Enum(_)
                     | TypeDefKind::Resource
@@ -179,6 +206,13 @@ impl PkgResolver {
     }
 
     pub(crate) fn type_name(&mut self, this: &str, ty: &Type) -> String {
+        if let Type::Id(id) = ty
+            && let TypeDefKind::Handle(Handle::Borrow(resource)) =
+                self.resolve.types[dealias(&self.resolve, *id)].kind
+            && let Some(name) = self.resource_impl_name(this, resource)
+        {
+            return name;
+        }
         match ty {
             Type::Bool => "Bool".into(),
             Type::U8 => "Byte".into(),
@@ -240,17 +274,9 @@ impl PkgResolver {
                             Handle::Own(ty) => ty,
                             Handle::Borrow(ty) => ty,
                         };
-                        let ty = self.resolve.types[dealias(&self.resolve, ty)].clone();
-                        if let Some(name) = &ty.name {
-                            format!(
-                                "{}{}",
-                                self.qualifier(this, &ty),
-                                name.to_moonbit_type_ident()
-                            )
-                        } else {
-                            unreachable!()
-                        }
+                        self.type_constructor(this, &Type::Id(ty))
                     }
+                    TypeDefKind::Resource => self.type_constructor(this, &Type::Id(*id)),
 
                     TypeDefKind::Future(ty) => {
                         let qualifier = self.qualify_package(this, ASYNC_CORE_DIR);
@@ -330,7 +356,10 @@ impl PkgResolver {
         };
         let type_name = match func.kind.resource() {
             Some(ty) => {
-                format!("{}::", self.type_constructor(this, &Type::Id(ty)))
+                let name = self
+                    .resource_impl_name(this, ty)
+                    .unwrap_or_else(|| self.type_constructor(this, &Type::Id(ty)));
+                format!("{name}::")
             }
             None => "".into(),
         };

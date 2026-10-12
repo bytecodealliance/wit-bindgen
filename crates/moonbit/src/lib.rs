@@ -13,10 +13,10 @@ use wit_bindgen_core::{
     abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     uwrite, uwriteln,
     wit_parser::{
-        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, Int, InterfaceId,
-        LiftLowerAbi, LiveTypes, ManglingAndAbi, Param, Record, Resolve, ResourceIntrinsic,
-        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant, WasmExport, WasmExportKind,
-        WasmImport, WorldId, WorldKey,
+        Alignment, ArchitectureSize, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Handle,
+        Int, InterfaceId, LiftLowerAbi, LiveTypes, ManglingAndAbi, Param, Record, Resolve,
+        ResourceIntrinsic, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Variant,
+        WasmExport, WasmExportKind, WasmImport, WorldId, WorldKey,
     },
 };
 
@@ -28,6 +28,7 @@ use crate::pkg::{
 mod async_support;
 mod ffi;
 mod pkg;
+mod resources;
 
 // Assumptions:
 // - Data: u8 -> Byte, s8 | s16 | s32 -> Int, u16 | u32 -> UInt, s64 -> Int64, u64 -> UInt64, f32 | f64 -> Double, address -> Int
@@ -419,6 +420,19 @@ impl WorldGenerator for MoonBit {
             .export_interface_names
             .insert(id, name.clone());
 
+        // Preserve the WIT name for the implementation type. Allocate a separate
+        // owning wrapper name without colliding with other WIT types.
+        let mut type_names = Ns::default();
+        for (name, _) in &resolve.interfaces[id].types {
+            let _ = type_names.insert(&name.to_moonbit_type_ident());
+        }
+        for (name, ty) in &resolve.interfaces[id].types {
+            if matches!(resolve.types[*ty].kind, TypeDefKind::Resource) {
+                let handle = type_names.tmp(&format!("{}Handle", name.to_moonbit_type_ident()));
+                self.pkg_resolver.resource_handle_names.insert(*ty, handle);
+            }
+        }
+
         let mut r#gen = self.interface(resolve, &name, Direction::Export, Some(key));
         r#gen.types(id);
 
@@ -596,6 +610,20 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    fn type_omits_value_derives(&self, ty: &Type) -> bool {
+        let mut live = LiveTypes::default();
+        live.add_type(self.resolve, ty);
+        live.iter().any(|id| match self.resolve.types[id].kind {
+            TypeDefKind::Future(_) | TypeDefKind::Stream(_) => true,
+            TypeDefKind::Handle(Handle::Borrow(resource)) => self
+                .world_gen
+                .pkg_resolver
+                .resource_handle_names
+                .contains_key(&wit_bindgen_core::dealias(self.resolve, resource)),
+            _ => false,
+        })
+    }
+
     fn emit_derived_methods(&mut self, name: &str, traits: &[&str]) {
         // MoonBit used to attach trait methods to types automatically through
         // `impl`, including derived implementations. During the transition to
@@ -731,6 +759,8 @@ impl InterfaceGenerator<'_> {
             declare {func_sig}
             "#
         );
+
+        self.export_resource_forwarder(func, &mbt_sig, async_plan.signature_is_async());
 
         let endpoint_plan = self.export_async_function_plan(self.interface, func);
         let mut bindgen = FunctionBindgen::new(
@@ -919,9 +949,28 @@ impl InterfaceGenerator<'_> {
         self.add_async_export_stub_parameter(func, async_, &mut params);
 
         let params = params.join(", ");
-        let result_type = match &sig.result_type {
-            None => "Unit".into(),
-            Some(ty) => self.world_gen.pkg_resolver.type_name(self.name, ty),
+        let result_type = match func.kind {
+            FunctionKind::Constructor(id) if self.direction == Direction::Export => {
+                let resolver = &mut self.world_gen.pkg_resolver;
+                let object = resolver.resource_impl_name(self.name, id).unwrap();
+                let Some(Type::Id(result)) = sig.result_type else {
+                    unreachable!()
+                };
+                if let TypeDefKind::Result(result) = &self.resolve.types[result].kind {
+                    let err = result
+                        .err
+                        .as_ref()
+                        .map(|ty| resolver.type_name(self.name, ty))
+                        .unwrap_or_else(|| "Unit".into());
+                    format!("Result[{object}, {err}]")
+                } else {
+                    object
+                }
+            }
+            _ => match &sig.result_type {
+                None => "Unit".into(),
+                Some(ty) => self.world_gen.pkg_resolver.type_name(self.name, ty),
+            },
         };
         format!(
             "pub {}fn {}({params}) -> {}",
@@ -955,18 +1004,18 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("; ");
 
-        let contains_endpoint = record
+        let omit_derives = record
             .fields
             .iter()
-            .any(|field| type_contains_future_or_stream(self.resolve, &field.ty));
+            .any(|field| self.type_omits_value_derives(&field.ty));
         let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug && !contains_endpoint {
+        if self.derive_opts.derive_debug && !omit_derives {
             deriviation.push("Debug")
         }
-        if self.derive_opts.derive_show && !contains_endpoint {
+        if self.derive_opts.derive_show && !omit_derives {
             deriviation.push("Show")
         }
-        if self.derive_opts.derive_eq && !contains_endpoint {
+        if self.derive_opts.derive_eq && !omit_derives {
             deriviation.push("Eq")
         }
 
@@ -989,7 +1038,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
         print_docs(&mut self.src, docs);
-        let name = name.to_moonbit_type_ident();
+        let name = if self.direction == Direction::Export {
+            self.world_gen.pkg_resolver.resource_handle_names[&id].clone()
+        } else {
+            name.to_moonbit_type_ident()
+        };
 
         let mut deriviation: Vec<_> = Vec::new();
         if self.derive_opts.derive_debug {
@@ -998,25 +1051,41 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         if self.derive_opts.derive_show {
             deriviation.push("Show")
         }
-        if self.derive_opts.derive_eq {
+        if self.derive_opts.derive_eq && self.direction == Direction::Import {
             deriviation.push("Eq")
         }
-        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
-            format!("suberror {name} {{ {name}(Int) }}")
+        let handle_type = if self.direction == Direction::Export {
+            "Ref[Int?]"
         } else {
-            format!("struct {name}(Int)")
+            "Int"
+        };
+        let declaration = if self.derive_opts.derive_error && name.contains("Error") {
+            format!("suberror {name} {{ {name}({handle_type}) }}")
+        } else if self.direction == Direction::Export {
+            format!("struct {name} {{ handle : Ref[Int?] }}")
+        } else {
+            format!("struct {name}({handle_type})")
         };
 
         uwrite!(
             self.src,
             r#"
-            pub(all) {declaration} derive({})
+            {declaration} derive({})
             "#,
             deriviation.join(", "),
         );
         self.emit_derived_methods(&name, &deriviation);
 
         if self.direction == Direction::Import {
+            let drop = self.world_gen.pkg_resolver.resource_helper_name(id, "drop");
+            let from = self
+                .world_gen
+                .pkg_resolver
+                .resource_helper_name(id, "wasm_from_handle");
+            let get = self
+                .world_gen
+                .pkg_resolver
+                .resource_helper_name(id, "wasm_handle");
             let (drop_module, drop_name) = self.resolve.wasm_import_name(
                 ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
                 WasmImport::ResourceIntrinsic {
@@ -1030,9 +1099,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 r#"
                 ///|
                 /// Drops a resource handle.
-                pub fn {name}::drop(self : {name}) -> Unit {{
+                pub fn {name}::{drop}(self : {name}) -> Unit {{
                     let {name}(resource) = self
                     wasmImportResourceDrop{name}(resource)
+                }}
+
+                ///|
+                #doc(hidden)
+                pub fn {name}::{from}(handle : Int) -> {name} {{
+                    {name}(handle)
+                }}
+
+                ///|
+                #doc(hidden)
+                pub fn {name}::{get}(self : {name}) -> Int {{
+                    let {name}(handle) = self
+                    handle
                 }}
                 "#,
             );
@@ -1045,109 +1127,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 "#,
             )
         } else {
-            let (drop_module, drop_name) = self.resolve.wasm_import_name(
-                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
-                WasmImport::ResourceIntrinsic {
-                    resource: id,
-                    interface: self.interface,
-                    intrinsic: ResourceIntrinsic::ExportedDrop,
-                },
-            );
-            let (new_module, new_name) = self.resolve.wasm_import_name(
-                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
-                WasmImport::ResourceIntrinsic {
-                    resource: id,
-                    interface: self.interface,
-                    intrinsic: ResourceIntrinsic::ExportedNew,
-                },
-            );
-            let (rep_module, rep_name) = self.resolve.wasm_import_name(
-                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
-                WasmImport::ResourceIntrinsic {
-                    resource: id,
-                    interface: self.interface,
-                    intrinsic: ResourceIntrinsic::ExportedRep,
-                },
-            );
-            uwrite!(
-                &mut self.src,
-                r#"
-                ///|
-                /// Creates a new resource with the given `rep` as its representation and returning the handle to this resource.
-                pub fn {name}::new(rep : Int) -> {name} {{
-                    {name}::{name}(wasmExportResourceNew{name}(rep))
-                }}
-                ///|
-                fn wasmExportResourceNew{name}(rep : Int) -> Int = "{new_module}" "{new_name}"
-
-                ///|
-                /// Drops a resource handle.
-                pub fn {name}::drop(self : Self) -> Unit {{
-                    let {name}(resource) = self
-                    wasmExportResourceDrop{name}(resource)
-                }}
-                ///|
-                fn wasmExportResourceDrop{name}(resource : Int) = "{drop_module}" "{drop_name}"
-
-                ///|
-                /// Gets the `Int` representation of the resource pointed to the given handle.
-                pub fn {name}::rep(self : Self) -> Int {{
-                    let {name}(resource) = self
-                    wasmExportResourceRep{name}(resource)
-                }}
-                ///|
-                fn wasmExportResourceRep{name}(resource : Int) -> Int = "{rep_module}" "{rep_name}"
-                "#,
-            );
-
-            uwrite!(
-                &mut self.src,
-                r#"
-                ///|
-                /// Destructor of the resource.
-                declare pub fn {name}::dtor(_self : {name}) -> Unit
-                "#
-            );
-
-            let func_name = self
-                .world_gen
-                .export_ns
-                .tmp(&format!("wasmExport{name}Dtor"));
-
-            uwrite!(
-                self.ffi,
-                r#"
-                ///|
-                #doc(hidden)
-                pub fn {func_name}(handle : Int) -> Unit {{
-                    {name}::dtor({name}(handle))
-                }}
-                "#,
-            );
-
-            let export_name = self.resolve.wasm_export_name(
-                ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
-                WasmExport::ResourceDtor {
-                    interface: self.interface.unwrap(),
-                    resource: id,
-                },
-            );
-
-            let export = format!(
-                r#"
-                ///|
-                #doc(hidden)
-                pub fn {func_name}(handle : Int) -> Unit {{
-                    {}{func_name}(handle)
-                }}
-                "#,
-                self.world_gen
-                    .pkg_resolver
-                    .qualify_package(self.world_gen.opts.gen_dir.as_str(), self.name),
-            );
-            self.world_gen
-                .export
-                .insert(export_name, (func_name, export));
+            self.export_resource(id, &name);
         }
     }
 
@@ -1276,19 +1256,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n  ");
 
-        let contains_endpoint = variant
+        let omit_derives = variant
             .cases
             .iter()
             .filter_map(|case| case.ty.as_ref())
-            .any(|ty| type_contains_future_or_stream(self.resolve, ty));
+            .any(|ty| self.type_omits_value_derives(ty));
         let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug && !contains_endpoint {
+        if self.derive_opts.derive_debug && !omit_derives {
             deriviation.push("Debug")
         }
-        if self.derive_opts.derive_show && !contains_endpoint {
+        if self.derive_opts.derive_show && !omit_derives {
             deriviation.push("Show")
         }
-        if self.derive_opts.derive_eq && !contains_endpoint {
+        if self.derive_opts.derive_eq && !omit_derives {
             deriviation.push("Eq")
         }
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
@@ -1842,31 +1822,69 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             },
 
-            Instruction::HandleLower { ty, .. } => {
+            Instruction::HandleLower { handle, .. } => {
                 let op = &operands[0];
-                let handle = self.locals.tmp("handle");
-                let ty = self.resolve_constructor(&Type::Id(*ty));
-                uwrite!(
-                    self.src,
-                    r#"
-                    let {ty}({handle}) = {op}
-                    "#
-                );
-                results.push(handle);
+                let (Handle::Own(resource) | Handle::Borrow(resource)) = handle;
+                let resource = wit_bindgen_core::dealias(self.interface_gen.resolve, *resource);
+                let managed = self
+                    .interface_gen
+                    .world_gen
+                    .pkg_resolver
+                    .resource_handle_names
+                    .contains_key(&resource);
+                if managed {
+                    // A locally implemented borrow only arrives as an export argument;
+                    // WIT prohibits returning borrows. Imported resources retain handles.
+                    assert!(matches!(handle, Handle::Own(_)));
+                    let handle = self.locals.tmp("handle");
+                    let take = self
+                        .interface_gen
+                        .world_gen
+                        .pkg_resolver
+                        .resource_helper_name(resource, "wasm_take_handle");
+                    uwriteln!(self.src, "let {handle} = {op}.{take}()");
+                    results.push(handle);
+                } else {
+                    let handle = self.locals.tmp("handle");
+                    let get = self
+                        .interface_gen
+                        .world_gen
+                        .pkg_resolver
+                        .resource_helper_name(resource, "wasm_handle");
+                    uwriteln!(self.src, "let {handle} = {op}.{get}()");
+                    results.push(handle);
+                }
             }
-            Instruction::HandleLift { ty, .. } => {
+            Instruction::HandleLift { ty, handle, .. } => {
                 let op = &operands[0];
+                let (Handle::Own(resource) | Handle::Borrow(resource)) = handle;
+                let resource = wit_bindgen_core::dealias(self.interface_gen.resolve, *resource);
+                let managed = self
+                    .interface_gen
+                    .world_gen
+                    .pkg_resolver
+                    .resource_handle_names
+                    .contains_key(&resource);
                 let ty = self.resolve_constructor(&Type::Id(*ty));
-                results.push(format!(
-                    "{}::{}({})",
-                    ty,
-                    if ty.starts_with("@") {
-                        ty.split('.').next_back().unwrap()
-                    } else {
-                        &ty
-                    },
-                    op
-                ));
+                if managed {
+                    let method = match handle {
+                        Handle::Own(_) => "wasm_from_handle",
+                        Handle::Borrow(_) => "wasm_borrow",
+                    };
+                    let method = self
+                        .interface_gen
+                        .world_gen
+                        .pkg_resolver
+                        .resource_helper_name(resource, method);
+                    results.push(format!("{ty}::{method}({op})"));
+                } else {
+                    let from = self
+                        .interface_gen
+                        .world_gen
+                        .pkg_resolver
+                        .resource_helper_name(resource, "wasm_from_handle");
+                    results.push(format!("{ty}::{from}({op})"));
+                }
             }
 
             Instruction::RecordLower { record, .. } => {
@@ -3013,17 +3031,6 @@ fn flags_repr(flags: &Flags) -> Int {
         FlagsRepr::U32(2) => Int::U64,
         repr => panic!("unimplemented flags {repr:?}"),
     }
-}
-
-fn type_contains_future_or_stream(resolve: &Resolve, ty: &Type) -> bool {
-    let mut live = LiveTypes::default();
-    live.add_type(resolve, ty);
-    live.iter().any(|id| {
-        matches!(
-            resolve.types[id].kind,
-            TypeDefKind::Future(_) | TypeDefKind::Stream(_)
-        )
-    })
 }
 
 fn type_contains_endpoint_fixed_length_list_combination(
