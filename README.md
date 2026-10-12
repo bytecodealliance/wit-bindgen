@@ -407,6 +407,9 @@ wasm-tools component new target/gen.wasm -o target/gen.component.wasm
 You may use `--gen-dir` to specify which package should be responsible for the exportation. The default is `gen` as mentioned above.
 This can be useful having one project that exports multiple worlds.
 
+Generated projects use `moon.mod` and `moon.pkg`, with WebAssembly export mappings
+configured in the export package's `moon.pkg`.
+
 When using `wit-bindgen moonbit`, you may use `--derive-show` or `--derive-eq` to derive `Show` or `Eq` traits for all types.
 You may also use `--derive-error`, which will make types containing `Error` as error types in MoonBit.
 
@@ -424,7 +427,7 @@ toolchain are mixed with new bindings, components may still compile but fail at
 runtime with corrupted strings/bytes or traps.
 
 You will find the files to be modified with the name `**/stub.mbt`.
-To avoid touching the files during regeneration (including `moon.pkg.json` or `moon.mod.json`) you may use `--ignore-stub`.
+To avoid touching the files during regeneration (including `moon.pkg` or `moon.mod`) you may use `--ignore-stub`.
 
 /!\ MoonBit is still evolving, so please check out the [Weekly Updates](https://www.moonbitlang.com/weekly-updates/) for any breaking changes or deprecations.
 

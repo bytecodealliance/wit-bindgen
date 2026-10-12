@@ -1,7 +1,17 @@
 //@ wasmtime-flags = '-Wcomponent-model-async -S p3 -S http'
 //@ [lang]
 //@ path = 'gen/world/runner/stub.mbt'
-//@ pkg_config = """{ "warn-list": "-44", "supported-targets": "+wasm", "import": [{ "path": "example/background-hook/async-core", "alias": "async-core" }, { "path": "example/background-hook/interface/wasi/http/handler", "alias": "handler" }, { "path": "example/background-hook/interface/wasi/http/types", "alias": "types" }] }"""
+//@ pkg_config = '''
+//@ import {
+//@   "example/background-hook/async-core" @async-core,
+//@   "example/background-hook/interface/wasi/http/handler" @handler,
+//@   "example/background-hook/interface/wasi/http/types" @types,
+//@ }
+//@
+//@ warnings = "-44"
+//@
+//@ supported_targets = "wasm"
+//@ '''
 
 ///|
 async fn run_hook(payload : Bytes, expected_error : String?) -> Unit {
