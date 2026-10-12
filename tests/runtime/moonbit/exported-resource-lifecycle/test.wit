@@ -1,0 +1,24 @@
+// Generated MoonBit ownership and storage behavior only. Ordinary resource calls
+// and borrowed records are covered by their shared runtime fixtures.
+package test:exported-resource-lifecycle;
+
+interface api {
+  resource tracked {
+    constructor(id: u32, reenter-on-drop: bool) -> result<tracked, string>;
+  }
+
+  retain-alias: func(value: tracked) -> tracked;
+  drop-twice: func(value: tracked);
+  drop-saved-alias: func();
+  take-reentrant-child: func() -> tracked;
+  take-dropped: func() -> list<u32>;
+}
+
+world test {
+  export api;
+}
+
+world runner {
+  import api;
+  export run: func();
+}
