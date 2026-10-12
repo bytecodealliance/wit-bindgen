@@ -21,7 +21,7 @@ fn main() {
 
     // The no-std async runtime's task context uses WASIp3 TLS. Keep this
     // separate from the MVP task helper needed by every wasm32 target.
-    if target_env == "p3" {
+    if target_env == "p3" && !cfg!(feature = "std") {
         link_lib("cabi_wasip3_tls");
     }
 }
