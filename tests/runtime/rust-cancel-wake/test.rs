@@ -37,7 +37,6 @@ impl Guest for Component {
             })
             .await
             .unwrap();
-            unreachable!("the cancelled waiter must not resume");
         });
 
         // FuturesUnordered destroys the most recently polled future first.
