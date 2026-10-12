@@ -35,12 +35,13 @@ impl Guest for Component {
         let result = cancel_task().await;
         assert_eq!(result, Some(42));
 
-        // Check that awaiting a `JoinHandle` returns None after the CM-async task has
-        // been terminated.
+        // Check that cancelling the CM-async task which spawned a task only
+        // cancels the export's own future, and the spawned task keeps running
+        // and can still be awaited.
         let cm_task = start_task();
         drop(cm_task);
-        assert_eq!(await_task().await, None);
         resolve().await;
+        assert_eq!(await_task().await, Some(42));
 
         // Check that cancelling a `JoinHandle` returns None after the CM-async task
         // has been terminated.

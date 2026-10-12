@@ -22,12 +22,24 @@ static mut SPAWNED: Vec<BoxFuture> = Vec::new();
 #[derive(Default)]
 pub struct Tasks<'a> {
     tasks: FuturesUnordered<BoxFuture<'a>>,
+    root: Option<AbortHandle>,
 }
 
 impl<'a> Tasks<'a> {
-    pub fn new(root: BoxFuture<'a>) -> Tasks<'a> {
+    pub fn new(root: impl Future<Output = ()> + 'a) -> Tasks<'a> {
+        let (abort, registration) = AbortHandle::new_pair();
+        let root: BoxFuture<'a> = Box::pin(async move {
+            let _ = Abortable::new(root, registration).await;
+        });
         Tasks {
             tasks: [root].into_iter().collect(),
+            root: Some(abort),
+        }
+    }
+
+    pub fn cancel_root(&mut self) {
+        if let Some(root) = self.root.take() {
+            root.abort();
         }
     }
 
