@@ -1,0 +1,44 @@
+package test:resource-payloads;
+
+interface api {
+  resource counter {
+    constructor(value: u32);
+    get: func() -> u32;
+    new: static func(value: u32) -> counter;
+    payload: func() -> u32;
+    drop: func();
+    dtor: func();
+    wasm-from-handle: func();
+    wasm-take-handle: func();
+    wasm-borrow: func();
+  }
+  record counter-handle {
+    value: u32,
+  }
+
+  // Implementation types are user-defined, so aggregates must not require derives.
+  variant borrowed {
+    one(borrow<counter>),
+    many(list<borrow<counter>>),
+  }
+  read: func(value: borrowed, data: counter-handle);
+
+  // Exercise the MoonBit option that represents error resources as suberrors.
+  resource example-error {
+    message: func() -> string;
+  }
+}
+
+interface other {
+  use api.{counter, borrowed, example-error};
+  read: func(value: borrow<counter>, nested: borrowed) -> u32;
+  bounce: func(value: counter) -> counter;
+  error: func(value: example-error) -> example-error;
+}
+
+world test {
+  import api;
+  import other;
+  export api;
+  export other;
+}
