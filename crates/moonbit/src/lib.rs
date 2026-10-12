@@ -53,7 +53,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
 
-    /// Whether or not to generate moon.mod.json ; useful if the project is part of a larger project
+    /// Whether or not to generate moon.mod ; useful if the project is part of a larger project
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_module_file: bool,
 
@@ -156,33 +156,24 @@ impl MoonBit {
     }
 
     fn write_moon_pkg(&self, moon_pkg: &mut Source, imports: Option<&Imports>, link: bool) {
-        // Disable warning for invalid inline wasm
-        moon_pkg.push_str("{\n\"warn-list\": \"-44\"");
         // Dependencies
         if let Some(imports) = imports {
-            moon_pkg.push_str(",\n\"import\": [\n");
-            moon_pkg.indent(1);
+            moon_pkg.push_str("import {\n");
             let mut deps = imports
                 .packages
                 .iter()
-                .map(|(k, v)| {
-                    format!(
-                        "{{ \"path\" : \"{}/{}\", \"alias\" : \"{}\" }}",
-                        self.project_name,
-                        k.replace(".", "/"),
-                        v
-                    )
-                })
+                .map(|(k, v)| format!("\"{}/{}\" @{},", self.project_name, k.replace(".", "/"), v))
                 .collect::<Vec<_>>();
             deps.sort();
-            uwrite!(moon_pkg, "{}", deps.join(",\n"));
-            moon_pkg.deindent(1);
-            moon_pkg.push_str("\n]");
+            uwriteln!(moon_pkg, "{}", deps.join("\n"));
+            moon_pkg.push_str("}\n\n");
         }
+        // Disable warning for invalid inline wasm.
+        moon_pkg.push_str("warnings = \"-44\"\n");
         let imports_async_core =
             imports.is_some_and(|imports| imports.packages.contains_key(ASYNC_CORE_DIR));
         if imports_async_core || (link && self.async_support.is_required()) {
-            moon_pkg.push_str(",\n\"supported-targets\": \"+wasm\"");
+            moon_pkg.push_str("supported_targets = \"wasm\"\n");
         }
         // Link target
         if link {
@@ -190,7 +181,9 @@ impl MoonBit {
                 ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
                 WasmExport::Memory,
             );
-            moon_pkg.push_str(",\n\"link\": {\n\"wasm\": {\n");
+            moon_pkg.push_str("\npkgtype(kind: \"foreign_library\")\n\noptions(\n");
+            moon_pkg.indent(1);
+            moon_pkg.push_str("link: {\n\"wasm\": {\n");
             moon_pkg.push_str(&format!("\"export-memory-name\": \"{memory_name}\",\n"));
             moon_pkg.push_str("\"heap-start-address\": 16,\n");
             moon_pkg.push_str("\"exports\": [\n");
@@ -210,9 +203,10 @@ impl MoonBit {
             exports.sort();
             uwrite!(moon_pkg, "{}", exports.join(",\n"));
             moon_pkg.deindent(1);
-            moon_pkg.push_str("\n]\n}\n}\n");
+            moon_pkg.push_str("\n],\n},\n},\n");
+            moon_pkg.deindent(1);
+            moon_pkg.push_str(")\n");
         }
-        moon_pkg.push_str("\n}\n");
     }
 }
 
@@ -227,7 +221,7 @@ impl MoonBit {
 /// - `preprocess`: Initialize generator-wide state (package resolver,
 ///   project name, and size/align information) for the current world.
 /// - `import_interface` / `export_interface`: Generate per-interface
-///   sources, FFI glue, README documentation and `moon.pkg.json` metadata.
+///   sources, FFI glue, README documentation and `moon.pkg` metadata.
 /// - `import_funcs` / `export_funcs` / `import_types`: Collect and accumulate
 ///   world-level functions and types (the `$root` module) into fragments
 ///   that are later written out by `finish_imports` or `finish`.
@@ -313,14 +307,14 @@ impl WorldGenerator for MoonBit {
             }
             files.push(&format!("{directory}/ffi.mbt"), indent(&ffi).as_bytes());
 
-            // moon.pkg.json
+            // moon.pkg
             let mut moon_pkg = Source::default();
             self.write_moon_pkg(
                 &mut moon_pkg,
                 self.pkg_resolver.package_import.get(&name),
                 false,
             );
-            files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+            files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
         }
 
         Ok(())
@@ -397,14 +391,14 @@ impl WorldGenerator for MoonBit {
             &format!("{directory}/ffi_import.mbt"),
             indent(&ffi).as_bytes(),
         );
-        // moon.pkg.json
+        // moon.pkg
         let mut moon_pkg = Source::default();
         self.write_moon_pkg(
             &mut moon_pkg,
             self.pkg_resolver.package_import.get(&name),
             false,
         );
-        files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+        files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
         Ok(())
     }
 
@@ -454,14 +448,14 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
             if !self.opts.ignore_stub {
-                // moon.pkg.json
+                // moon.pkg
                 let mut moon_pkg = Source::default();
                 self.write_moon_pkg(
                     &mut moon_pkg,
                     self.pkg_resolver.package_import.get(&name),
                     false,
                 );
-                files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+                files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
             }
 
             // FFI
@@ -508,14 +502,14 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
             if !self.opts.ignore_stub {
-                // moon.pkg.json
+                // moon.pkg
                 let mut moon_pkg = Source::default();
                 self.write_moon_pkg(
                     &mut moon_pkg,
                     self.pkg_resolver.package_import.get(&name),
                     false,
                 );
-                files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+                files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
             }
 
             // FFI
@@ -544,10 +538,10 @@ impl WorldGenerator for MoonBit {
             let mut body = Source::default();
             uwriteln!(
                 &mut body,
-                "{{ \"name\": \"{}\", \"preferred-target\": \"wasm\" }}",
+                "name = {:?}\n\npreferred_target = \"wasm\"",
                 self.project_name
             );
-            files.push("moon.mod.json", body.as_bytes());
+            files.push("moon.mod", body.as_bytes());
         }
 
         // Export project entry point
@@ -574,8 +568,8 @@ impl WorldGenerator for MoonBit {
             true,
         );
         files.push(
-            &format!("{}/moon.pkg.json", self.opts.r#gen_dir),
-            indent(&moon_pkg).as_bytes(),
+            &format!("{}/moon.pkg", self.opts.r#gen_dir),
+            moon_pkg.as_bytes(),
         );
 
         Ok(())
@@ -3252,8 +3246,11 @@ mod tests {
                 .iter()
                 .all(|(name, _)| !name.starts_with("async-core/async_"))
         );
-        let package = file(&files, "gen/moon.pkg.json");
-        assert!(!package.contains("supported-targets"), "{package}");
+        let package = file(&files, "gen/moon.pkg");
+        assert!(!package.contains("supported_targets"), "{package}");
+        let module = file(&files, "moon.mod");
+        assert!(module.contains("preferred_target = \"wasm\""), "{module}");
+        assert!(files.iter().all(|(name, _)| !name.ends_with(".json")));
     }
 
     #[test]
@@ -3352,17 +3349,17 @@ mod tests {
 
         let source = file(&files, "interface/a/b/types/top.mbt");
         assert!(source.contains("@async-core.Future[UInt]"), "{source}");
-        let package = file(&files, "interface/a/b/types/moon.pkg.json");
+        let package = file(&files, "interface/a/b/types/moon.pkg");
         assert!(
-            package.contains("\"supported-targets\": \"+wasm\""),
+            package.contains("supported_targets = \"wasm\""),
             "{package}"
         );
-        let link_package = file(&files, "gen/moon.pkg.json");
+        let link_package = file(&files, "gen/moon.pkg");
         assert!(
-            link_package.contains("\"supported-targets\": \"+wasm\""),
+            link_package.contains("supported_targets = \"wasm\""),
             "{link_package}"
         );
-        file(&files, "async-core/moon.pkg.json");
+        file(&files, "async-core/moon.pkg");
         file(&files, "async-core/async_trait.mbt");
     }
 

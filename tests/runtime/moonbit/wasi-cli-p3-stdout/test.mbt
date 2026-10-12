@@ -1,12 +1,13 @@
 //@ [lang]
 //@ path = 'gen/interface/my/test/i/stub.mbt'
-//@ pkg_config = """{
-//@   "supported-targets": "+wasm",
-//@   "import": [
-//@     { "path": "my/test/async-core", "alias": "async-core" },
-//@     { "path": "my/test/interface/wasi/cli/stdout", "alias": "stdout" }
-//@   ]
-//@ }"""
+//@ pkg_config = '''
+//@ import {
+//@   "my/test/async-core" @async-core,
+//@   "my/test/interface/wasi/cli/stdout" @stdout,
+//@ }
+//@
+//@ supported_targets = "wasm"
+//@ '''
 
 ///|
 pub async fn write_stdout(

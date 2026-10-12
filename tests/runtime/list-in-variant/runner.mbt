@@ -1,6 +1,10 @@
 //@ [lang]
 //@ path = 'gen/world/runner/stub.mbt'
-//@ pkg_config = """{ "import": ["test/list-in-variant/interface/test/list-in-variant/to-test"] }"""
+//@ pkg_config = '''
+//@ import {
+//@   "test/list-in-variant/interface/test/list-in-variant/to-test",
+//@ }
+//@ '''
 
 ///|
 pub fn run() -> Unit {

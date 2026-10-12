@@ -1,7 +1,15 @@
 //@ wasmtime-flags = '-Wcomponent-model-async'
 //@ [lang]
 //@ path = 'gen/world/runner/stub.mbt'
-//@ pkg_config = """{ "supported-targets": "+wasm", "import": [{ "path": "test/async-import-cancel/async-core", "alias": "async-core" }, { "path": "test/async-import-cancel/interface/test/async-import-cancel/pending", "alias": "pending" }, { "path": "test/async-import-cancel/interface/test/async-import-cancel/gate-control", "alias": "gate-control" }] }"""
+//@ pkg_config = '''
+//@ import {
+//@   "test/async-import-cancel/async-core" @async-core,
+//@   "test/async-import-cancel/interface/test/async-import-cancel/pending" @pending,
+//@   "test/async-import-cancel/interface/test/async-import-cancel/gate-control" @gate-control,
+//@ }
+//@
+//@ supported_targets = "wasm"
+//@ '''
 
 ///|
 async fn settle_leaf_counts(expected_drops : UInt) -> Unit {

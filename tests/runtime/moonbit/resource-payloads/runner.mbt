@@ -1,7 +1,17 @@
 //@ wasmtime-flags = '-Wcomponent-model-async'
 //@ [lang]
 //@ path = 'gen/world/runner/stub.mbt'
-//@ pkg_config = """{ "warn-list": "-44", "supported-targets": "+wasm", "import": [{ "path": "my/test/async-core", "alias": "async-core" }, { "path": "my/test/interface/my/test/leaf-interface", "alias": "leaf-interface" }, { "path": "my/test/interface/my/test/test-interface", "alias": "test-interface" }] }"""
+//@ pkg_config = '''
+//@ import {
+//@   "my/test/async-core" @async-core,
+//@   "my/test/interface/my/test/leaf-interface" @leaf-interface,
+//@   "my/test/interface/my/test/test-interface" @test-interface,
+//@ }
+//@
+//@ warnings = "-44"
+//@
+//@ supported_targets = "wasm"
+//@ '''
 
 ///|
 async fn read_one_leaf(

@@ -51,14 +51,14 @@ impl LanguageMethods for MoonBit {
             let dest_path = compile.bindings_dir.join(&config.path);
             std::fs::copy(src_path, dest_path)?;
 
-            // Write the moon.pkg.json if provided
+            // Write the moon.pkg if provided
             if let Some(pkg_config) = config.pkg_config {
                 let dest_path = compile
                     .bindings_dir
                     .join(&config.path)
                     .parent()
                     .unwrap()
-                    .join("moon.pkg.json");
+                    .join("moon.pkg");
                 std::fs::write(dest_path, pkg_config)?;
             }
         }

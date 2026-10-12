@@ -295,7 +295,7 @@ const ASYNC_SEMAPHORE: &str = include_str!("./async/semaphore.mbt");
 const ASYNC_TASK: &str = include_str!("./async/task.mbt");
 const ASYNC_TASK_GROUP: &str = include_str!("./async/task_group.mbt");
 const ASYNC_TRAIT: &str = include_str!("./async/trait.mbt");
-const ASYNC_PKG: &str = include_str!("./async/moon.pkg.json");
+const ASYNC_PKG: &str = include_str!("./async/moon.pkg");
 
 struct Segment<'a> {
     name: &'a str,
@@ -463,10 +463,7 @@ impl AsyncSupport {
                 s.src.as_bytes(),
             );
         });
-        files.push(
-            &format!("{ASYNC_CORE_DIR}/moon.pkg.json"),
-            ASYNC_PKG.as_bytes(),
-        );
+        files.push(&format!("{ASYNC_CORE_DIR}/moon.pkg"), ASYNC_PKG.as_bytes());
     }
 }
 
