@@ -4,10 +4,10 @@
 
 static _Thread_local void *task_context = NULL;
 
-void *wit_bindgen_0_62_0_get_task_context(void) {
+void *wit_bindgen_0_63_0_get_task_context(void) {
   return task_context;
 }
 
-void wit_bindgen_0_62_0_set_task_context(void *ptr) {
+void wit_bindgen_0_63_0_set_task_context(void *ptr) {
   task_context = ptr;
 }
