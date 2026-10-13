@@ -36,6 +36,6 @@ impl Guest for Component {
         yield_async().await;
         let status = get_status();
         assert!(status.dropped);
-        assert_eq!(status.polls, 2);
+        assert_eq!(status.polls, 3);
     }
 }

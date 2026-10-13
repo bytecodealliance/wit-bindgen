@@ -158,8 +158,8 @@ struct CabiWaitable {
 
 unsafe impl Send for CabiWaitable {}
 
-impl TaskState<'_> {
-    fn new(future: BoxFuture<'_>) -> TaskState<'_> {
+impl<'a> TaskState<'a> {
+    fn new(future: impl Future<Output = ()> + 'a) -> TaskState<'a> {
         let shared = Arc::new(SharedTaskState::default());
         TaskState {
             waker: shared.clone().into(),
@@ -183,14 +183,14 @@ impl TaskState<'_> {
             EVENT_STREAM_WRITE => rtdebug!("EVENT_STREAM_WRITE({event1:#x}, {event2:#x})"),
             EVENT_FUTURE_READ => rtdebug!("EVENT_FUTURE_READ({event1:#x}, {event2:#x})"),
             EVENT_FUTURE_WRITE => rtdebug!("EVENT_FUTURE_WRITE({event1:#x}, {event2:#x})"),
+
+            // Delegate cancellation to the set of spawned tasks that this
+            // component-model task is maintaining. The cancel here is a signal
+            // for the "root computation", but everything else spawned, if any,
+            // gets to continue along its merry way.
             EVENT_CANCEL => {
                 rtdebug!("EVENT_CANCEL");
-
-                // Cancellation is mapped to destruction in Rust, so return a
-                // code/bool indicating we're done. The caller will then
-                // appropriately deallocate this `TaskState` which will
-                // transitively run all destructors.
-                return CallbackCode::Exit;
+                self.with_p3_task_set(|me| me.tasks.cancel_root());
             }
             _ => unreachable!(),
         }
@@ -209,7 +209,7 @@ impl TaskState<'_> {
             // `waker.sleep_state` above to ensure that if a waker is woken it
             // won't actually signal our inter-task stream since we're already
             // in the process of handling the future.
-            if event0 != EVENT_NONE {
+            if event0 != EVENT_NONE && event0 != EVENT_CANCEL {
                 me.deliver_waitable_event(event1, event2)
             }
 
@@ -617,7 +617,7 @@ mod task_state {
 pub fn start_task(task: impl Future<Output = ()> + 'static) -> i32 {
     // Allocate a new `TaskState` which will track all state necessary for
     // our exported task.
-    let state = Box::into_raw(Box::new(TaskState::new(Box::pin(task))));
+    let state = Box::into_raw(Box::new(TaskState::new(task)));
 
     // Store our `TaskState` into our context-local-storage slot and then
     // pretend we got EVENT_NONE to kick off everything.
@@ -671,9 +671,9 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
 /// to async-lowered imports as necessary.
 pub fn block_on<T>(future: impl Future<Output = T>) -> T {
     let mut result = None;
-    let mut state = TaskState::new(Box::pin(async {
+    let mut state = TaskState::new(async {
         result = Some(future.await);
-    }));
+    });
     let mut event = (EVENT_NONE, 0, 0);
     loop {
         match state.callback(event.0, event.1, event.2) {
