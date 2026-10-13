@@ -2994,11 +2994,11 @@ func (self *{camel}) SetHandle(handle int32) {{
 
 func (self *{camel}) Drop() {{
 	handle := self.handle
-	if self.handle != 0 {{
-		self.handle = 0
+	if handle != 0 {{
+		// Dropping an own handle of a resource this component exports runs
+		// its destructor (`resourceDtor{camel}`), which clears the handle,
+		// unpins `self` and calls `OnDrop`.
 		resourceDrop{camel}(handle)
-		self.pinner.Unpin()
-                self.OnDrop()
 	}}
 }}
 
