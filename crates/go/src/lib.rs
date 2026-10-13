@@ -3003,7 +3003,12 @@ func (self *{camel}) Drop() {{
 }}
 
 func {camel}FromOwnHandle(handle int32) *{camel} {{
-	return (*{camel})(unsafe.Pointer(resourceRep{camel}(handle)))
+	self := (*{camel})(unsafe.Pointer(resourceRep{camel}(handle)))
+	// The handle we received is a new one in this component's table, so
+	// record it; `Drop` must release this handle, not the one previously
+	// handed out by `TakeHandle`.
+	self.handle = handle
+	return self
 }}
 
 func {camel}FromBorrowHandle(rep int32) *{camel} {{
