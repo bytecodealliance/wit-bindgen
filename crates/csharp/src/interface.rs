@@ -46,6 +46,9 @@ impl InterfaceTypeAndFragments {
 #[derive(Clone)]
 pub(crate) struct FutureInfo {
     pub name: String,
+    /// Position among the function's futures and streams together, as numbered in the
+    /// `[future-*-N]` / `[stream-*-N]` intrinsic import names.
+    pub index: usize,
     pub generic_type_name: String,
     pub qualified_generic_type_name: String,
     pub ty: Option<Type>,
@@ -68,6 +71,31 @@ pub(crate) struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    /// Name of the class holding this interface's `[DllImport]` declarations, relative to the
+    /// interface's namespace: `FooImportsInterop` for `IFooImports`.
+    pub(crate) fn interop_class_name(&self) -> String {
+        let (_namespace, interface_name) = &CSharp::get_class_name_from_qualified_name(self.name);
+        let interop_name = format!(
+            "{}ImportsInterop",
+            interface_name
+                .strip_prefix("I")
+                .unwrap()
+                .strip_suffix(if self.direction == Direction::Import {
+                    "Imports"
+                } else {
+                    "Exports"
+                })
+                .unwrap()
+                .to_upper_camel_case()
+        );
+
+        if self.is_world && self.direction == Direction::Import {
+            format!("Imports.{interop_name}")
+        } else {
+            interop_name
+        }
+    }
+
     pub fn is_async(kind: &FunctionKind) -> bool {
         matches!(
             kind,
@@ -244,7 +272,6 @@ impl InterfaceGenerator<'_> {
             (self.streams.iter().cloned().collect(), ", uint length")
         };
 
-        let mut index = 0;
         let mut size = 0;
         let mut align = 0;
         for future in futures_or_streams {
@@ -269,6 +296,7 @@ impl InterfaceGenerator<'_> {
             let mut lift_func = "null".to_string();
             let mut lower_func = "null".to_string();
             let future_name = &future.name;
+            let index = future.index;
             let generic_type_name = &future.generic_type_name;
             let upper_camel_future_type = generic_type_name.to_upper_camel_case();
 
@@ -396,7 +424,7 @@ impl InterfaceGenerator<'_> {
                     if lift_func != "null"
                         && let Some(payload_type) = canonical_payload
                     {
-                        let (lift, result) = self.lift_from_memory("buffer", &payload_type);
+                        let (lift, result) = self.lift_from_memory("buffer", &payload_type, None);
 
                         uwrite!(
                             self.csharp_interop_src,
@@ -432,7 +460,7 @@ impl InterfaceGenerator<'_> {
                         uwrite!(
                             self.csharp_interop_src,
                             r#"
-                            public static unsafe void {future_stream_name}Lower{upper_camel_future_type}(object toLower, List<Action> cleanups) 
+                            public static unsafe void {future_stream_name}Lower{upper_camel_future_type}(object toLower, global::System.Collections.Generic.List<global::System.Action> cleanups) 
                             {{
                                 var ptr = InteropReturnArea.returnArea.AddressOfReturnArea();
                                 var typedToLower = ({qualified_generic_type_name})toLower;
@@ -465,7 +493,6 @@ impl InterfaceGenerator<'_> {
             }
 
             generated_future_types.insert(canonical_payload);
-            index = index + 1;
         }
 
         self.csharp_gen.needs_async_support = true;
@@ -668,9 +695,10 @@ impl InterfaceGenerator<'_> {
             let asyncified_type = match &func.kind {
                 FunctionKind::AsyncFreestanding
                 | FunctionKind::AsyncStatic(_)
-                | FunctionKind::AsyncMethod(_) => match func.result {
-                    None => "Task".to_string(),
-                    Some(_ty) => format!("Task<{base_type}>"),
+                // A `result` without payloads lowers to `void` too, which `Task<>` cannot wrap.
+                | FunctionKind::AsyncMethod(_) => match base_type.as_str() {
+                    "void" => "global::System.Threading.Tasks.Task".to_string(),
+                    _ => format!("global::System.Threading.Tasks.Task<{base_type}>"),
                 },
                 _ => base_type,
             };
@@ -687,6 +715,7 @@ impl InterfaceGenerator<'_> {
         results: &[TypeId],
         parameter_type: ParameterType,
     ) -> (String, String) {
+        let interop_name = self.interop_class_name();
         let mut bindgen = FunctionBindgen::new(
             self,
             func.item_name(),
@@ -706,6 +735,7 @@ impl InterfaceGenerator<'_> {
             parameter_type,
             func.result,
         );
+        bindgen.futures_and_streams = func.find_futures_and_streams(bindgen.interface_gen.resolve);
 
         let async_ = InterfaceGenerator::is_async(&func.kind);
         let mut src: String;
@@ -755,7 +785,7 @@ impl InterfaceGenerator<'_> {
                 (mem::take(&mut bindgen.src), wasm_params)
             };
             let name = func.name.to_upper_camel_case();
-            let raw_name = format!("IImportsInterop.{name}WasmInterop.wasmImport{name}");
+            let raw_name = format!("{interop_name}.{name}WasmInterop.wasmImport{name}");
 
             let mut wasm_param_refs: Vec<&str> = wasm_params.iter().map(|v| v.as_str()).collect();
 
@@ -783,7 +813,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             let bindgen_src = bindgen.src;
             if let Some(buffer) = async_return_buffer {
                 let ty = bindgen.result_type.expect("expected a result type");
-                let (lift_expr, res) = self.lift_from_memory("address", &ty);
+                let (lift_expr, res) = self.lift_from_memory("address", &ty, Some(func));
                 uwriteln!(src, "{}", bindgen_src);
                 let return_type = self.type_name_with_qualifier(&ty, true);
 
@@ -880,6 +910,8 @@ var {async_status_var} = {raw_name}({wasm_params});
             ParameterType::ABI,
             func.result,
         );
+
+        bindgen.futures_and_streams = func.find_futures_and_streams(bindgen.interface_gen.resolve);
 
         let async_ = matches!(
             func.kind,
@@ -1012,6 +1044,9 @@ var {async_status_var} = {raw_name}({wasm_params});
                 ParameterType::ABI,
                 func.result,
             );
+
+            bindgen.futures_and_streams =
+                func.find_futures_and_streams(bindgen.interface_gen.resolve);
 
             abi::post_return(bindgen.interface_gen.resolve, func, &mut bindgen);
 
@@ -1607,12 +1642,14 @@ var {async_status_var} = {raw_name}({wasm_params});
     pub(crate) fn add_future(
         &mut self,
         func_name: &str,
+        index: usize,
         generic_type_name: &str,
         qualified_generic_type_name: &str,
         ty: Option<Type>,
     ) {
         self.futures.push(FutureInfo {
             name: func_name.to_string(),
+            index,
             generic_type_name: generic_type_name.to_string(),
             qualified_generic_type_name: qualified_generic_type_name.to_string(),
             ty: ty,
@@ -1622,30 +1659,43 @@ var {async_status_var} = {raw_name}({wasm_params});
     pub(crate) fn add_stream(
         &mut self,
         func_name: &str,
+        index: usize,
         generic_type_name: &str,
         qualified_generic_type_name: &str,
         ty: Option<Type>,
     ) {
         self.streams.push(FutureInfo {
             name: func_name.to_string(),
+            index,
             generic_type_name: generic_type_name.to_string(),
             qualified_generic_type_name: qualified_generic_type_name.to_string(),
             ty: ty,
         });
     }
 
-    fn lift_from_memory(&mut self, address: &str, ty: &Type) -> (String, String) {
+    fn lift_from_memory(
+        &mut self,
+        address: &str,
+        ty: &Type,
+        func: Option<&Function>,
+    ) -> (String, String) {
         let boxed: Box<[String]> = Vec::new().into_boxed_slice();
+        // Futures and streams in the lifted value are named after, and numbered within, the
+        // function they belong to.
+        let futures_and_streams = func
+            .map(|func| func.find_futures_and_streams(self.resolve))
+            .unwrap_or_default();
 
         let mut f = FunctionBindgen::new(
             self,
-            "",
+            func.map_or("", |func| func.item_name()),
             &FunctionKind::AsyncFreestanding,
             boxed,
             vec![],
             ParameterType::ABI,
             None,
         );
+        f.futures_and_streams = futures_and_streams;
         let result = abi::lift_from_memory(f.interface_gen.resolve, &mut f, address.into(), ty);
 
         (f.src, result)

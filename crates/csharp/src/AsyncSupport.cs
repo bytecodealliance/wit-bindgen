@@ -475,8 +475,12 @@ public abstract class ReaderBase : IFutureStream
 
     protected unsafe IntPtr GetBuffer<T>(int length, T[]? userBuffer, IVTable vTable, List<Action> cleanups)
     {
-        // For primitive, blittable types, TODO: this probably does not align 100% with the component ABI?
-        if (typeof(T).IsPrimitive || typeof(T).IsValueType)
+        // Primitives have the same layout in C# and the canonical ABI, so their array can be pinned
+        // and used directly. Any other type (records, variants, results, strings, ...) has a
+        // different managed layout, and Result<,> and friends hold references so cannot be pinned:
+        // they go through native memory and the vtable's Lift/Lower, which the generator emits for
+        // every non-primitive payload.
+        if (typeof(T).IsPrimitive)
         {
             T[] buffer;
             // For Streams, the user passes the buffer, so use that.
@@ -495,7 +499,7 @@ public abstract class ReaderBase : IFutureStream
         else
         {
             System.Diagnostics.Debug.Assert(vTable.Size > 0, $"Did not compute size for {typeof(T)}.");
-            IntPtr bufferPtr = (IntPtr)global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc(vTable.Size, vTable.Align);
+            IntPtr bufferPtr = (IntPtr)global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc(vTable.Size * (uint)length, vTable.Align);
             cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.Free((void*)bufferPtr));
             return bufferPtr;
         }
@@ -503,8 +507,8 @@ public abstract class ReaderBase : IFutureStream
 
     protected unsafe T[] LiftBuffer<T>(IntPtr buffer, T[] resultBuffer, Lift? liftFunc)
     {
-        // For primitive, blittable types
-        if (typeof(T).IsPrimitive || typeof(T).IsValueType)
+        // Primitives were read straight into the pinned array; see GetBuffer.
+        if (typeof(T).IsPrimitive)
         {
             // TODO array length > 1
             resultBuffer[0] = *(T*)buffer;
@@ -625,7 +629,7 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : ReaderBase(handl
             {
                 try
                 {
-                    readTask.SetResult(((T[])VTable.Lift(buf, new T[1]))[0]);
+                    readTask.SetResult(LiftBuffer(buf, new T[1], VTable.Lift)[0]);
                 }
                 catch(Exception e)
                 {
@@ -710,7 +714,8 @@ public class StreamReader<T>(int handle, StreamVTable vTable) :  ReaderBase(hand
         var task = ReadInternal(buf, resultBuffer.Length, VTable);
         task.ContinueWith(it =>
         {
-            if (it.IsCompletedSuccessfully)
+            // Primitives were read straight into resultBuffer, and have no Lift.
+            if (it.IsCompletedSuccessfully && VTable.Lift != null)
             {
                 VTable.Lift(buf, resultBuffer);
             }
