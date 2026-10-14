@@ -38,4 +38,4 @@ runs:
     - name: Setup `wasmtime`
       uses: bytecodealliance/actions/wasmtime/setup@v1
       with:
-        version: "48.0.1"
+        version: "dev"

@@ -145,7 +145,7 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
     runner.run_command(&mut cmd)?;
 
     runner
-        .convert_p1_to_component(&output, compile)
+        .convert_core_module_to_component(&output, compile)
         .with_context(|| format!("failed to convert {output:?}"))?;
 
     Ok(())
