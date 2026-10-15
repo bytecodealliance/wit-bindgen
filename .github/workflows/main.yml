@@ -79,8 +79,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        # csharp removed from language matrix for now - causing CI failures
-        lang: [c, rust, cpp, go, d]
+        lang: [c, rust, csharp, cpp, go, d]
         exclude:
           # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
@@ -102,7 +101,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.x'
+        dotnet-version: '10.x'
       if: matrix.lang == 'csharp'
 
     # As of this writing async tests require [a patched build of

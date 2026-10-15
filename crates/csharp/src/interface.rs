@@ -2048,9 +2048,10 @@ fn needs_ptr(ty: &Type) -> bool {
     }
 }
 
-// Handles the tag being the same name as the variant, which would cause a method with the same name as the type in C# which is not valid.
+// Names the factory method for a variant case. A method can't share its name with the variant type,
+// or with the `Tag` field and `Tags` class every variant has, so those cases get a suffix.
 pub fn variant_new_func_name(variant_name: &String, tag: &String) -> String {
-    if *tag == *variant_name {
+    if *tag == *variant_name || tag == "Tag" || tag == "Tags" {
         format!("{tag}_") // Underscores are not valid in wit identifiers so this should be safe.
     } else {
         tag.clone()
