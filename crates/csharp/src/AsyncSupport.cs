@@ -279,7 +279,10 @@ public static class AsyncSupport
                 {
                     SetCanceled();
                 }
-                throw new NotImplementedException("LiftingTaskCompletionSource unexpected task status " + t.Status);
+                else
+                {
+                    throw new NotImplementedException("LiftingTaskCompletionSource unexpected task status " + t.Status);
+                }
             }, TaskContinuationOptions.ExecuteSynchronously);
         }
     }
@@ -306,7 +309,9 @@ public delegate uint FutureWrite(int handle, IntPtr buffer);
 
 public delegate uint StreamWrite(int handle, IntPtr buffer, uint length);
 public delegate uint StreamRead(int handle, IntPtr buffer, uint length);
-public delegate Array Lift(IntPtr buffer, Array? resultBuffer);
+/// Lifts the first <paramref name="count"/> values from canonical ABI memory at <paramref name="buffer"/>
+/// into <paramref name="resultBuffer"/>.
+public delegate Array Lift(IntPtr buffer, Array resultBuffer, int count);
 public delegate void Lower(object payload, List<Action> cleanups);
 public delegate uint CancelRead(int handle);
 public delegate uint CancelWrite(int handle);
@@ -475,8 +480,12 @@ public abstract class ReaderBase : IFutureStream
 
     protected unsafe IntPtr GetBuffer<T>(int length, T[]? userBuffer, IVTable vTable, List<Action> cleanups)
     {
-        // For primitive, blittable types, TODO: this probably does not align 100% with the component ABI?
-        if (typeof(T).IsPrimitive || typeof(T).IsValueType)
+        // Primitives have the same layout in C# and the canonical ABI, so their array can be pinned
+        // and used directly. Any other type (records, variants, results, strings, ...) has a
+        // different managed layout, and Result<,> and friends hold references so cannot be pinned:
+        // they go through native memory and the vtable's Lift/Lower, which the generator emits for
+        // every non-primitive payload.
+        if (typeof(T).IsPrimitive)
         {
             T[] buffer;
             // For Streams, the user passes the buffer, so use that.
@@ -495,23 +504,23 @@ public abstract class ReaderBase : IFutureStream
         else
         {
             System.Diagnostics.Debug.Assert(vTable.Size > 0, $"Did not compute size for {typeof(T)}.");
-            IntPtr bufferPtr = (IntPtr)global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc(vTable.Size, vTable.Align);
+            IntPtr bufferPtr = (IntPtr)global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc(vTable.Size * (uint)length, vTable.Align);
             cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.Free((void*)bufferPtr));
             return bufferPtr;
         }
     }
 
+    // Lifts one future value. Primitives were read into the pinned array GetBuffer returned, so copy
+    // that value; anything else goes through the vtable's Lift.
     protected unsafe T[] LiftBuffer<T>(IntPtr buffer, T[] resultBuffer, Lift? liftFunc)
     {
-        // For primitive, blittable types
-        if (typeof(T).IsPrimitive || typeof(T).IsValueType)
+        if (typeof(T).IsPrimitive)
         {
-            // TODO array length > 1
             resultBuffer[0] = *(T*)buffer;
         }
         else
         {
-            liftFunc(buffer, resultBuffer);
+            liftFunc!(buffer, resultBuffer, 1);
         }
 
         return resultBuffer;
@@ -625,7 +634,7 @@ public class FutureReader<T>(int handle, FutureVTable vTable) : ReaderBase(handl
             {
                 try
                 {
-                    readTask.SetResult(((T[])VTable.Lift(buf, new T[1]))[0]);
+                    readTask.SetResult(LiftBuffer(buf, new T[1], VTable.Lift)[0]);
                 }
                 catch(Exception e)
                 {
@@ -712,7 +721,8 @@ public class StreamReader<T>(int handle, StreamVTable vTable) :  ReaderBase(hand
         {
             if (it.IsCompletedSuccessfully)
             {
-                VTable.Lift(buf, resultBuffer);
+                // Primitives were read straight into resultBuffer, and have no Lift.
+                VTable.Lift?.Invoke(buf, resultBuffer, it.Result);
             }
             else if (!it.IsCanceled)
             {

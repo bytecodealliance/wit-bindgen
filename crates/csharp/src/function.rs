@@ -35,6 +35,8 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     parameter_type: ParameterType,
     pub(crate) result_type: Option<Type>,
     pub(crate) resource_type_name: Option<String>,
+    /// The function's futures and streams in signature order; see `future_or_stream_index`.
+    pub(crate) futures_and_streams: Vec<TypeId>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -73,7 +75,18 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             parameter_type: parameter_type,
             result_type: result_type,
             resource_type_name: None,
+            futures_and_streams: Vec::new(),
         }
+    }
+
+    /// Index of a future or stream type among the function's futures and streams, which the
+    /// canonical ABI numbers together. Payloads nested inside another future or stream are not in
+    /// that list and use 0.
+    fn future_or_stream_index(&self, ty: TypeId) -> usize {
+        self.futures_and_streams
+            .iter()
+            .position(|t| *t == ty)
+            .unwrap_or(0)
     }
 
     fn lower_variant(
@@ -315,7 +328,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let is_async = InterfaceGenerator::is_async(&func.kind);
 
         if is_async && !use_await {
-            uwriteln!(self.src, "Task<{ty}> {ret};");
+            uwriteln!(self.src, "global::System.Threading.Tasks.Task<{ty}> {ret};");
         } else {
             uwriteln!(self.src, "{ty} {ret};");
         }
@@ -358,17 +371,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
         let head = oks.concat();
         let tail = oks.iter().map(|_| ")").collect::<Vec<_>>().concat();
+        // Await the export itself; the Result wrapping its value is not awaitable.
+        let await_ = if use_await { "await " } else { "" };
         let val = if payload_is_void {
-            uwriteln!(self.src, "{target}.{func_name}({oper});");
+            uwriteln!(self.src, "{await_}{target}.{func_name}({oper});");
             "new None()".to_owned()
         } else {
-            format!("{target}.{func_name}({oper})")
+            format!("({await_}{target}.{func_name}({oper}))")
         };
-        uwriteln!(
-            self.src,
-            "{ret} = {}{head}{val}{tail};",
-            if use_await { "await " } else { "" }
-        );
+        uwriteln!(self.src, "{ret} = {head}{val}{tail};");
         if !self.results.is_empty() {
             self.interface_gen.csharp_gen.needs_wit_exception = true;
             let cases = cases.join("\n");
@@ -390,45 +401,18 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         ret
     }
 
-    pub fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
+    /// Allocates native memory for an async import to write its result into, sized and aligned
+    /// for the result type in the canonical ABI. The caller frees it once the call completes.
+    pub fn emit_allocation_for_type(&mut self, ty: &Type) -> String {
         let address = self.locals.tmp("address");
-        let buffer_size = self.get_size_for_type(results);
-        let align = self.get_align_for_type(results);
+        // TODO: Wasm64
+        let size = self.interface_gen.csharp_gen.sizes.size(ty).size_wasm32();
+        let align = self.interface_gen.csharp_gen.sizes.align(ty).align_wasm32();
         uwriteln!(
             self.src,
-            "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});"
+            "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({size}, {align});"
         );
-
-        // TODO: Store the address somewhere so we can free it when the task completes.
         address
-    }
-
-    fn get_size_for_type(&self, results: &[WasmType]) -> usize {
-        match results {
-            [WasmType::I32] => 4,
-            [WasmType::I64] => 8,
-            [WasmType::F32] => 4,
-            [WasmType::F64] => 8,
-            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
-            [WasmType::PointerOrI64, WasmType::Length] => 8,
-            _ => {
-                todo!("other types not yet supported");
-            }
-        }
-    }
-
-    fn get_align_for_type(&self, results: &[WasmType]) -> usize {
-        match results {
-            [WasmType::I32] => 4,
-            [WasmType::I64] => 8,
-            [WasmType::F32] => 4,
-            [WasmType::F64] => 8,
-            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
-            [WasmType::PointerOrI64, WasmType::Length] => 8,
-            _ => {
-                todo!("other types not yet supported");
-            }
-        }
     }
 }
 
@@ -1166,26 +1150,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let func_name = self.func_name.to_upper_camel_case();
                 let operands = operands.join(", ");
 
-                let (_namespace, interface_name) =
-                    &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
-                let mut interop_name = format!(
-                    "{}ImportsInterop",
-                    interface_name
-                        .strip_prefix("I")
-                        .unwrap()
-                        .strip_suffix(if self.interface_gen.direction == Direction::Import {
-                            "Imports"
-                        } else {
-                            "Exports"
-                        })
-                        .unwrap()
-                        .to_upper_camel_case()
-                );
-
-                if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import
-                {
-                    interop_name = format!("Imports.{interop_name}");
-                }
+                let interop_name = self.interface_gen.interop_class_name();
 
                 let resource_type_name = match self.kind {
                     FunctionKind::Method(resource_type_id)
@@ -1250,8 +1215,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             return (int)CallbackCode.Exit;
                         }}
 
+                        if (task.IsFaulted)
+                        {{
+                            global::System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(task.Exception!.InnerException!);
+                        }}
+
+                        // After this returns nothing observes the task, so a later failure must not be lost.
+                        task.ContinueWith(
+                            t => global::System.Environment.FailFast("Async export {async_func_name} failed", t.Exception),
+                            global::System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted | global::System.Threading.Tasks.TaskContinuationOptions.ExecuteSynchronously);
+
                         // TODO: Defer dropping borrowed resources until a result is returned.
                         ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
+                        if (contextTaskPtr == null)
+                        {{
+                            throw new global::System.InvalidOperationException("Async export {async_func_name} is waiting on something other than a component-model waitable, such as Task.Yield or Task.Delay; that is not supported yet.");
+                        }}
 
                         return (int)CallbackCode.Wait | (int)(contextTaskPtr->WaitableSetHandle << 4);
                 }}
@@ -1261,7 +1240,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // Start the Async function
                     uwriteln!(
                         self.src,
-                        r#"public static async Task {async_func_name}({})
+                        r#"public static async global::System.Threading.Tasks.Task {async_func_name}({})
                     {{
                         var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
 
@@ -1368,7 +1347,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         {name}TaskReturn({ret_param});
 
-                    }}, TaskContinuationOptions.ExecuteSynchronously);
+                    }}, global::System.Threading.Tasks.TaskContinuationOptions.ExecuteSynchronously);
                     
                     // TODO: Defer dropping borrowed resources until a result is returned.
                     ContextTask* contextTaskPtr = AsyncSupport.ContextGet();
@@ -1633,8 +1612,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.extend(operands.iter().take(*amt).cloned());
             }
 
-            Instruction::FutureLower { payload, ty: _ }
-            | Instruction::StreamLower { payload, ty: _ } => {
+            Instruction::FutureLower { payload, ty } | Instruction::StreamLower { payload, ty } => {
+                let index = self.future_or_stream_index(*ty);
                 let op = &operands[0];
                 let (generic_type_name, generic_type_name_with_qualifier) = match payload {
                     Some(generic_type) => {
@@ -1653,6 +1632,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Instruction::FutureLower { .. } => {
                         self.interface_gen.add_future(
                             self.func_name,
+                            index,
                             &generic_type_name,
                             &generic_type_name_with_qualifier,
                             **payload,
@@ -1661,6 +1641,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     _ => {
                         self.interface_gen.add_stream(
                             self.func_name,
+                            index,
                             &generic_type_name,
                             &generic_type_name_with_qualifier,
                             **payload,
@@ -1693,8 +1674,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::FutureLift { payload, ty: _ }
-            | Instruction::StreamLift { payload, ty: _ } => {
+            Instruction::FutureLift { payload, ty } | Instruction::StreamLift { payload, ty } => {
+                let index = self.future_or_stream_index(*ty);
                 let generic_type_name_with_qualifier = match payload {
                     Some(generic_type) => &self
                         .interface_gen
@@ -1740,6 +1721,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Instruction::FutureLift { .. } => {
                         self.interface_gen.add_future(
                             self.func_name,
+                            index,
                             &generic_type_name,
                             &generic_type_name_with_qualifier,
                             **payload,
@@ -1748,6 +1730,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     _ => {
                         self.interface_gen.add_stream(
                             self.func_name,
+                            index,
                             &generic_type_name,
                             &generic_type_name_with_qualifier,
                             **payload,
