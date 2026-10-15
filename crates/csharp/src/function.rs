@@ -401,45 +401,18 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         ret
     }
 
-    pub fn emit_allocation_for_type(&mut self, results: &[WasmType]) -> String {
+    /// Allocates native memory for an async import to write its result into, sized and aligned
+    /// for the result type in the canonical ABI. The caller frees it once the call completes.
+    pub fn emit_allocation_for_type(&mut self, ty: &Type) -> String {
         let address = self.locals.tmp("address");
-        let buffer_size = self.get_size_for_type(results);
-        let align = self.get_align_for_type(results);
+        // TODO: Wasm64
+        let size = self.interface_gen.csharp_gen.sizes.size(ty).size_wasm32();
+        let align = self.interface_gen.csharp_gen.sizes.align(ty).align_wasm32();
         uwriteln!(
             self.src,
-            "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});"
+            "void* {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({size}, {align});"
         );
-
-        // TODO: Store the address somewhere so we can free it when the task completes.
         address
-    }
-
-    fn get_size_for_type(&self, results: &[WasmType]) -> usize {
-        match results {
-            [WasmType::I32] => 4,
-            [WasmType::I64] => 8,
-            [WasmType::F32] => 4,
-            [WasmType::F64] => 8,
-            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
-            [WasmType::PointerOrI64, WasmType::Length] => 8,
-            _ => {
-                todo!("other types not yet supported");
-            }
-        }
-    }
-
-    fn get_align_for_type(&self, results: &[WasmType]) -> usize {
-        match results {
-            [WasmType::I32] => 4,
-            [WasmType::I64] => 8,
-            [WasmType::F32] => 4,
-            [WasmType::F64] => 8,
-            [WasmType::Pointer, WasmType::Length] => 4, // TODO: Wasm64
-            [WasmType::PointerOrI64, WasmType::Length] => 8,
-            _ => {
-                todo!("other types not yet supported");
-            }
-        }
     }
 }
 

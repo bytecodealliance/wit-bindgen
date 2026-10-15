@@ -279,7 +279,10 @@ public static class AsyncSupport
                 {
                     SetCanceled();
                 }
-                throw new NotImplementedException("LiftingTaskCompletionSource unexpected task status " + t.Status);
+                else
+                {
+                    throw new NotImplementedException("LiftingTaskCompletionSource unexpected task status " + t.Status);
+                }
             }, TaskContinuationOptions.ExecuteSynchronously);
         }
     }
@@ -306,7 +309,9 @@ public delegate uint FutureWrite(int handle, IntPtr buffer);
 
 public delegate uint StreamWrite(int handle, IntPtr buffer, uint length);
 public delegate uint StreamRead(int handle, IntPtr buffer, uint length);
-public delegate Array Lift(IntPtr buffer, Array? resultBuffer);
+/// Lifts the first <paramref name="count"/> values from canonical ABI memory at <paramref name="buffer"/>
+/// into <paramref name="resultBuffer"/>.
+public delegate Array Lift(IntPtr buffer, Array resultBuffer, int count);
 public delegate void Lower(object payload, List<Action> cleanups);
 public delegate uint CancelRead(int handle);
 public delegate uint CancelWrite(int handle);
@@ -505,17 +510,17 @@ public abstract class ReaderBase : IFutureStream
         }
     }
 
+    // Lifts one future value. Primitives were read into the pinned array GetBuffer returned, so copy
+    // that value; anything else goes through the vtable's Lift.
     protected unsafe T[] LiftBuffer<T>(IntPtr buffer, T[] resultBuffer, Lift? liftFunc)
     {
-        // Primitives were read straight into the pinned array; see GetBuffer.
         if (typeof(T).IsPrimitive)
         {
-            // TODO array length > 1
             resultBuffer[0] = *(T*)buffer;
         }
         else
         {
-            liftFunc(buffer, resultBuffer);
+            liftFunc!(buffer, resultBuffer, 1);
         }
 
         return resultBuffer;
@@ -714,10 +719,10 @@ public class StreamReader<T>(int handle, StreamVTable vTable) :  ReaderBase(hand
         var task = ReadInternal(buf, resultBuffer.Length, VTable);
         task.ContinueWith(it =>
         {
-            // Primitives were read straight into resultBuffer, and have no Lift.
-            if (it.IsCompletedSuccessfully && VTable.Lift != null)
+            if (it.IsCompletedSuccessfully)
             {
-                VTable.Lift(buf, resultBuffer);
+                // Primitives were read straight into resultBuffer, and have no Lift.
+                VTable.Lift?.Invoke(buf, resultBuffer, it.Result);
             }
             else if (!it.IsCanceled)
             {

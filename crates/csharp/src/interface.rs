@@ -424,17 +424,23 @@ impl InterfaceGenerator<'_> {
                     if lift_func != "null"
                         && let Some(payload_type) = canonical_payload
                     {
-                        let (lift, result) = self.lift_from_memory("buffer", &payload_type, None);
+                        let (lift, result) =
+                            self.lift_from_memory("elementAddress", &payload_type, None);
 
+                        // Values are laid out like a list: `size` is already a multiple of the
+                        // alignment, so it is also the stride.
                         uwrite!(
                             self.csharp_interop_src,
                             r#"
-                            public static unsafe Array {future_stream_name}Lift{upper_camel_future_type}(IntPtr buffer, Array resultBuffer) 
+                            public static unsafe Array {future_stream_name}Lift{upper_camel_future_type}(IntPtr buffer, Array resultBuffer, int count)
                             {{
-                                {lift}
+                                for (int i = 0; i < count; i++)
+                                {{
+                                    IntPtr elementAddress = buffer + i * {size};
+                                    {lift}
 
-                                // TODO: length > 1
-                                resultBuffer.SetValue({result}, 0);
+                                    resultBuffer.SetValue({result}, i);
+                                }}
                                 return resultBuffer;
                             }}
                             "#
@@ -751,12 +757,7 @@ impl InterfaceGenerator<'_> {
             let async_status_var = "result"; // String::new();
             let requires_async_return_buffer_param = func.result.is_some();
             let async_return_buffer = if requires_async_return_buffer_param {
-                let buffer = bindgen.emit_allocation_for_type(&sig.results);
-                uwriteln!(
-                    bindgen.src,
-                    "//TODO: store somewhere with the TaskCompletionSource, possibly in the state, using Task.AsyncState to retrieve it later."
-                );
-                Some(buffer)
+                Some(bindgen.emit_allocation_for_type(&func.result.unwrap()))
             } else {
                 None
             };
@@ -830,10 +831,11 @@ var {async_status_var} = {raw_name}({wasm_params});
                     var task = AsyncSupport.TaskFromStatus<{return_type}>({async_status_var}, {});",
                     lift_func
                 );
+                // The callee writes the result into the buffer when it returns, which may be after
+                // this method has returned, so free it only once the task has completed (and lifted).
                 uwriteln!(
                     src,
-                    "global::System.Runtime.InteropServices.NativeMemory.Free({});",
-                    buffer
+                    "task.ContinueWith(_ => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({buffer}), global::System.Threading.Tasks.TaskContinuationOptions.ExecuteSynchronously);"
                 );
                 uwriteln!(src, "return task;");
             } else {
