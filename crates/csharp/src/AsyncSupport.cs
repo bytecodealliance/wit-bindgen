@@ -35,6 +35,7 @@ public struct ContextTask
 {
     public int WaitableSetHandle;
     public int FutureHandle;
+    public int CallbackDepth;
 }
 
 public static class AsyncSupport
@@ -94,6 +95,39 @@ public static class AsyncSupport
         Interop.WaitableJoin(readerWriterHandle, waitableHandle);
     }
 
+    internal static unsafe void Unregister(int handle)
+    {
+        ContextTask* contextTaskPtr = ContextGet();
+        if (contextTaskPtr == null)
+        {
+            return;
+        }
+
+        var waitables = pendingTasks[contextTaskPtr->WaitableSetHandle];
+        waitables.Remove(handle, out _);
+        Interop.WaitableJoin(handle, 0);
+
+        if (contextTaskPtr->CallbackDepth == 0)
+        {
+            TryCleanupContext(contextTaskPtr, waitables);
+        }
+    }
+
+    private static unsafe bool TryCleanupContext(ContextTask* contextTaskPtr, ConcurrentDictionary<int, WaitableInfoState> waitables)
+    {
+        if (waitables.Count != 0)
+        {
+            return false;
+        }
+
+        var waitableSetHandle = contextTaskPtr->WaitableSetHandle;
+        pendingTasks.Remove(waitableSetHandle, out _);
+        WaitableSetDrop(waitableSetHandle);
+        ContextSet(null);
+        Marshal.FreeHGlobal((IntPtr)contextTaskPtr);
+        return true;
+    }
+
     // TODO: Revisit this to see if we can remove it.
     // Only allow joining to a handle directly when there is no waitable.
     public static void Join(int handle) 
@@ -140,51 +174,58 @@ public static class AsyncSupport
         var waitables = pendingTasks[contextTaskPtr->WaitableSetHandle];
         var waitableInfoState = waitables[e.Waitable];
 
-        if (e.IsDropped)
-        {
-            waitableInfoState.FutureStream!.OtherSideDropped();
-        }
-
         if (e.IsCompleted || e.IsDropped)
         {
-            // The operation is complete so we can free the buffer and remove the waitable from our dicitonary
-            waitables.Remove(e.Waitable, out _);
-            if (e.IsSubtask)
-            {
-                switch (e.SubtaskStatus)
-                {
-                    case { IsStarting: true }:
-                        throw new Exception("unexpected subtask status Starting " + e.Code);
-
-                    case { IsStarted: true }:
-                        break;
-
-                    case { IsReturned: true }:
-                        waitableInfoState.SetResult(e.WaitableCount);
-                        Interop.SubtaskDrop(e.Waitable);
-                        break;
-
-                    default:
-                        throw new Exception("TODO: subtask status " + e.Code);
-                }
-            }
-            else
+            contextTaskPtr->CallbackDepth++;
+            try
             {
                 if (e.IsDropped)
                 {
-                    waitableInfoState.SetException(new StreamDroppedException());
+                    waitableInfoState.FutureStream!.OtherSideDropped();
+                }
+
+                // The operation is complete so we can free the buffer and remove the waitable from our dicitonary
+                waitables.Remove(e.Waitable, out _);
+                Interop.WaitableJoin(e.Waitable, 0);
+                if (e.IsSubtask)
+                {
+                    switch (e.SubtaskStatus)
+                    {
+                        case { IsStarting: true }:
+                            throw new Exception("unexpected subtask status Starting " + e.Code);
+
+                        case { IsStarted: true }:
+                            break;
+
+                        case { IsReturned: true }:
+                            waitableInfoState.SetResult(e.WaitableCount);
+                            Interop.SubtaskDrop(e.Waitable);
+                            break;
+
+                        default:
+                            throw new Exception("TODO: subtask status " + e.Code);
+                    }
                 }
                 else
                 {
-                    // This may add a new waitable to the set.
-                    waitableInfoState.SetResult(e.WaitableCount);
+                    if (e.IsDropped)
+                    {
+                        waitableInfoState.SetException(new StreamDroppedException());
+                    }
+                    else
+                    {
+                        // This may add a new waitable to the set.
+                        waitableInfoState.SetResult(e.WaitableCount);
+                    }
                 }
             }
-
-            if (waitables.Count == 0)
+            finally
             {
-                ContextSet(null);
-                Marshal.FreeHGlobal((IntPtr)contextTaskPtr);
+                contextTaskPtr->CallbackDepth--;
+            }
+
+            if (contextTaskPtr->CallbackDepth == 0 && TryCleanupContext(contextTaskPtr, waitables))
+            {
                 return (int)CallbackCode.Exit;
             }
 
@@ -289,6 +330,7 @@ public static class AsyncSupport
     {
         var contextTaskPtr = (ContextTask *)Marshal.AllocHGlobal(Marshal.SizeOf<ContextTask>());
         contextTaskPtr->WaitableSetHandle = WaitableSetNew();
+        contextTaskPtr->CallbackDepth = 0;
         ContextSet(contextTaskPtr);
         return contextTaskPtr;
     }
@@ -320,7 +362,9 @@ public class CancelableRead(IVTable cancelableVTable, int handle) : ICancelable
 {
     public uint Cancel()
     {
-        return cancelableVTable.CancelRead(handle);        
+        var status = cancelableVTable.CancelRead(handle);
+        AsyncSupport.Unregister(handle);
+        return status;
     }
 }
 
@@ -328,7 +372,9 @@ public class CancelableWrite(IVTable cancelableVTable, int handle) : ICancelable
 {
     public uint Cancel()
     {
-        return cancelableVTable.CancelWrite(handle);        
+        var status = cancelableVTable.CancelWrite(handle);
+        AsyncSupport.Unregister(handle);
+        return status;
     }
 }
 

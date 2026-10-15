@@ -9,10 +9,12 @@ namespace TestWorld.wit.Exports.my.test
         public static async Task<FutureReader<string>> Ping(FutureReader<string> future, string s)
         {
             var msg = (await future.Read()) + s;
+            future.Dispose();
             var (newFutureReader, newFutureWriter) = IIExports.FutureNewString();
             var writeTask = newFutureWriter.Write(msg);
             writeTask.ContinueWith(t =>
             {
+                newFutureWriter.Dispose();
                 if(t.Exception != null)
                 {
                     Debug.Fail("Exception in returned future write." + t.Exception);                    
@@ -23,7 +25,9 @@ namespace TestWorld.wit.Exports.my.test
 
         public static async Task<string> Pong(FutureReader<string> future)
         {
-            return await future.Read();
+            var result = await future.Read();
+            future.Dispose();
+            return result;
         }
     }
 }
