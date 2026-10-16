@@ -703,7 +703,7 @@ fn moonbit_identifier_stem(input: &str) -> String {
         .to_snake_case()
 }
 
-fn background_group_name(func: &Function) -> String {
+pub(super) fn background_group_name(func: &Function) -> String {
     let mut names = Ns::default();
     for param in &func.params {
         names.tmp(&param.name.to_moonbit_ident());
