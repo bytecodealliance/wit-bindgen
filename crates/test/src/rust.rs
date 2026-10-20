@@ -98,7 +98,9 @@ impl LanguageMethods for Rust {
             return true;
         }
 
-        false
+        // The WIT static `new` collides with the generated resource constructor.
+        name == "resource-payload-name-collision.wit"
+            || name.starts_with("resource-payload-name-collision.wit-")
     }
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
