@@ -2,6 +2,15 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(wasi_has_initialize)");
+
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    // Rust 1.100 supplies `_initialize` for WASI cdylibs:
+    // https://github.com/rust-lang/rust/pull/161421
+    // Remove the version check once the MSRV reaches 1.100.
+    if target_os == "wasi" && version_check::is_min_version("1.100.0") == Some(true) {
+        println!("cargo:rustc-cfg=wasi_has_initialize");
+    }
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or(String::new());
     let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap_or(String::new());
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or(String::new());
