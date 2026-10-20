@@ -52,6 +52,8 @@ impl LanguageMethods for Cpp {
         }
         return match name {
             "issue1514-6.wit" | "named-fixed-length-list.wit" => true,
+            // The WIT static `new` collides with the generated `New` factory.
+            "resource-payload-name-collision.wit" => true,
             _ => false,
         } || config.async_;
     }
