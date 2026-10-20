@@ -1,5 +1,6 @@
 use std::env;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(wasi_has_initialize)");
@@ -8,7 +9,7 @@ fn main() {
     // Rust 1.100 supplies `_initialize` for WASI cdylibs:
     // https://github.com/rust-lang/rust/pull/161421
     // Remove the version check once the MSRV reaches 1.100.
-    if target_os == "wasi" && version_check::is_min_version("1.100.0") == Some(true) {
+    if target_os == "wasi" && rustc_minor_version().unwrap_or(0) >= 100 {
         println!("cargo:rustc-cfg=wasi_has_initialize");
     }
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or(String::new());
@@ -33,6 +34,17 @@ fn main() {
     if target_env == "p3" && !cfg!(feature = "std") {
         link_lib("cabi_wasip3_tls");
     }
+}
+
+fn rustc_minor_version() -> Option<u32> {
+    let rustc = env::var_os("RUSTC")?;
+    let output = Command::new(rustc).arg("--version").output().ok()?;
+    let version = std::str::from_utf8(&output.stdout).ok()?;
+    let mut pieces = version.split('.');
+    if pieces.next() != Some("rustc 1") {
+        return None;
+    }
+    pieces.next()?.parse().ok()
 }
 
 fn link_lib(name: &str) {

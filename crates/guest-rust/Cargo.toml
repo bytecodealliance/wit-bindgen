@@ -16,9 +16,6 @@ workspace = true
 [package.metadata.docs.rs]
 all-features = true
 
-[build-dependencies]
-version_check = "0.9.5"
-
 [dependencies]
 wit-bindgen-rust-macro = { path = "./macro", optional = true, default-features = false, version = "0.62.0" }
 bitflags = { workspace = true, optional = true }

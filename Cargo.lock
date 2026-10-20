@@ -1505,7 +1505,6 @@ dependencies = [
  "futures",
  "rustc-std-workspace-alloc",
  "rustc-std-workspace-core",
- "version_check",
  "wit-bindgen-rust-macro",
 ]
 
