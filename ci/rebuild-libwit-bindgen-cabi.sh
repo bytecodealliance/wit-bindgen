@@ -113,11 +113,22 @@ cat >./crates/guest-rust/src/rt/wit_bindgen_cabi_wasip3_tls.c <<-EOF
 
 static _Thread_local void *task_context = NULL;
 
+__attribute__((weak))
+extern void *__wasilibc_task_context_get(void);
+__attribute__((weak))
+extern void __wasilibc_task_context_set(void*);
+
 void *$wasip3_get(void) {
+  if (__wasilibc_task_context_get)
+    return __wasilibc_task_context_get();
   return task_context;
 }
 
 void $wasip3_set(void *ptr) {
+  if (__wasilibc_task_context_set) {
+    __wasilibc_task_context_set(ptr);
+    return;
+  }
   task_context = ptr;
 }
 EOF

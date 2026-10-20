@@ -4,10 +4,21 @@
 
 static _Thread_local void *task_context = NULL;
 
+__attribute__((weak))
+extern void *__wasilibc_task_context_get(void);
+__attribute__((weak))
+extern void __wasilibc_task_context_set(void*);
+
 void *wit_bindgen_0_63_0_get_task_context(void) {
+  if (__wasilibc_task_context_get)
+    return __wasilibc_task_context_get();
   return task_context;
 }
 
 void wit_bindgen_0_63_0_set_task_context(void *ptr) {
+  if (__wasilibc_task_context_set) {
+    __wasilibc_task_context_set(ptr);
+    return;
+  }
   task_context = ptr;
 }

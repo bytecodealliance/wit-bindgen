@@ -579,22 +579,14 @@ mod task_state {
     }
 }
 
-#[cfg(all(target_env = "p3", feature = "std"))]
-mod task_state {
-    std::thread_local!(static TASK_STATE: std::cell::Cell<*mut u8> = std::cell::Cell::new(std::ptr::null_mut()));
-
-    pub fn get() -> *mut u8 {
-        TASK_STATE.with(|c| c.get())
-    }
-
-    pub unsafe fn set(value: *mut u8) {
-        TASK_STATE.with(|c| c.set(value))
-    }
-}
-
-#[cfg(all(target_env = "p3", not(feature = "std")))]
+// TODO: in the future once wasi-sdk-35 is released with
+// WebAssembly/wasi-libc#884 this `task_state` module can unconditionally work
+// with `__wasilibc_task_context_{get,set}`. Until that time though detecting
+// wasi-sdk-35 is done with with a weak symbol import which is not possible to
+// write on stable Rust right now.
+#[cfg(target_env = "p3")]
 mod wasip3_context;
-#[cfg(all(target_env = "p3", not(feature = "std")))]
+#[cfg(target_env = "p3")]
 mod task_state {
 
     pub fn get() -> *mut u8 {
