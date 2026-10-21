@@ -87,6 +87,110 @@ extend the component resource's lifetime or keep application resources open
 after its destructor runs. Imported resources retain their existing ownership
 behavior and constructor/method names.
 
+## Async ownership and cleanup scopes
+
+An async export's `background_group` lets explicitly spawned work outlive the
+method's computation. The implementation
+returns its result, the generated adapter calls CM `task.return`, and work in
+the group can continue afterward. The MoonBit scope finishes when that work
+finishes. Forwarding the group through a local handle method does not join it.
+Work that must finish before producing the result belongs in the method itself
+or in a separate local `with_task_group`.
+
+There are three cleanup scopes:
+
+- Use ordinary `defer` for values used only by the current computation.
+- Use `background_group.add_defer` for an owned handle that must remain live
+  until the group's children finish. Register it before the first operation
+  that can fail or suspend.
+- Give a returned future or stream producer ownership of the values it captures.
+  Use `defer` inside the producer once it starts, and `on_unstarted_drop` to
+  release captured handles if it is discarded before execution.
+
+Shield asynchronous cleanup from cancellation with `protect_from_cancel`.
+Group defer blocks must be `nocancel`; synchronous handle `drop()` already is.
+
+For example, a response can transfer its owned body to the export's group:
+
+```moonbit
+pub async fn Response::collect(
+  self : Response,
+  background_group : @async-core.TaskGroup[Unit],
+) -> (String, String?) {
+  guard! self.body is Some(body)
+  self.body = None
+  background_group.add_defer(() => body.drop())
+  body.collect(background_group)
+}
+```
+
+The response no longer owns the body after clearing its field. The registered
+cleanup retains the owning handle until all group children terminate, including
+on error or cancellation. Neither an explicit `body.drop()` nor an ordinary
+`defer body.drop()` here would cover work that outlives the method's return.
+Do not wait for the background group inside the method: a worker may need the
+caller to consume a returned stream or future before it can finish.
+
+The body's collection code has a shorter scope. It takes its stream and trailer
+future out of the object's fields before suspending, then uses deferred cleanup
+to close both on success, error, or cancellation. The complete handwritten
+example is in
+[`resource-payloads/leaf.mbt`](../../../tests/runtime/moonbit/resource-payloads/leaf.mbt).
+That body's implementation currently finishes its own work before returning;
+the response demonstrates retaining ownership across the larger group scope.
+
+Returned endpoint producers have a separate lifetime: the generated bridge
+coroutines belong to the CM task and do not join the export's background group.
+A group defer can therefore run before a returned producer finishes. Keep its
+captured handle in the producer instead:
+
+```moonbit
+pub async fn deferred_get(
+  counter : CounterHandle,
+  _background_group : @async-core.TaskGroup[Unit],
+) -> @async-core.Future[UInt] {
+  @async-core.Future::from(
+    async fn() {
+      defer counter.drop()
+      counter.get()
+    },
+    on_unstarted_drop=() => counter.drop(),
+  )
+}
+```
+
+The unstarted callback runs only if the producer never starts; otherwise the
+producer's `defer` handles completion, error, and cancellation. That callback
+is synchronous, so it suits handles with synchronous `drop()`. Capturing an
+endpoint whose cleanup must suspend requires a separate explicit ownership
+and async-close design; it cannot simply be closed in that callback. Cleanup
+of a resource *produced as the value* is also separate from cleanup of captures:
+use `Future::ready_with_cleanup` or a stream's `cleanup` callback when needed.
+
+An async WIT method still borrows its receiver; calling it does not transfer
+ownership or automatically drop it. Keeping a borrowed payload in a closure
+does not keep its resource alive. Background work must own the resources it
+needs, or have an explicit owner that retains them through completion. The
+[`exported-resource-lifecycle` test](../../../tests/runtime/moonbit/exported-resource-lifecycle/test.mbt)
+demonstrates this with an owned handle: its caller receives the result, verifies
+the resource is still live, then opens a gate so the worker can use it and the
+group can destroy it. It does not retain a borrowed WIT argument after return.
+It also covers a returned producer that remains live after the group finishes,
+and local discard before producer execution. Local discard matters because
+lowering an endpoint for return may already start its producer.
+
+The body/response example deliberately asserts that collection has taken their
+fields before destruction. This is a **test-only consumption requirement**,
+not a general policy for abandoned responses. A production API must define
+abandonment: for example, provide an async `close` operation that takes and
+closes remaining endpoints under cancellation protection, then permit the
+synchronous resource destructor to release the now-empty object. Both `collect`
+and `close` must leave it safe to drop on success, error, or cancellation.
+If callers may drop without closing, the destructor needs a synchronous
+abandonment mechanism supported by the endpoint API. The fixture does not
+provide that mechanism, and `background_group` is not a general finalizer for
+arbitrary future drops.
+
 ## Visibility and generated names
 
 Use a plain `struct Counter` (or another abstract type definition) to keep the

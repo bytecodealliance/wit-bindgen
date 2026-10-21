@@ -3224,6 +3224,48 @@ mod tests {
     }
 
     #[test]
+    fn exported_resource_helpers_preserve_wit_new_and_dtor() {
+        // These names collide with factories/destructors in other generators,
+        // so keep this regression specific to MoonBit rather than shared WIT.
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface api {
+                resource counter {
+                    constructor(value: u32);
+                    new: static func(value: u32) -> counter;
+                    dtor: func();
+                }
+            }
+
+            world runner { export api; }
+            "#,
+            "runner",
+        );
+
+        let source = file(&files, "gen/interface/a/b/api/top.mbt");
+        for declaration in [
+            "declare pub fn Counter::new(value : UInt) -> CounterHandle",
+            "declare pub fn Counter::dtor(self : Counter) -> Unit",
+            "pub fn CounterHandle::new0(payload : Counter) -> CounterHandle",
+            "declare fn Counter::dtor0(_self : Counter) -> Unit",
+        ] {
+            assert!(source.contains(declaration), "{source}");
+        }
+        // Constructors and destruction must call the renamed lifecycle helpers;
+        // forwarding the WIT functions must keep their original meanings.
+        assert!(
+            source.contains("CounterHandle::new0(Counter::counter(value))"),
+            "{source}"
+        );
+        assert!(source.contains("Counter::new(value)"), "{source}");
+        assert!(source.contains("Counter::dtor(self.payload())"), "{source}");
+        let ffi = file(&files, "gen/interface/a/b/api/ffi.mbt");
+        assert!(ffi.contains("Counter::dtor0(payload)"), "{ffi}");
+    }
+
+    #[test]
     fn sync_world_does_not_emit_async_runtime_or_wrappers() {
         let files = generate(
             r#"

@@ -37,8 +37,6 @@ impl LanguageMethods for D {
             || name == "map-in-world.wit"
             || name == "map-named-wit-map.wit"
             || name == "issue1642.wit"
-            // The WIT `dtor` method collides with the generated destructor wrapper.
-            || name == "resource-payload-name-collision.wit"
     }
 
     fn default_bindgen_args_for_codegen(&self) -> &[&str] {

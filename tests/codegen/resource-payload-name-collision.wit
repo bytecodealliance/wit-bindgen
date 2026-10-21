@@ -4,10 +4,8 @@ interface api {
   resource counter {
     constructor(value: u32);
     get: func() -> u32;
-    new: static func(value: u32) -> counter;
     payload: func() -> u32;
     drop: func();
-    dtor: func();
     wasm-from-handle: func();
     wasm-take-handle: func();
     wasm-borrow: func();
