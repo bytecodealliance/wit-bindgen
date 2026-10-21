@@ -99,6 +99,7 @@ impl InterfaceGenerator<'_> {
             .unwrap()
             .to_moonbit_type_ident();
         let resolver = &self.world_gen.pkg_resolver;
+        let slot = resolver.resource_slot_names[&id].clone();
         let new = resolver.resource_helper_name(id, "new");
         let payload = resolver.resource_helper_name(id, "payload");
         let drop = resolver.resource_helper_name(id, "drop");
@@ -176,22 +177,31 @@ impl InterfaceGenerator<'_> {
             declare fn {data}::{dtor}(_self : {data}) -> Unit
 
             ///|
-            let wasm{name}Payloads : Array[{data}?] = []
+            priv enum {slot} {{
+                Occupied({data})
+                Free(Int?)
+            }}
 
             ///|
-            let wasm{name}FreeReps : Array[Int] = []
+            // Vacant slots form a free list inside the payload array.
+            let wasm{name}Payloads : Array[{slot}] = []
+
+            ///|
+            let wasm{name}FreeRep : Ref[Int?] = Ref(None)
 
             ///|
             /// Creates an owned resource and retains its payload until destruction.
             pub fn {name}::{new}(payload : {data}) -> {name} {{
-                let rep = match wasm{name}FreeReps.pop() {{
+                let rep = match wasm{name}FreeRep.val {{
                     Some(rep) => {{
-                        wasm{name}Payloads[rep] = Some(payload)
+                        guard! wasm{name}Payloads[rep] is Free(next)
+                        wasm{name}FreeRep.val = next
+                        wasm{name}Payloads[rep] = Occupied(payload)
                         rep
                     }}
                     None => {{
                         let rep = wasm{name}Payloads.length()
-                        wasm{name}Payloads.push(Some(payload))
+                        wasm{name}Payloads.push(Occupied(payload))
                         rep
                     }}
                 }}
@@ -236,7 +246,8 @@ impl InterfaceGenerator<'_> {
             ///|
             #doc(hidden)
             pub fn {name}::{borrow}(rep : Int) -> {data} {{
-                wasm{name}Payloads[rep].unwrap()
+                guard! wasm{name}Payloads[rep] is Occupied(payload)
+                payload
             }}
 
             ///|
@@ -260,10 +271,10 @@ impl InterfaceGenerator<'_> {
             ///|
             #doc(hidden)
             pub fn {func_name}(rep : Int) -> Unit {{
-                let payload = wasm{name}Payloads[rep].unwrap()
+                let payload = {name}::{borrow}(rep)
                 // Free the slot before user cleanup, which may create another resource.
-                wasm{name}Payloads[rep] = None
-                wasm{name}FreeReps.push(rep)
+                wasm{name}Payloads[rep] = Free(wasm{name}FreeRep.val)
+                wasm{name}FreeRep.val = Some(rep)
                 {data}::{dtor}(payload)
             }}
             "#,

@@ -5,6 +5,12 @@ package test:exported-resource-lifecycle;
 interface api {
   resource tracked {
     constructor(id: u32, reenter-on-drop: bool) -> result<tracked, string>;
+    id: func() -> u32;
+  }
+
+  resource background-check {
+    constructor(expected-id: u32);
+    run: async func(value: tracked, gate: future) -> future;
   }
 
   retain-alias: func(value: tracked) -> tracked;
@@ -12,6 +18,10 @@ interface api {
   drop-saved-alias: func();
   take-reentrant-child: func() -> tracked;
   take-dropped: func() -> list<u32>;
+  use-in-background: async func(value: tracked, gate: future) -> future;
+  use-in-producer: async func(value: tracked) -> future<u32>;
+  release-producer: func();
+  discard-unstarted-producer: async func(value: tracked);
 }
 
 world test {
@@ -20,5 +30,5 @@ world test {
 
 world runner {
   import api;
-  export run: func();
+  export run: async func();
 }

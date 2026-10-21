@@ -421,7 +421,7 @@ impl WorldGenerator for MoonBit {
             .insert(id, name.clone());
 
         // Preserve the WIT name for the implementation type. Allocate a separate
-        // owning wrapper name without colliding with other WIT types.
+        // owning wrapper and private storage names without colliding with WIT types.
         let mut type_names = Ns::default();
         for (name, _) in &resolve.interfaces[id].types {
             let _ = type_names.insert(&name.to_moonbit_type_ident());
@@ -430,6 +430,14 @@ impl WorldGenerator for MoonBit {
             if matches!(resolve.types[*ty].kind, TypeDefKind::Resource) {
                 let handle = type_names.tmp(&format!("{}Handle", name.to_moonbit_type_ident()));
                 self.pkg_resolver.resource_handle_names.insert(*ty, handle);
+            }
+        }
+        // Allocate private names last so storage changes cannot rename public handles.
+        for ty in resolve.interfaces[id].types.values() {
+            if matches!(resolve.types[*ty].kind, TypeDefKind::Resource) {
+                let handle = &self.pkg_resolver.resource_handle_names[ty];
+                let slot = type_names.tmp(&format!("Wasm{handle}Slot"));
+                self.pkg_resolver.resource_slot_names.insert(*ty, slot);
             }
         }
 
@@ -3221,6 +3229,40 @@ mod tests {
                 std::panic!("missing generated file `{path}`; generated: {names}")
             });
         std::str::from_utf8(contents).unwrap()
+    }
+
+    #[test]
+    fn exported_resource_helpers_preserve_wit_names() {
+        // These names collide with factories/destructors in other generators,
+        // so keep this regression specific to MoonBit rather than shared WIT.
+        let files = generate(
+            include_str!("../tests/codegen/resource-payload-name-collision.wit"),
+            "test",
+        );
+
+        let source = file(&files, "gen/interface/test/resource-payloads/api/top.mbt");
+        for declaration in [
+            "declare pub fn Counter::new(value : UInt) -> CounterHandle0",
+            "declare pub fn Counter::dtor(self : Counter) -> Unit",
+            "pub fn CounterHandle0::new0(payload : Counter) -> CounterHandle0",
+            "declare fn Counter::dtor0(_self : Counter) -> Unit",
+            "priv enum WasmCounterHandle0Slot1",
+        ] {
+            assert!(source.contains(declaration), "{source}");
+        }
+        // Constructors and destruction must call the renamed lifecycle helpers;
+        // forwarding the WIT functions must keep their original meanings.
+        assert!(
+            source.contains("CounterHandle0::new0(Counter::counter(value))"),
+            "{source}"
+        );
+        assert!(source.contains("Counter::new(value)"), "{source}");
+        assert!(
+            source.contains("Counter::dtor(self.payload0())"),
+            "{source}"
+        );
+        let ffi = file(&files, "gen/interface/test/resource-payloads/api/ffi.mbt");
+        assert!(ffi.contains("Counter::dtor0(payload)"), "{ffi}");
     }
 
     #[test]

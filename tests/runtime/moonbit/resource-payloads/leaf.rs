@@ -4,7 +4,9 @@ use crate::exports::my::test::leaf_interface::{
     Body, Fields, Guest, GuestBody, GuestFields, GuestLeafThing, GuestResponse,
 };
 use std::cell::RefCell;
+use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::task::Poll;
 use wit_bindgen::{FutureReader, StreamReader};
 
 struct Component;
@@ -58,6 +60,31 @@ impl Guest for Component {
 
     fn response_live_count() -> u32 {
         RESPONSE_LIVE_COUNT.load(Ordering::SeqCst)
+    }
+
+    async fn check_collection_cleanup() {
+        let bodies = Self::body_live_count();
+        let responses = Self::response_live_count();
+        let fields = Self::fields_live_count();
+        let (mut writer, contents) = wit_stream::new::<u8>();
+        let (trailer_writer, trailers) =
+            wit_future::new::<Fields>(|| Fields::new(MyFields::new("unread trailer".into())));
+        let response = MyResponse::new(Body::new(MyBody::new(contents, Some(trailers))));
+        let mut collection = Box::pin(response.collect());
+        // Dropping a pending Rust future is cancellation. Poll once to move
+        // ownership into the collection, then check RAII releases every layer.
+        std::future::poll_fn(|cx| {
+            assert!(collection.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        drop(collection);
+        drop(response);
+        drop(trailer_writer);
+        assert_eq!(Self::body_live_count(), bodies);
+        assert_eq!(Self::response_live_count(), responses);
+        assert_eq!(Self::fields_live_count(), fields);
+        assert_eq!(writer.write_one(0).await, Some(0));
     }
 }
 

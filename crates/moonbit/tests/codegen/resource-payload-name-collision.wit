@@ -15,13 +15,14 @@ interface api {
   record counter-handle {
     value: u32,
   }
+  type wasm-counter-handle0-slot = u32;
 
   // Implementation types are user-defined, so aggregates must not require derives.
   variant borrowed {
     one(borrow<counter>),
     many(list<borrow<counter>>),
   }
-  read: func(value: borrowed, data: counter-handle);
+  read: func(value: borrowed, data: counter-handle, slot: wasm-counter-handle0-slot);
 
   // Exercise the MoonBit option that represents error resources as suberrors.
   resource example-error {

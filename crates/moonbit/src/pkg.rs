@@ -31,6 +31,7 @@ pub(crate) struct PkgResolver {
     pub import_interface_names: HashMap<InterfaceId, String>,
     pub export_interface_names: HashMap<InterfaceId, String>,
     pub resource_handle_names: HashMap<TypeId, String>,
+    pub resource_slot_names: HashMap<TypeId, String>,
 }
 
 impl PkgResolver {
