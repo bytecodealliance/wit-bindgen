@@ -98,6 +98,7 @@ fn nested_leaf_future(
 
 ///|
 pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
+  @leaf-interface.check_collection_cleanup()
   {
     let before = @leaf-interface.leaf_drop_count()
     let output = @test-interface.relay_nested_leaf(
