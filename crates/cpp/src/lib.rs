@@ -486,7 +486,8 @@ impl Cpp {
             let _ = std::mem::replace(&mut self.includes, store.includes);
             let _ = std::mem::replace(&mut self.h_src, store.src);
             let _ = std::mem::replace(&mut self.dependencies, store.dependencies);
-            self.includes.push(String::from("\"") + &filename + "\"");
+            self.h_src.change_namespace(&[]);
+            uwriteln!(self.h_src.src, "#include \"{filename}\"");
         }
     }
 }
