@@ -160,6 +160,7 @@ func HeapMark() uint32 {
 	return uint32(m.HeapAlloc)
 }
 
+// The Go async runtime has no case for a cancelled export yet.
 func SupportsCancel() bool {
-	return true
+	return false
 }
