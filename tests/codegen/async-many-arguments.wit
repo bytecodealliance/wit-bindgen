@@ -1,0 +1,67 @@
+//@ async = true
+
+// An async export with more than 16 flat parameter values gets its arguments
+// in one block of memory, which the callee frees once it has read them.
+// `direct-values` stays under that limit, so it has no block.
+
+package my:test;
+
+interface i {
+  record big-record {
+    f0: u32, f1: u32, f2: u32, f3: u32, f4: u32, f5: u32, f6: u32, f7: u32, f8: u32,
+    f9: u32, f10: u32, f11: u32, f12: u32, f13: u32, f14: u32, f15: u32, f16: u32,
+  }
+
+  // 18 flat values: the arguments arrive in a block.
+  many-arguments: async func(
+    a: string,
+    b: string,
+    c: string,
+    d: string,
+    e: string,
+    f: string,
+    g: string,
+    h: string,
+    i: string,
+  );
+
+  // 15 flat values: direct parameters, no block to free. (16 would be direct
+  // too, but Go cannot export an async function with 16 flat values.)
+  direct-values: async func(a: string, b: string, c: string, d: string,
+                            e: string, f: string, g: string, h: u32);
+
+  // 17 flat values in one parameter.
+  one-big-record: async func(r: big-record);
+
+  // 18 flat values: nine lists, each read out of the block.
+  many-lists: async func(
+    a: list<string>,
+    b: list<string>,
+    c: list<string>,
+    d: list<string>,
+    e: list<string>,
+    f: list<string>,
+    g: list<string>,
+    h: list<string>,
+    i: list<string>,
+  );
+
+  resource r {
+    // 19 flat values counting `self`: a method whose arguments arrive in a block.
+    many: async func(
+      a: string,
+      b: string,
+      c: string,
+      d: string,
+      e: string,
+      f: string,
+      g: string,
+      h: string,
+      i: string,
+    );
+  }
+}
+
+world test {
+  export i;
+}

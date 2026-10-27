@@ -1,0 +1,75 @@
+//@ async = true
+package my:test;
+
+interface i {
+  record big-record {
+    f0: u32, f1: u32, f2: u32, f3: u32, f4: u32, f5: u32, f6: u32, f7: u32, f8: u32,
+    f9: u32, f10: u32, f11: u32, f12: u32, f13: u32, f14: u32, f15: u32, f16: u32,
+  }
+
+  // 18 flat values: the arguments arrive in a block that the callee must free.
+  many-arguments: async func(
+    a: string,
+    b: string,
+    c: string,
+    d: string,
+    e: string,
+    f: string,
+    g: string,
+    h: string,
+    i: string,
+  );
+
+  // 17 flat values; the call waits on `x`, so the caller can cancel it.
+  many-arguments-pending: async func(
+    x: future,
+    a: string,
+    b: string,
+    c: string,
+    d: string,
+    e: string,
+    f: string,
+    g: string,
+    h: string,
+  );
+
+  // 17 flat values; option and result read their payload only when present.
+  many-arguments-cases: async func(
+    a: option<u32>,
+    b: result<u32, string>,
+    c: string,
+    d: string,
+    e: string,
+    f: string,
+    g: string,
+    h: string,
+  );
+
+  // 17 flat values in one parameter.
+  one-big-record: async func(r: big-record);
+
+  // 15 flat values: direct parameters, no block. (16 would be direct too, but Go
+  // cannot export an async function with 16 flat values.)
+  direct-values: async func(a: string, b: string, c: string, d: string,
+                            e: string, f: string, g: string, h: u32);
+
+  // A number that grows when the parameter block leaks and stays the same
+  // when it does not, once the component has warmed up. Exact live bytes in
+  // Rust, a memory-size reading in other languages.
+  heap-mark: func() -> u32;
+
+  // Whether this component can handle a call that is cancelled while it
+  // waits. A component that cannot do that returns false, and the runner
+  // skips that case for it.
+  supports-cancel: func() -> bool;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

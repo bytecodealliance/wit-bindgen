@@ -2010,7 +2010,18 @@ for index := 0; index < int({length}); index++ {{
                 );
                 results.push(result);
             }
-            Instruction::CallInterface { func, .. } => {
+            Instruction::CallInterface {
+                func, params_block, ..
+            } => {
+                // The block was allocated by this component's `cabi_realloc`
+                // in memory the Go runtime manages; `witRuntime.Unpin()`
+                // below releases it, so there is nothing to free here.
+                // `indirect_params` sets `unpin_params`, so that call is
+                // always emitted when a block exists.
+                if params_block.is_some() {
+                    operands.pop();
+                }
+
                 if self.unpin_params {
                     self.imports.insert(remote_pkg("runtime"));
                     uwriteln!(self.src, "witRuntime.Unpin()");

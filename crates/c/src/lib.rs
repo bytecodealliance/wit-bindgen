@@ -3685,7 +3685,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src.push_str(");\n");
             }
 
-            Instruction::CallInterface { func, async_ } => {
+            Instruction::CallInterface {
+                func,
+                async_,
+                params_block,
+            } => {
+                let block = params_block.map(|_| operands.pop().unwrap());
                 let mut args = String::new();
                 for (i, (op, (byref, _))) in operands.iter().zip(&self.sig.params).enumerate() {
                     if i > 0 {
@@ -3719,6 +3724,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "{snake}_callback_code_t {ret} = {}({args});",
                         self.sig.name,
                     );
+                    // The arguments arrived in a block of memory. The user's
+                    // function has returned, every argument was read out of
+                    // the block before it ran, and nothing points into the
+                    // block, so free it here.
+                    if let Some(ptr) = &block {
+                        uwriteln!(self.src, "free({ptr});");
+                    }
                     uwriteln!(self.src, "return {ret};");
                     if func.result.is_some() {
                         results.push("ret".to_string());

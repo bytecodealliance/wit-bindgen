@@ -53,7 +53,8 @@ impl LanguageMethods for Go {
             let pkg_mode = args.iter().any(|a| a == "--pkg-name");
             if !pkg_mode {
                 return name.starts_with("async-trait-function.wit")
-                    || name.starts_with("issue-1598.wit");
+                    || name.starts_with("issue-1598.wit")
+                    || name.starts_with("async-many-arguments.wit");
             }
         }
 

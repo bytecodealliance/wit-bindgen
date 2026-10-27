@@ -1176,7 +1176,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::CallInterface { func, .. } => {
+            Instruction::CallInterface {
+                func, params_block, ..
+            } => {
                 let module = self.interface_gen.name;
                 let func_name = self.func_name.to_upper_camel_case();
                 let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
@@ -1186,19 +1188,28 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .unwrap()
                     .to_upper_camel_case();
 
-                let mut oper = String::new();
+                // The pointer to the block of parameters comes last; it is not an argument.
+                let block = params_block.map(|_| operands.pop().unwrap());
 
-                for (i, param) in operands.iter().enumerate() {
-                    if i == 0 && matches!(self.kind, FunctionKind::Method(_)) {
-                        continue;
+                let kind = self.kind;
+                let join_arguments = |operands: &[String]| {
+                    let mut oper = String::new();
+
+                    for (i, param) in operands.iter().enumerate() {
+                        if i == 0 && matches!(kind, FunctionKind::Method(_)) {
+                            continue;
+                        }
+
+                        oper.push_str(&format!("({param})"));
+
+                        if i < operands.len() && operands.len() != i + 1 {
+                            oper.push_str(", ");
+                        }
                     }
 
-                    oper.push_str(&format!("({param})"));
-
-                    if i < operands.len() && operands.len() != i + 1 {
-                        oper.push_str(", ");
-                    }
-                }
+                    oper
+                };
+                let mut oper = join_arguments(operands);
 
                 let is_async = InterfaceGenerator::is_async(self.kind);
                 if is_async && self.interface_gen.direction == Direction::Export {
@@ -1207,9 +1218,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.interface_gen.csharp_gen.needs_async_support = true;
                     let async_func_name = format!("{}Async", self.func_name.to_upper_camel_case());
 
+                    // The arguments are evaluated before the async method starts, and the lifted
+                    // values are managed copies, so the block can be freed right after the call.
+                    let free = match &block {
+                        Some(ptr) => format!(
+                            "\nglobal::System.Runtime.InteropServices.NativeMemory.Free((void*){ptr});"
+                        ),
+                        None => String::new(),
+                    };
+
                     uwriteln!(
                         self.src,
-                        r#"var task = {async_func_name}({oper});
+                        r#"var task = {async_func_name}({oper});{free}
                         if (task.IsCompletedSuccessfully)
                         {{
                             return (int)CallbackCode.Exit;
@@ -1237,6 +1257,42 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "#
                     );
 
+                    // The async method takes the lifted values as its parameters. An operand that
+                    // is not a plain name, such as a record built in place, gets a fresh parameter
+                    // name, and the call inside the async method passes that name.
+                    let mut params = Vec::new();
+                    for (i, p) in func.params.iter().enumerate() {
+                        let mut param_type =
+                            self.interface_gen.type_name_with_qualifier(&p.ty, true);
+
+                        // Resource types need the Impl class to be distinguised.
+                        match p.ty {
+                            Type::Id(type_id) => {
+                                let id = dealias(self.interface_gen.resolve, type_id);
+
+                                let kind = &self.interface_gen.resolve.types[id].kind;
+                                match kind {
+                                    TypeDefKind::Handle(handle) => {
+                                        let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                                        param_type = self.interface_gen.csharp_gen.all_resources
+                                            [&ty]
+                                            .export_impl_name();
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        let mut name = strip_lift(&operands[i]);
+                        if !is_identifier(&name) {
+                            name = self.locals.tmp("arg");
+                            operands[i] = name.clone();
+                        }
+                        params.push(format!("{param_type} {name}"));
+                    }
+                    oper = join_arguments(operands);
+
                     // Start the Async function
                     uwriteln!(
                         self.src,
@@ -1245,37 +1301,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
 
                     "#,
-                        func.params
-                            .iter()
-                            .enumerate()
-                            .map(|(i, p)| {
-                                let mut param_type =
-                                    self.interface_gen.type_name_with_qualifier(&p.ty, false);
-
-                                // Resource types need the Impl class to be distinguised.
-                                match p.ty {
-                                    Type::Id(type_id) => {
-                                        let id = dealias(self.interface_gen.resolve, type_id);
-
-                                        let kind = &self.interface_gen.resolve.types[id].kind;
-                                        match kind {
-                                            TypeDefKind::Handle(handle) => {
-                                                let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
-                                                param_type =
-                                                    self.interface_gen.csharp_gen.all_resources
-                                                        [&ty]
-                                                        .export_impl_name();
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                    _ => {}
-                                }
-
-                                format!("{} {}", param_type, strip_lift(&operands[i]))
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        params.join(", ")
                     );
                     self.needs_cleanup = true;
                 }
@@ -2045,6 +2071,11 @@ pub fn strip_lift(lifted_param: &String) -> String {
     let re = Regex::new(r"(?x)unchecked\(\s*\(\s*\w+\s*\)\s*\(\s*(\w+)\s*\)\s*\)").unwrap();
     let out = re.replace_all(lifted_param, "$1");
     out.into_owned()
+}
+
+fn is_identifier(s: &str) -> bool {
+    s.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.

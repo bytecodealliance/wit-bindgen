@@ -3422,7 +3422,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("deallocate.purge();\n"));
                 }
             }
-            abi::Instruction::CallInterface { func, async_ } => {
+            abi::Instruction::CallInterface { func, async_, .. } => {
                 if *async_ {
                     todo!("CallInterface async");
                 }

@@ -2541,6 +2541,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         &mut self,
         func: &Function,
         operands: &[String],
+        params_block: Option<&str>,
         results: &mut Vec<String>,
     ) {
         let name = self.interface_gen.world_gen.pkg_resolver.func_call(
@@ -2550,7 +2551,27 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         );
         let task_return_name = format!("{}_task_return", func.name.to_moonbit_ident());
 
-        let mut args = operands.to_vec();
+        let mut args = match params_block {
+            Some(ptr) => {
+                let args = operands
+                    .iter()
+                    .map(|op| {
+                        let arg = self.locals.tmp("arg");
+                        uwriteln!(self.src, "let {arg} = {op}");
+                        arg
+                    })
+                    .collect::<Vec<_>>();
+                // The call below runs to completion before the next line, so a
+                // free after it would never run for a cancelled call. Free the
+                // block here, once every argument has been read out of it.
+                if !self.preserve_guest_allocations {
+                    self.use_ffi(ffi::FREE);
+                    uwriteln!(self.src, "mbt_ffi_free({ptr})");
+                }
+                args
+            }
+            None => operands.to_vec(),
+        };
         if matches!(self.interface_gen.direction, Direction::Export) {
             args.push(background_group_name(func));
         }

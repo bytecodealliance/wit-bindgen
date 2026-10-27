@@ -2343,9 +2343,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.commit_sync_import_arguments(sig, &call_operands);
             }
 
-            Instruction::CallInterface { func, async_ } => {
+            Instruction::CallInterface {
+                func,
+                async_,
+                params_block,
+            } => {
                 if *async_ {
-                    self.emit_async_call_interface(func, operands, results);
+                    let block = params_block.map(|_| operands.pop().unwrap());
+                    self.emit_async_call_interface(func, operands, block.as_deref(), results);
                     return;
                 }
 
@@ -3172,6 +3177,7 @@ fn print_docs(src: &mut String, docs: &Docs) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wit_bindgen_core::wit_parser::WorldItem;
 
     fn try_generate_with_opts(wit: &str, world: &str, opts: Opts) -> Result<Files> {
         let mut resolve = Resolve::default();
@@ -3310,6 +3316,93 @@ mod tests {
 
         let ffi = file(&files, "interface/a/b/types/ffi.mbt");
         assert!(ffi.contains("extern \"wasm\" fn mbt_ffi_malloc"), "{ffi}");
+    }
+
+    // 18 flat values: the arguments of `many-arguments` arrive in a block of
+    // the callee's memory, which the callee must free.
+    const ASYNC_EXPORT_INDIRECT_PARAMS: &str = r#"
+        package my:test;
+
+        interface i {
+            many-arguments: async func(
+                a: string,
+                b: string,
+                c: string,
+                d: string,
+                e: string,
+                f: string,
+                g: string,
+                h: string,
+                i: string,
+            );
+        }
+
+        world test { export i; }
+    "#;
+
+    /// Lifts the arguments of `func` and calls it the way an async export
+    /// wrapper does, with guest allocations preserved, and returns the code.
+    fn async_export_body_preserving_allocations(wit: &str, world: &str, func: &str) -> String {
+        let mut resolve = Resolve::default();
+        let pkg = resolve.push_str("test.wit", wit).unwrap();
+        let world = resolve.select_world(&[pkg], Some(world)).unwrap();
+        let mut generator = MoonBit {
+            opts: Opts {
+                gen_dir: "gen".into(),
+                ..Opts::default()
+            },
+            ..MoonBit::default()
+        };
+        generator.preprocess(&resolve, world).unwrap();
+        let (key, id) = resolve.worlds[world]
+            .exports
+            .iter()
+            .find_map(|(key, item)| match item {
+                WorldItem::Interface { id, .. } => Some((key.clone(), *id)),
+                _ => None,
+            })
+            .unwrap();
+        let func = &resolve.interfaces[id].functions[func];
+        let mut r#gen = generator.interface(&resolve, "i", Direction::Export, Some(&key));
+        let mut bindgen = FunctionBindgen::new(&mut r#gen, Box::new(["p0".to_string()]));
+        bindgen.preserve_guest_allocations = true;
+        abi::call(
+            &resolve,
+            AbiVariant::GuestExportAsync,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut bindgen,
+            true,
+        );
+        bindgen.src
+    }
+
+    #[test]
+    fn async_export_indirect_params_frees_block() {
+        let files = generate(ASYNC_EXPORT_INDIRECT_PARAMS, "test");
+        let ffi = file(&files, "gen/interface/my/test/i/ffi.mbt");
+        assert!(ffi.contains("extern \"wasm\" fn mbt_ffi_free"), "{ffi}");
+
+        let start = ffi.find("pub fn wasmExportManyArguments(").unwrap();
+        let wrapper = &ffi[start..];
+        let wrapper = &wrapper[..wrapper.find("///|").unwrap()];
+        // Every argument is bound before the block is freed, and the call
+        // comes after the free.
+        assert_eq!(wrapper.matches("let arg").count(), 9, "{wrapper}");
+        assert_eq!(wrapper.matches("mbt_ffi_free(").count(), 1, "{wrapper}");
+        let last_argument = wrapper.rfind("let arg").unwrap();
+        let free = wrapper.find("mbt_ffi_free(p0)").expect(wrapper);
+        let call = wrapper.find("many_arguments(").unwrap();
+        assert!(last_argument < free && free < call, "{wrapper}");
+
+        let preserved = async_export_body_preserving_allocations(
+            ASYNC_EXPORT_INDIRECT_PARAMS,
+            "test",
+            "many-arguments",
+        );
+        assert_eq!(preserved.matches("let arg").count(), 9, "{preserved}");
+        assert!(preserved.contains("many_arguments("), "{preserved}");
+        assert!(!preserved.contains("mbt_ffi_free("), "{preserved}");
     }
 
     #[test]
