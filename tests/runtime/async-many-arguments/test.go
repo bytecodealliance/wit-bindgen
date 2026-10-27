@@ -142,6 +142,17 @@ func DirectValues(a, b, c, d, e, f, g string, h uint32) {
 	}
 }
 
+// The first GC starts a mark worker, which takes the goroutine finished calls
+// reuse, and every GC drops the runtime's cached Pinner, which its finalizer
+// keeps on the heap one GC longer. Do both here, before any call, so the first
+// reading holds what every later one does.
+func init() {
+	var p runtime.Pinner
+	p.Pin(new(byte))
+	p.Unpin()
+	runtime.GC()
+}
+
 func HeapMark() uint32 {
 	runtime.GC()
 	var m runtime.MemStats
