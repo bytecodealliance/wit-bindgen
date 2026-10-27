@@ -14,6 +14,7 @@ pub(crate) const ASYNC_CORE_DIR: &str = "async-core";
 #[derive(Default)]
 pub(crate) struct Imports {
     pub packages: HashMap<String, String>,
+    pub external_packages: HashMap<String, String>,
     ns: Ns,
 }
 
@@ -33,6 +34,15 @@ pub(crate) struct PkgResolver {
 }
 
 impl PkgResolver {
+    pub(crate) fn qualify_external_package(&mut self, this: &str, path: &str) -> String {
+        let imports = self.package_import.entry(this.to_string()).or_default();
+        let alias = imports
+            .external_packages
+            .entry(path.to_string())
+            .or_insert_with(|| imports.ns.tmp(path.rsplit('/').next().unwrap()));
+        format!("@{alias}.")
+    }
+
     pub(crate) fn qualify_package(&mut self, this: &str, name: &str) -> String {
         if name != this {
             let imports = self.package_import.entry(this.to_string()).or_default();
@@ -387,6 +397,22 @@ impl PkgResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_imports_share_the_generated_package_alias_namespace() {
+        let mut packages = PkgResolver::default();
+        let generated = packages.qualify_package("gen", "interface.a.b.sorted_map");
+        let external = packages.qualify_external_package("gen", "moonbitlang/core/sorted_map");
+        assert_ne!(generated, external);
+        assert_eq!(
+            packages.qualify_external_package("gen", "moonbitlang/core/sorted_map"),
+            external
+        );
+        assert_eq!(
+            packages.qualify_package("gen", "interface.a.b.sorted_map"),
+            generated
+        );
+    }
 
     #[test]
     fn package_names_and_aliases_preserve_kebab_case() {
