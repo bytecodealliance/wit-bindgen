@@ -46,6 +46,20 @@ interface i {
     i: list<string>,
   );
 
+  // 18 flat values, under the name a generator may give the locals it binds
+  // before it frees the block: those locals must not shadow the export.
+  arg: async func(
+    a: string,
+    b: string,
+    c: string,
+    d: string,
+    e: string,
+    f: string,
+    g: string,
+    h: string,
+    i: string,
+  );
+
   resource r {
     // 19 flat values counting `self`: a method whose arguments arrive in a block.
     many: async func(

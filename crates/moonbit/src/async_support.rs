@@ -2553,6 +2553,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
         let mut args = match params_block {
             Some(ptr) => {
+                // The locals bound below must not shadow the export they are
+                // passed to, which they would for an export named `arg`.
+                self.locals.insert(&name).ok();
                 let args = operands
                     .iter()
                     .map(|op| {
