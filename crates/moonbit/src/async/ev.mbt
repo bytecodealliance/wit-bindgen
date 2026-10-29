@@ -64,6 +64,10 @@ fn finish_waitableset(
   guard task_state.lane.blocking == 0 && task_state.lane.run_later.is_empty() else {
     panic()
   }
+  // `pop_front` leaves each vacated slot of the run queue pointing at the
+  // coroutine it held, and every coroutine points back at this lane. Replace
+  // the buffer so that cycle does not keep the finished task alive.
+  task_state.lane.run_later.shrink_to_fit()
   drop_task_wakeup(task_state)
   guard task_state.subscribers.is_empty() else { panic() }
   component_tasks.remove(waitable_set)

@@ -51,6 +51,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
+    fn deallocate(&mut self, ptr: &str, size: ArchitectureSize, align: Alignment) {
+        let dealloc = self.r#gen.path_to_cabi_dealloc();
+        self.push_str(&format!(
+            "{dealloc}({ptr}, {size}, {align});\n",
+            size = size.format_term(POINTER_SIZE_EXPRESSION, true),
+            align = align.format(POINTER_SIZE_EXPRESSION)
+        ));
+    }
+
     fn cleanup(&mut self, cleanup_value: &str) {
         if self.block_storage.len() > 0 {
             self.needs_cleanup_list = true;
@@ -940,7 +949,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(");\n");
             }
 
-            Instruction::CallInterface { func, async_ } => {
+            Instruction::CallInterface {
+                func,
+                async_,
+                params_block,
+            } => {
+                let block = params_block.map(|info| (operands.pop().unwrap(), info));
                 let prev_src = mem::replace(self.src.as_mut_string(), String::new());
 
                 self.let_results(usize::from(func.result.is_some()), results);
@@ -969,7 +983,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.push_str(&decl);
                 }
                 self.push_str(&prev_src);
-                let constructor_type = match &func.kind {
+                let (mut call, prefix, suffix) = match &func.kind {
                     FunctionKind::Freestanding
                     | FunctionKind::AsyncFreestanding
                     | FunctionKind::Getter
@@ -978,19 +992,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     | FunctionKind::Static(_)
                     | FunctionKind::StaticGetter(_)
                     | FunctionKind::AsyncMethod(_)
-                    | FunctionKind::AsyncStatic(_) => {
-                        self.push_str(&format!("T_::{}", to_rust_ident(func.item_name())));
-                        None
-                    }
+                    | FunctionKind::AsyncStatic(_) => (
+                        format!("T_::{}", to_rust_ident(func.item_name())),
+                        String::new(),
+                        String::new(),
+                    ),
                     FunctionKind::Setter
                     | FunctionKind::MethodSetter(_)
-                    | FunctionKind::StaticSetter(_) => {
-                        self.push_str(&format!(
+                    | FunctionKind::StaticSetter(_) => (
+                        format!(
                             "T_::{}",
                             to_rust_ident(&format!("set-{}", func.item_name()))
-                        ));
-                        None
-                    }
+                        ),
+                        String::new(),
+                        String::new(),
+                    ),
                     FunctionKind::Constructor(ty) => {
                         let return_type =
                             classify_constructor_return_type(resolve, *ty, &func.result);
@@ -1001,24 +1017,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .to_upper_camel_case();
 
                         match return_type {
-                            ConstructorReturnType::Self_ => {
-                                self.push_str(&format!("{ty}::new(T_::new"));
-                            }
-                            ConstructorReturnType::Result { .. } => {
-                                self.push_str(&format!("T_::new"));
-                            }
+                            ConstructorReturnType::Self_ => (
+                                "T_::new".to_string(),
+                                format!("{ty}::new("),
+                                ")".to_string(),
+                            ),
+                            ConstructorReturnType::Result { .. } => (
+                                "T_::new".to_string(),
+                                String::new(),
+                                format!(".map({ty}::new)"),
+                            ),
                         }
-
-                        Some((ty, return_type))
                     }
                 };
-                self.push_str("(");
+                call.push_str("(");
                 for (i, operand) in operands.iter().enumerate() {
                     if i > 0 {
-                        self.push_str(", ");
+                        call.push_str(", ");
                     }
 
-                    self.push_str(operand);
+                    call.push_str(operand);
 
                     // Automatically convert `Borrow<'_, AResource>` to
                     // `&Self` since traits have `&self` as their
@@ -1032,19 +1050,27 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 | FunctionKind::MethodSetter(_)
                         )
                     {
-                        self.push_str(".get()")
+                        call.push_str(".get()")
                     }
                 }
-                self.push_str(")");
-                if *async_ {
-                    self.push_str(".await");
-                }
-                match constructor_type {
-                    Some((_, ConstructorReturnType::Self_)) => self.push_str(")"),
-                    Some((ty, ConstructorReturnType::Result { .. })) => {
-                        self.push_str(&format!(".map({ty}::new)"))
+                call.push_str(")");
+                let await_ = if *async_ { ".await" } else { "" };
+                match block {
+                    // The arguments of this async export arrived in a block of
+                    // memory. Creating the future reads every argument out of
+                    // that block, so free it before the first `.await`. Then a
+                    // call that is cancelled while it waits frees it too. Core
+                    // announces the block only for async exports today, and
+                    // this arm frees it for any call that carries one.
+                    Some((ptr, (size, align))) => {
+                        let tmp = self.tmp();
+                        uwriteln!(self.src, "let call{tmp} = {call};");
+                        self.deallocate(&ptr, size, align);
+                        self.push_str(&format!("{prefix}call{tmp}{await_}{suffix}"));
                     }
-                    None => {}
+                    None => {
+                        self.push_str(&format!("{prefix}{call}{await_}{suffix}"));
+                    }
                 }
                 self.push_str("\n};\n");
             }
@@ -1257,13 +1283,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::Malloc { .. } => unimplemented!(),
 
             Instruction::GuestDeallocate { size, align } => {
-                let dealloc = self.r#gen.path_to_cabi_dealloc();
-                self.push_str(&format!(
-                    "{dealloc}({op}, {size}, {align});\n",
-                    op = operands[0],
-                    size = size.format_term(POINTER_SIZE_EXPRESSION, true),
-                    align = align.format(POINTER_SIZE_EXPRESSION)
-                ));
+                self.deallocate(&operands[0], *size, *align);
             }
 
             Instruction::GuestDeallocateString => {

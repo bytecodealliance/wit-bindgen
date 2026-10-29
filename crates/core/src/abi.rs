@@ -567,10 +567,17 @@ def_instruction! {
         /// Note that this will be used for async functions, and `async_`
         /// indicates whether the function should be invoked in an async
         /// fashion.
+        ///
+        /// `params_block`: for an async export whose parameters arrived in a
+        /// block of memory, the size and alignment of that block. The block
+        /// pointer is the last operand. The generator frees the block after
+        /// it has evaluated every lifted argument and before the task can
+        /// wait.
         CallInterface {
             func: &'a Function,
             async_: bool,
-        } : [func.params.len()] => [usize::from(func.result.is_some())],
+            params_block: Option<(ArchitectureSize, Alignment)>,
+        } : [func.params.len() + usize::from(params_block.is_some())] => [usize::from(func.result.is_some())],
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
@@ -1242,8 +1249,47 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 }
 
+                // This was dynamically allocated by the caller (or async start
+                // function) so after it's been read by the guest we need to
+                // deallocate it.
+                let export_params_block = if sig.indirect_params
+                    && matches!(
+                        variant,
+                        AbiVariant::GuestExport
+                            | AbiVariant::GuestExportAsync
+                            | AbiVariant::GuestExportAsyncStackful
+                    ) {
+                    Some(
+                        self.bindgen
+                            .sizes()
+                            .record(func.params.iter().map(|param| &param.ty)),
+                    )
+                } else {
+                    None
+                };
+
+                // A sync export frees the block after the call, below. An
+                // async export cannot free it there: the code after the call
+                // may sit in another function, or never run when the task is
+                // cancelled. So the call gets the block pointer as its last
+                // operand, and the generator frees the block itself.
+                let params_block = if async_ {
+                    export_params_block
+                        .as_ref()
+                        .map(|info| (info.size, info.align))
+                } else {
+                    None
+                };
+                if params_block.is_some() {
+                    self.emit(&Instruction::GetArg { nth: 0 });
+                }
+
                 // ... and that allows us to call the interface types function
-                self.emit(&Instruction::CallInterface { func, async_ });
+                self.emit(&Instruction::CallInterface {
+                    func,
+                    async_,
+                    params_block,
+                });
 
                 // The return value of an async function is *not* the result of the function
                 // itself or a pointer but rather a status code.
@@ -1269,18 +1315,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     (_is_async @ false, _) => (sig.retptr, None),
                 };
 
-                // This was dynamically allocated by the caller (or async start
-                // function) so after it's been read by the guest we need to
-                // deallocate it.
-                if let AbiVariant::GuestExport
-                | AbiVariant::GuestExportAsync
-                | AbiVariant::GuestExportAsyncStackful = variant
-                {
-                    if sig.indirect_params && !async_ {
-                        let ElementInfo { size, align } = self
-                            .bindgen
-                            .sizes()
-                            .record(func.params.iter().map(|param| &param.ty));
+                if !async_ {
+                    if let Some(ElementInfo { size, align }) = export_params_block {
                         self.emit(&Instruction::GetArg { nth: 0 });
                         self.emit(&Instruction::GuestDeallocate { size, align });
                     }
