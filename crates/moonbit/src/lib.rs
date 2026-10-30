@@ -163,6 +163,12 @@ impl MoonBit {
                 .packages
                 .iter()
                 .map(|(k, v)| format!("\"{}/{}\" @{},", self.project_name, k.replace(".", "/"), v))
+                .chain(
+                    imports
+                        .external_packages
+                        .iter()
+                        .map(|(path, alias)| format!("\"{path}\" @{alias},")),
+                )
                 .collect::<Vec<_>>();
             deps.sort();
             uwriteln!(moon_pkg, "{}", deps.join("\n"));
@@ -3456,6 +3462,49 @@ mod tests {
                 .iter()
                 .any(|(name, _)| name == "async-core/async_trait.mbt")
         );
+    }
+
+    #[test]
+    fn producer_tables_import_ordered_maps_without_changing_wit_maps() {
+        let files = generate(
+            r#"
+            package a:b;
+
+            interface outgoing {
+                send: func(ready: future<u32>, values: stream<u8>, labels: map<string, u32>);
+            }
+
+            interface incoming {
+                receive: func() -> tuple<future<u32>, stream<u8>>;
+            }
+
+            world runner {
+                import outgoing;
+                import incoming;
+                export incoming;
+            }
+            "#,
+            "runner",
+        );
+
+        for package in ["interface/a/b/outgoing", "gen/interface/a/b/incoming"] {
+            let manifest = file(&files, &format!("{package}/moon.pkg"));
+            assert!(
+                manifest.contains("\"moonbitlang/core/sorted_map\" @sorted_map,"),
+                "{manifest}"
+            );
+            let ffi = file(&files, &format!("{package}/ffi.mbt"));
+            for kind in ["Future", "Stream"] {
+                assert!(
+                    ffi.contains(&format!("{kind}Producers : @sorted_map.SortedMap[Int,")),
+                    "{ffi}"
+                );
+            }
+        }
+        let incoming = file(&files, "interface/a/b/incoming/moon.pkg");
+        assert!(!incoming.contains("sorted_map"), "{incoming}");
+        let outgoing = file(&files, "interface/a/b/outgoing/top.mbt");
+        assert!(outgoing.contains("Map[String, UInt]"), "{outgoing}");
     }
 
     #[test]
