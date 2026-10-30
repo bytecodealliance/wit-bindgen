@@ -16,7 +16,6 @@ workspace = true
 
 [lib]
 doctest = false
-test = false
 
 [dependencies]
 wit-bindgen-core = { workspace = true }

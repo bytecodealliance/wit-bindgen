@@ -235,6 +235,7 @@ fn escape_d_identifier(name: &str) -> &str {
         "WitFlags" => "WitFlags_",
         "Option" => "Option_",
         "Result" => "Result_",
+        "Tag" => "Tag_",                 // part of the expansion of `variant`
         "bits" => "bits_",               // part of WitFlags
         "borrow" => "borrow_",           // part of the expansion of `resource`
         "rep" => "rep_",                 // part of the expansion of `resource`

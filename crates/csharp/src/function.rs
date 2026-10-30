@@ -1,5 +1,9 @@
 use crate::csharp_ident::ToCSharpIdent;
-use crate::interface::{InterfaceGenerator, ParameterType, variant_new_func_name};
+use crate::interface::{
+    InterfaceGenerator, ParameterType, resource_func_name, resource_handle_property_name,
+    resource_thandle_struct_name, resource_wasm_interop_class_name, variant_accessor_name,
+    variant_new_func_name, variant_tag_field_name,
+};
 use crate::world_generator::CSharp;
 use heck::ToUpperCamelCase;
 use regex::Regex;
@@ -22,11 +26,12 @@ pub(crate) struct FunctionBindgen<'a, 'b> {
     params: Box<[String]>,
     results: Vec<TypeId>,
     pub(crate) src: String,
-    locals: Ns,
+    pub(crate) locals: Ns,
     block_storage: Vec<BlockStorage>,
     blocks: Vec<Block>,
     payloads: Vec<String>,
     pub(crate) needs_cleanup: bool,
+    cleanups: Option<String>,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
     pub(crate) resource_drops: Vec<(String, String)>,
@@ -67,6 +72,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             blocks: Vec::new(),
             payloads: Vec::new(),
             needs_cleanup: false,
+            cleanups: None,
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
             resource_drops: Vec::new(),
@@ -76,6 +82,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             result_type: result_type,
             resource_type_name: None,
             futures_and_streams: Vec::new(),
+        }
+    }
+
+    fn cleanups_var(&mut self) -> String {
+        if let Some(cleanups) = &self.cleanups {
+            cleanups.clone()
+        } else {
+            let cleanups = self.locals.tmp("cleanups");
+            self.cleanups = Some(cleanups.clone());
+            cleanups
         }
     }
 
@@ -91,6 +107,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn lower_variant(
         &mut self,
+        variant_name: &str,
         cases: &[(&str, Option<Type>)],
         lowered_types: &[WasmType],
         op: &str,
@@ -129,9 +146,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 |(i, (((name, ty), Block { body, results, .. }), payload))| {
                     let payload = if let Some(ty) = self.interface_gen.non_empty_type(ty.as_ref()) {
                         let ty = self.interface_gen.type_name_with_qualifier(ty, true);
-                        let name = name.to_upper_camel_case();
+                        let accessor_name = variant_accessor_name(variant_name, name);
 
-                        format!("{ty} {payload} = {op}.As{name};")
+                        format!("{ty} {payload} = {op}.{accessor_name};")
                     } else {
                         String::new()
                     };
@@ -156,12 +173,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let tag_field = variant_tag_field_name(variant_name);
+
         uwrite!(
             self.src,
             r#"
             {declarations}
 
-            switch ({op}.Tag) {{
+            switch ({op}.{tag_field}) {{
                 {cases}
 
                 default: throw new global::System.ArgumentException("invalid discriminant: " + {op});
@@ -185,6 +204,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let ty = self.interface_gen.type_name_with_qualifier(ty, true);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
+        let accessor_names = cases
+            .iter()
+            .filter(|(_, case_ty)| {
+                self.interface_gen
+                    .non_empty_type(case_ty.as_ref())
+                    .is_some()
+            })
+            .map(|(case_name, _)| variant_accessor_name(&variant_name, case_name))
+            .collect::<Vec<_>>();
 
         let cases = cases
             .iter()
@@ -213,8 +241,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     String::new()
                 };
 
-                let method =
-                    variant_new_func_name(&variant_name, &case_name.to_csharp_ident_upper());
+                let method = variant_new_func_name(
+                    &variant_name,
+                    &case_name.to_csharp_ident_upper(),
+                    &accessor_names,
+                );
 
                 let call = if let Some(position) = generics_position {
                     let (ty, generics) = ty.split_at(position);
@@ -650,17 +681,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::VariantLower {
                 variant,
                 results: lowered_types,
+                ty,
                 ..
-            } => self.lower_variant(
-                &variant
-                    .cases
-                    .iter()
-                    .map(|case| (case.name.deref(), case.ty))
-                    .collect::<Vec<_>>(),
-                lowered_types,
-                &operands[0],
-                results,
-            ),
+            } => {
+                let variant_name = self
+                    .interface_gen
+                    .type_name_with_qualifier(&Type::Id(*ty), false);
+                self.lower_variant(
+                    &variant_name,
+                    &variant
+                        .cases
+                        .iter()
+                        .map(|case| (case.name.deref(), case.ty))
+                        .collect::<Vec<_>>(),
+                    lowered_types,
+                    &operands[0],
+                    results,
+                );
+            }
 
             Instruction::VariantLift { variant, ty, .. } => self.lift_variant(
                 &Type::Id(*ty),
@@ -819,6 +857,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 result,
                 ..
             } => self.lower_variant(
+                "Result",
                 &[("Ok", result.ok), ("Err", result.err)],
                 lowered_types,
                 &operands[0],
@@ -873,12 +912,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             // It pins the array with the garbage collector so that it can be passed to unmanaged code.
                             // It is required to free the pin after use which is done in the Cleanup section.
                             self.needs_cleanup = true;
+                            let cleanups = self.cleanups_var();
                             uwrite!(
                                 self.src,
                                 "
                                 var {handle} = global::System.Runtime.InteropServices.GCHandle.Alloc({list}, global::System.Runtime.InteropServices.GCHandleType.Pinned);
                                 var {ptr} = {handle}.AddrOfPinnedObject();
-                                cleanups.Add(()=> {handle}.Free());
+                                {cleanups}.Add(()=> {handle}.Free());
                                 "
                             );
                         }
@@ -950,10 +990,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
 
                     self.needs_cleanup = true;
+                    let cleanups = self.cleanups_var();
                     uwrite!(
                         self.src,
                         "
-                        cleanups.Add(()=> {gc_handle}.Free());
+                        {cleanups}.Add(()=> {gc_handle}.Free());
                         "
                     );
                     results.push(format!("{str_ptr}.ToInt32()"));
@@ -1039,6 +1080,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match realloc {
                     None => {
                         self.needs_cleanup = true;
+                        let cleanups = self.cleanups_var();
                         self.interface_gen.csharp_gen.needs_align_stack_ptr = true;
                         uwrite!(self.src,
                             "
@@ -1051,7 +1093,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             {{
                                 var {buffer_size} = {size} * (nuint){list}.Count;
                                 {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
-                                cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({address}));
+                                {cleanups}.Add(() => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({address}));
                             }}
                             "
                         );
@@ -1178,7 +1220,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::CallInterface { func, .. } => {
                 let module = self.interface_gen.name;
-                let func_name = self.func_name.to_upper_camel_case();
+                let func_name = match self.kind {
+                    FunctionKind::Method(id)
+                    | FunctionKind::AsyncMethod(id)
+                    | FunctionKind::Static(id)
+                    | FunctionKind::AsyncStatic(id) => resource_func_name(
+                        &self.interface_gen.csharp_gen.all_resources[id]
+                            .name
+                            .to_upper_camel_case(),
+                        &self.func_name.to_upper_camel_case(),
+                    ),
+                    _ => self.func_name.to_upper_camel_case(),
+                };
                 let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
 
                 let class_name_root = interface_name
@@ -1238,44 +1291,45 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     );
 
                     // Start the Async function
+                    let cleanups = self.cleanups_var();
+                    let params_str = func
+                        .params
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| {
+                            let mut param_type =
+                                self.interface_gen.type_name_with_qualifier(&p.ty, false);
+
+                            // Resource types need the Impl class to be distinguised.
+                            match p.ty {
+                                Type::Id(type_id) => {
+                                    let id = dealias(self.interface_gen.resolve, type_id);
+
+                                    let kind = &self.interface_gen.resolve.types[id].kind;
+                                    match kind {
+                                        TypeDefKind::Handle(handle) => {
+                                            let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
+                                            param_type =
+                                                self.interface_gen.csharp_gen.all_resources[&ty]
+                                                    .export_impl_name();
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                _ => {}
+                            }
+
+                            format!("{} {}", param_type, strip_lift(&operands[i]))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     uwriteln!(
                         self.src,
-                        r#"public static async global::System.Threading.Tasks.Task {async_func_name}({})
+                        r#"public static async global::System.Threading.Tasks.Task {async_func_name}({params_str})
                     {{
-                        var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
+                        var {cleanups} = new global::System.Collections.Generic.List<global::System.Action>();
 
-                    "#,
-                        func.params
-                            .iter()
-                            .enumerate()
-                            .map(|(i, p)| {
-                                let mut param_type =
-                                    self.interface_gen.type_name_with_qualifier(&p.ty, false);
-
-                                // Resource types need the Impl class to be distinguised.
-                                match p.ty {
-                                    Type::Id(type_id) => {
-                                        let id = dealias(self.interface_gen.resolve, type_id);
-
-                                        let kind = &self.interface_gen.resolve.types[id].kind;
-                                        match kind {
-                                            TypeDefKind::Handle(handle) => {
-                                                let (Handle::Own(ty) | Handle::Borrow(ty)) = handle;
-                                                param_type =
-                                                    self.interface_gen.csharp_gen.all_resources
-                                                        [&ty]
-                                                        .export_impl_name();
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                    _ => {}
-                                }
-
-                                format!("{} {}", param_type, strip_lift(&operands[i]))
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                    "#
                     );
                     self.needs_cleanup = true;
                 }
@@ -1357,7 +1411,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 for (_, drop) in &self.resource_drops {
-                    uwriteln!(self.src, "{drop}?.Dispose();");
+                    uwriteln!(
+                        self.src,
+                        "((global::System.IDisposable?){drop})?.Dispose();"
+                    );
                 }
             }
 
@@ -1380,15 +1437,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 if self.needs_cleanup {
-                    self.src.insert_str(0, "var cleanups = new global::System.Collections.Generic.List<global::System.Action>();
-                        ");
+                    let cleanups = self.cleanups_var();
+                    let cleanup = self.locals.tmp("cleanup");
+                    if !(InterfaceGenerator::is_async(self.kind)
+                        && self.interface_gen.direction == Direction::Export)
+                    {
+                        self.src.insert_str(
+                            0,
+                            &format!(
+                                "var {cleanups} = new global::System.Collections.Generic.List<global::System.Action>();
+                        "
+                            ),
+                        );
+                    }
 
                     uwriteln!(
                         self.src,
                         "
-                    foreach (var cleanup in cleanups)
+                    foreach (var {cleanup} in {cleanups})
                     {{
-                        cleanup();
+                        {cleanup}();
                     }}"
                     );
                 }
@@ -1510,16 +1578,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let is_own = matches!(handle, Handle::Own(_));
                 let handle = self.locals.tmp("handle");
                 let id = dealias(self.interface_gen.resolve, *ty);
-                let ResourceInfo { direction, .. } =
-                    &self.interface_gen.csharp_gen.all_resources[&id];
+                let ResourceInfo {
+                    direction, name, ..
+                } = &self.interface_gen.csharp_gen.all_resources[&id];
+                let resource_upper = name.to_upper_camel_case();
+                let handle_prop = resource_handle_property_name(&resource_upper);
+                let wasm_interop = resource_wasm_interop_class_name(&resource_upper);
                 let op = &operands[0];
 
-                uwriteln!(self.src, "var {handle} = {op}.Handle;");
+                uwriteln!(self.src, "var {handle} = {op}.{handle_prop};");
 
                 match direction {
                     Direction::Import => {
                         if is_own {
-                            uwriteln!(self.src, "{op}.Handle = 0;");
+                            uwriteln!(self.src, "{op}.{handle_prop} = 0;");
                         }
                     }
                     Direction::Export => {
@@ -1535,9 +1607,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 self.src,
                                 "if ({handle} == 0) {{
                                      var {local_rep} = {export_name}.repTable.Add({op});
-                                     {handle} = {export_name}.WasmInterop.wasmImportResourceNew({local_rep});
+                                     {handle} = {export_name}.{wasm_interop}.wasmImportResourceNew({local_rep});
                                  }}
-                                 {op}.Handle = 0;
+                                 {op}.{handle_prop} = 0;
                                  "
                             );
                         } else {
@@ -1545,8 +1617,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 self.src,
                                 "if ({handle} == 0) {{
                                      var {local_rep} = {export_name}.repTable.Add({op});
-                                     {handle} = {export_name}.WasmInterop.wasmImportResourceNew({local_rep});
-                                     {op}.Handle = {handle};
+                                     {handle} = {export_name}.{wasm_interop}.wasmImportResourceNew({local_rep});
+                                     {op}.{handle_prop} = {handle};
                                  }}"
                             );
                         }
@@ -1560,8 +1632,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let is_own = matches!(handle, Handle::Own(_));
                 let mut resource = self.locals.tmp("resource");
                 let id = dealias(self.interface_gen.resolve, *ty);
-                let ResourceInfo { direction, .. } =
-                    &self.interface_gen.csharp_gen.all_resources[&id];
+                let ResourceInfo {
+                    direction, name, ..
+                } = &self.interface_gen.csharp_gen.all_resources[&id];
+                let resource_upper = name.to_upper_camel_case();
+                let handle_prop = resource_handle_property_name(&resource_upper);
+                let thandle_struct = resource_thandle_struct_name(&resource_upper);
+                let wasm_interop = resource_wasm_interop_class_name(&resource_upper);
                 let op = &operands[0];
 
                 match direction {
@@ -1572,12 +1649,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                         if let FunctionKind::Constructor(_) = self.kind {
                             resource = "this".to_owned();
-                            uwriteln!(self.src, "{resource}.Handle = {op};");
+                            uwriteln!(self.src, "{resource}.{handle_prop} = {op};");
                         } else {
                             let var = if is_own { "var" } else { "" };
                             uwriteln!(
                                 self.src,
-                                "{var} {resource} = new {import_name}(new {import_name}.THandle({op}));"
+                                "{var} {resource} = new {import_name}(new {import_name}.{thandle_struct}({op}));"
                             );
                         }
                         if !is_own {
@@ -1593,8 +1670,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             uwriteln!(
                                 self.src,
                                 "var {resource} = ({export_name}) {export_name}.repTable.Get\
-                                ({export_name}.WasmInterop.wasmImportResourceRep({op}));
-                                {resource}.Handle = {op};"
+                                ({export_name}.{wasm_interop}.wasmImportResourceRep({op}));
+                                {resource}.{handle_prop} = {op};"
                             );
                         } else {
                             uwriteln!(
@@ -1662,12 +1739,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     uwriteln!(self.src, "{name}TaskReturn({});", operands.join(", "));
 
                     if self.needs_cleanup {
+                        let cleanups = self.cleanups_var();
+                        let cleanup = self.locals.tmp("cleanup");
                         uwriteln!(
                             self.src,
                             "
-                        foreach (var cleanup in cleanups)
+                        foreach (var {cleanup} in {cleanups})
                         {{
-                            cleanup();
+                            {cleanup}();
                         }}"
                         );
                     }
@@ -1785,6 +1864,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 match realloc {
                     None => {
                         self.needs_cleanup = true;
+                        let cleanups = self.cleanups_var();
                         self.interface_gen.csharp_gen.needs_align_stack_ptr = true;
                         uwrite!(
                             self.src,
@@ -1798,7 +1878,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             {{
                                 var {buffer_size} = {size} * (nuint){map}.Count;
                                 {address} = global::System.Runtime.InteropServices.NativeMemory.AlignedAlloc({buffer_size}, {align});
-                                cleanups.Add(() => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({address}));
+                                {cleanups}.Add(() => global::System.Runtime.InteropServices.NativeMemory.AlignedFree({address}));
                             }}
                             "
                         );

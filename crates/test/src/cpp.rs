@@ -51,7 +51,7 @@ impl LanguageMethods for Cpp {
             return false;
         }
         return match name {
-            "issue1514-6.wit" | "named-fixed-length-list.wit" => true,
+            "named-fixed-length-list.wit" => true,
             _ => false,
         } || config.async_;
     }

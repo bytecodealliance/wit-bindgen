@@ -2249,7 +2249,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let mut all_types = String::new();
             for case in variant.cases.iter() {
                 Self::docs(&mut self.r#gen.h_src.src, &case.docs);
-                let case_pascal = to_c_ident(&case.name).to_pascal_case();
+                let mut case_pascal = to_c_ident(&case.name).to_pascal_case();
+                if case_pascal == pascal {
+                    case_pascal.push('_');
+                }
                 if !all_types.is_empty() {
                     all_types += ", ";
                 }
@@ -3167,14 +3170,23 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen
                         .type_name(&Type::Id(*var_ty), &self.namespace, Flavor::InStruct);
 
+                let var_pascal = self.r#gen.resolve.types[*var_ty]
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .to_pascal_case();
+
                 uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
                 for (i, ((case, (block, block_results)), payload)) in
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {}: {{", i);
                     if case.ty.is_some() {
-                        let case =
-                            format!("{elem_ns}::{}", to_c_ident(&case.name).to_pascal_case());
+                        let mut case_pascal = to_c_ident(&case.name).to_pascal_case();
+                        if case_pascal == var_pascal {
+                            case_pascal.push('_');
+                        }
+                        let case = format!("{elem_ns}::{case_pascal}");
                         uwriteln!(
                             self.src,
                             "auto& {} = std::get<{case}>({}.variants).value;",
@@ -3198,6 +3210,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
+                let var_pascal = self.r#gen.resolve.types[*ty]
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .to_pascal_case();
                 let ty = self
                     .r#gen
                     .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
@@ -3213,7 +3230,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    let tp = to_c_ident(&case.name).to_pascal_case();
+                    let mut tp = to_c_ident(&case.name).to_pascal_case();
+                    if tp == var_pascal {
+                        tp.push('_');
+                    }
                     uwriteln!(self.src, "case {i}: {{ {block}");
                     uwriteln!(
                         self.src,
