@@ -1069,10 +1069,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let ptr = match variant {
                         // When a wasm module calls an import it will provide
                         // space that isn't explicitly deallocated.
-                        AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
-
-                        AbiVariant::GuestImportAsync => {
-                            todo!("direct param lowering for async guest import not implemented")
+                        AbiVariant::GuestImport | AbiVariant::GuestImportAsync => {
+                            self.bindgen.return_pointer(size, align)
                         }
 
                         // When calling a wasm module from the outside, though,
