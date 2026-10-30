@@ -3717,7 +3717,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 // ... then call the function with all our operands
                 if !sig.results.is_empty() {
-                    self.src.push_str("auto ret = ");
+                    if self.variant == AbiVariant::GuestImportAsync {
+                        self.src.push_str("[[maybe_unused]] auto ret = ");
+                    } else {
+                        self.src.push_str("auto ret = ");
+                    }
                     results.push("ret".to_string());
                 }
                 self.src.push_str(&func);
@@ -3975,6 +3979,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     if self.has_result && !operands.is_empty() {
                         uwriteln!(self.src, "co_return {};", operands[0]);
                     } else {
+                        if !operands.is_empty() {
+                            uwriteln!(self.src, "(void) {};", operands[0]);
+                        }
                         uwriteln!(self.src, "co_return;");
                     }
                 }
