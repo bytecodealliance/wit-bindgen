@@ -1,0 +1,124 @@
+package local:demo;
+
+world w {
+  import imported;
+  export exported;
+}
+
+interface imported {
+  variant a {
+    tag(string),
+    tags(string),
+    as-tag,
+  }
+
+  variant tag {
+    a,
+    tag(u32),
+    tags(u32),
+  }
+
+  variant tags {
+    a,
+    tag(u32),
+    tags(u32),
+  }
+
+  variant as-foo {
+    foo(string),
+    as-foo(string),
+  }
+
+  resource b {
+    constructor();
+    t-handle: func();
+    dispose: func();
+    wasm-interop: func();
+  }
+
+  resource handle {
+    constructor();
+    f: func();
+  }
+
+  resource t-handle {
+    constructor();
+    f: func();
+  }
+
+  resource wasm-interop {
+    constructor();
+    f: func();
+  }
+
+  resource dispose {
+    constructor();
+    f: func();
+  }
+
+  test-variants: func(x: a, y: tag, z: tags, w: as-foo) -> tuple<a, tag, tags, as-foo>;
+  test-resources: func(r1: borrow<b>, r2: borrow<handle>, r3: borrow<t-handle>, r4: borrow<wasm-interop>, r5: borrow<dispose>) -> tuple<b, handle, t-handle, wasm-interop, dispose>;
+  test-params: func(cleanups: list<string>, cleanup: string, DELEGATE: string) -> string;
+}
+
+interface exported {
+  /// **/
+  variant a {
+    tag(string),
+    tags(string),
+    as-tag,
+  }
+
+  variant tag {
+    a,
+    tag(u32),
+    tags(u32),
+  }
+
+  variant tags {
+    a,
+    tag(u32),
+    tags(u32),
+  }
+
+  variant as-foo {
+    foo(string),
+    as-foo(string),
+  }
+
+  resource b {
+    constructor();
+    take-handle: func();
+    set-handle: func();
+    handle: func();
+    t-handle: func();
+    dispose: func();
+    wasm-interop: func();
+    drop: func();
+    on-drop: func();
+  }
+
+  resource handle {
+    constructor();
+    f: func();
+  }
+
+  resource t-handle {
+    constructor();
+    f: func();
+  }
+
+  resource wasm-interop {
+    constructor();
+    f: func();
+  }
+
+  resource dispose {
+    constructor();
+    f: func();
+  }
+
+  test-variants: func(x: a, y: tag, z: tags, w: as-foo) -> tuple<a, tag, tags, as-foo>;
+  test-resources: func(r1: borrow<b>, r2: borrow<handle>, r3: borrow<t-handle>, r4: borrow<wasm-interop>, r5: borrow<dispose>) -> tuple<b, handle, t-handle, wasm-interop, dispose>;
+  test-params: func(cleanups: list<string>, cleanup: string, DELEGATE: string) -> string;
+}

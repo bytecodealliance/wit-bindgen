@@ -2,7 +2,6 @@ use crate::csharp_ident::ToCSharpIdent;
 use crate::function::FunctionBindgen;
 use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
-use heck::ToLowerCamelCase;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -519,13 +518,16 @@ impl InterfaceGenerator<'_> {
 
     pub(crate) fn import(&mut self, import_module_name: &str, func: &Function) {
         let camel_name = match &func.kind {
-            FunctionKind::Freestanding
-            | FunctionKind::Static(_)
-            | FunctionKind::AsyncFreestanding
-            | FunctionKind::AsyncStatic(_) => func.item_name().to_upper_camel_case(),
-            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
+            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                 func.item_name().to_upper_camel_case()
             }
+            FunctionKind::Static(id)
+            | FunctionKind::AsyncStatic(id)
+            | FunctionKind::Method(id)
+            | FunctionKind::AsyncMethod(id) => resource_func_name(
+                &self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
+                &func.item_name().to_upper_camel_case(),
+            ),
             FunctionKind::Constructor(id) => {
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case()
             }
@@ -753,8 +755,7 @@ impl InterfaceGenerator<'_> {
                 .resolve
                 .wasm_signature(AbiVariant::GuestImportAsync, func);
 
-            // TODO: the result is a tmp so could be result/1/2/..  Maybe this will fallout if we use lower_to_memory.
-            let async_status_var = "result"; // String::new();
+            let async_status_var = bindgen.locals.tmp("result");
             let requires_async_return_buffer_param = func.result.is_some();
             let async_return_buffer = if requires_async_return_buffer_param {
                 Some(bindgen.emit_allocation_for_type(&func.result.unwrap()))
@@ -765,7 +766,7 @@ impl InterfaceGenerator<'_> {
             let csharp_param_names = func
                 .params
                 .iter()
-                .map(|param| param.name.to_lower_camel_case())
+                .map(|param| param.name.to_csharp_ident())
                 .collect::<Vec<_>>();
 
             let (lower, wasm_params) = if sig.indirect_params {
@@ -814,7 +815,7 @@ var {async_status_var} = {raw_name}({wasm_params});
             let bindgen_src = bindgen.src;
             if let Some(buffer) = async_return_buffer {
                 let ty = bindgen.result_type.expect("expected a result type");
-                let (lift_expr, res) = self.lift_from_memory("address", &ty, Some(func));
+                let (lift_expr, res) = self.lift_from_memory(&buffer, &ty, Some(func));
                 uwriteln!(src, "{}", bindgen_src);
                 let return_type = self.type_name_with_qualifier(&ty, true);
 
@@ -879,13 +880,16 @@ var {async_status_var} = {raw_name}({wasm_params});
 
     pub(crate) fn export(&mut self, func: &Function, interface_key: Option<&WorldKey>) {
         let camel_name = match &func.kind {
-            FunctionKind::Freestanding
-            | FunctionKind::Static(_)
-            | FunctionKind::AsyncFreestanding
-            | FunctionKind::AsyncStatic(_) => func.item_name().to_upper_camel_case(),
-            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
+            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
                 func.item_name().to_upper_camel_case()
             }
+            FunctionKind::Static(id)
+            | FunctionKind::AsyncStatic(id)
+            | FunctionKind::Method(id)
+            | FunctionKind::AsyncMethod(id) => resource_func_name(
+                &self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
+                &func.item_name().to_upper_camel_case(),
+            ),
             FunctionKind::Constructor(id) => {
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case()
             }
@@ -1174,7 +1178,7 @@ var {async_status_var} = {raw_name}({wasm_params});
 
         if self.csharp_gen.opts.generate_stub {
             let sig: String = self.sig_string(func, true);
-            let func_name = func.item_name().to_upper_camel_case();
+            let func_name = &camel_name;
 
             uwrite!(
                 self.stub,
@@ -1374,11 +1378,12 @@ var {async_status_var} = {raw_name}({wasm_params});
 
     fn print_docs(&mut self, docs: &Docs) {
         if let Some(docs) = &docs.contents {
-            let lines = docs
-                .trim()
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("*/", "*") // We can't close the comment, so if the user comment has */ we just remove the /
+            let mut sanitized = docs.trim().replace("<", "&lt;").replace(">", "&gt;");
+            // We can't close the comment, so if the user comment has */ we just remove the /
+            while sanitized.contains("*/") {
+                sanitized = sanitized.replace("*/", "*");
+            }
+            let lines = sanitized
                 .lines()
                 .map(|line| format!("* {line}"))
                 .collect::<Vec<_>>()
@@ -1421,6 +1426,19 @@ var {async_status_var} = {raw_name}({wasm_params});
         let docs = info.docs.clone();
         self.print_docs(&docs);
 
+        let handle_prop = resource_handle_property_name(&upper_camel);
+        let thandle_struct = resource_thandle_struct_name(&upper_camel);
+        let wasm_interop = resource_wasm_interop_class_name(&upper_camel);
+        let (dispose_sig, dispose_bool_name, dispose_call) = if upper_camel == "Dispose" {
+            (
+                "void global::System.IDisposable.Dispose()",
+                "Dispose_",
+                "((global::System.IDisposable)val).Dispose()",
+            )
+        } else {
+            ("public void Dispose()", "Dispose", "val.Dispose()")
+        };
+
         match self.direction {
             Direction::Import => {
                 let module_name = key
@@ -1436,25 +1454,25 @@ var {async_status_var} = {raw_name}({wasm_params});
                     self.src,
                     r#"
                     {access} class {upper_camel}: global::System.IDisposable {{
-                        internal int Handle {{ get; set; }}
+                        internal int {handle_prop} {{ get; set; }}
 
-                        {access} readonly record struct THandle(int Handle);
+                        {access} readonly record struct {thandle_struct}(int Handle);
 
-                        {access} {upper_camel}(THandle handle) {{
-                            Handle = handle.Handle;
+                        {access} {upper_camel}({thandle_struct} handle) {{
+                            {handle_prop} = handle.Handle;
                         }}
 
-                        public void Dispose() {{
-                            Dispose(true);
+                        {dispose_sig} {{
+                            {dispose_bool_name}(true);
                         }}
 
                         [global::System.Runtime.InteropServices.DllImportAttribute("{module_name}", EntryPoint = "[resource-drop]{name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                         private static extern void wasmImportResourceDrop(int p0);
 
-                        protected virtual void Dispose(bool disposing) {{
-                            if (disposing && Handle != 0) {{
-                                wasmImportResourceDrop(Handle);
-                                Handle = 0;
+                        protected virtual void {dispose_bool_name}(bool disposing) {{
+                            if (disposing && {handle_prop} != 0) {{
+                                wasmImportResourceDrop({handle_prop});
+                                {handle_prop} = 0;
                             }}
                         }}
                     "#
@@ -1471,10 +1489,10 @@ var {async_status_var} = {raw_name}({wasm_params});
                     [global::System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute(EntryPoint = "{prefix}[dtor]{name}")]
                     {access} static unsafe void wasmExportResourceDtor{upper_camel}(int rep) {{
                         var val = ({qualified}) {qualified}.repTable.Remove(rep);
-                        val.Handle = 0;
+                        val.{handle_prop} = 0;
                         // Note we call `Dispose` here even though the handle has already been disposed in case
                         // the implementation has overridden `Dispose(bool)`.
-                        val.Dispose();
+                        {dispose_call};
                     }}
                     "#
                 );
@@ -1503,14 +1521,14 @@ var {async_status_var} = {raw_name}({wasm_params});
                     r#"
                     {access} abstract class {upper_camel}: global::System.IDisposable {{
                         internal static RepTable<{upper_camel}> repTable = new ();
-                        internal int Handle {{ get; set; }}
+                        internal int {handle_prop} {{ get; set; }}
 
-                        public void Dispose() {{
-                            Dispose(true);
-                            GC.SuppressFinalize(this);
+                        {dispose_sig} {{
+                            {dispose_bool_name}(true);
+                            global::System.GC.SuppressFinalize(this);
                         }}
 
-                        internal static class WasmInterop {{
+                        internal static class {wasm_interop} {{
                             [global::System.Runtime.InteropServices.DllImportAttribute("{module_name}", EntryPoint = "[resource-drop]{name}"), global::System.Runtime.InteropServices.WasmImportLinkageAttribute]
                             internal static extern void wasmImportResourceDrop(int p0);
 
@@ -1521,16 +1539,16 @@ var {async_status_var} = {raw_name}({wasm_params});
                             internal static extern int wasmImportResourceRep(int p0);
                         }}
 
-                        protected virtual void Dispose(bool disposing) {{
-                            if (Handle != 0) {{
-                                var handle = Handle;
-                                Handle = 0;
-                                WasmInterop.wasmImportResourceDrop(handle);
+                        protected virtual void {dispose_bool_name}(bool disposing) {{
+                            if ({handle_prop} != 0) {{
+                                var handle = {handle_prop};
+                                {handle_prop} = 0;
+                                {wasm_interop}.wasmImportResourceDrop(handle);
                             }}
                         }}
 
                         ~{upper_camel}() {{
-                            Dispose(false);
+                            {dispose_bool_name}(false);
                         }}
                     }}
 
@@ -1616,14 +1634,23 @@ var {async_status_var} = {raw_name}({wasm_params});
             .join(", ");
 
         let (camel_name, modifiers) = match &func.kind {
-            FunctionKind::Freestanding
-            | FunctionKind::AsyncFreestanding
-            | FunctionKind::Static(_)
-            | FunctionKind::AsyncStatic(_) => (func.item_name().to_upper_camel_case(), "static"),
-
-            FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) => {
-                (func.item_name().to_upper_camel_case(), "")
+            FunctionKind::Freestanding | FunctionKind::AsyncFreestanding => {
+                (func.item_name().to_upper_camel_case(), "static")
             }
+            FunctionKind::Static(id) | FunctionKind::AsyncStatic(id) => (
+                resource_func_name(
+                    &self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
+                    &func.item_name().to_upper_camel_case(),
+                ),
+                "static",
+            ),
+            FunctionKind::Method(id) | FunctionKind::AsyncMethod(id) => (
+                resource_func_name(
+                    &self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
+                    &func.item_name().to_upper_camel_case(),
+                ),
+                "",
+            ),
             FunctionKind::Constructor(id) => (
                 self.csharp_gen.all_resources[id].name.to_upper_camel_case(),
                 "",
@@ -1843,6 +1870,17 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let name = name.to_upper_camel_case();
         let tag_type = int_type(variant.tag());
         let access = self.csharp_gen.access_modifier();
+        let tag_field = variant_tag_field_name(&name);
+        let tags_class = variant_tags_class_name(&name);
+
+        let accessor_names: Vec<String> = variant
+            .cases
+            .iter()
+            .filter_map(|case| {
+                self.non_empty_type(case.ty.as_ref())
+                    .map(|_| variant_accessor_name(&name, &case.name))
+            })
+            .collect();
 
         let constructors = variant
             .cases
@@ -1850,7 +1888,8 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .map(|case| {
                 let case_name = case.name.to_csharp_ident();
                 let tag = case.name.to_csharp_ident_upper();
-                let method_name = variant_new_func_name(&name, &tag);
+                let tag_const = variant_tag_const_name(tags_class, &tag);
+                let method_name = variant_new_func_name(&name, &tag, &accessor_names);
                 let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
                 {
                     (
@@ -1863,7 +1902,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
                 format!(
                     "{access} static {name} {method_name}({parameter}) {{
-                         return new {name}(Tags.{tag}, {argument});
+                         return new {name}({tags_class}.{tag_const}, {argument});
                      }}
                     "
                 )
@@ -1876,18 +1915,19 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .iter()
             .filter_map(|case| {
                 self.non_empty_type(case.ty.as_ref()).map(|ty| {
-                    let case_name = case.name.to_upper_camel_case();
+                    let accessor_name = variant_accessor_name(&name, &case.name);
                     let tag = case.name.to_csharp_ident_upper();
+                    let tag_const = variant_tag_const_name(tags_class, &tag);
                     let ty = self.type_name(ty);
                     format!(
-                        r#"{access} {ty} As{case_name}
+                        r#"{access} {ty} {accessor_name}
                         {{
                             get
                             {{
-                                if (Tag == Tags.{tag})
+                                if ({tag_field} == {tags_class}.{tag_const})
                                     return ({ty})value!;
                                 else
-                                    throw new global::System.ArgumentException("expected {tag}, got " + Tag);
+                                    throw new global::System.ArgumentException("expected {tag_const}, got " + {tag_field});
                             }}
                         }}
                         "#
@@ -1903,7 +1943,8 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .enumerate()
             .map(|(i, case)| {
                 let tag = case.name.to_csharp_ident_upper();
-                format!("{access} const {tag_type} {tag} = {i};")
+                let tag_const = variant_tag_const_name(tags_class, &tag);
+                format!("{access} const {tag_type} {tag_const} = {i};")
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -1912,18 +1953,18 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src,
             "
             {access} class {name} {{
-                {access} readonly {tag_type} Tag;
+                {access} readonly {tag_type} {tag_field};
                 private readonly object? value;
 
                 private {name}({tag_type} tag, object? value) {{
-                    this.Tag = tag;
+                    this.{tag_field} = tag;
                     this.value = value;
                 }}
 
                 {constructors}
                 {accessors}
 
-                {access} class Tags {{
+                {access} class {tags_class} {{
                     {tags}
                 }}
             }}
@@ -2048,14 +2089,91 @@ fn needs_ptr(ty: &Type) -> bool {
     }
 }
 
-// Names the factory method for a variant case. A method can't share its name with the variant type,
-// or with the `Tag` field and `Tags` class every variant has, so those cases get a suffix.
-pub fn variant_new_func_name(variant_name: &String, tag: &String) -> String {
-    if *tag == *variant_name || tag == "Tag" || tag == "Tags" {
-        format!("{tag}_") // Underscores are not valid in wit identifiers so this should be safe.
+pub fn variant_tag_field_name(variant_name: &str) -> &'static str {
+    if variant_name == "Tag" { "Tag_" } else { "Tag" }
+}
+
+pub fn variant_tags_class_name(variant_name: &str) -> &'static str {
+    if variant_name == "Tags" {
+        "Tags_"
     } else {
-        tag.clone()
+        "Tags"
     }
+}
+
+pub fn variant_tag_const_name(tags_class: &str, tag: &str) -> String {
+    if tag == tags_class {
+        format!("{tag}_")
+    } else {
+        tag.to_string()
+    }
+}
+
+pub fn variant_accessor_name(variant_name: &str, case_name: &str) -> String {
+    let accessor = format!("As{}", case_name.to_upper_camel_case());
+    if accessor == variant_name {
+        format!("{accessor}_")
+    } else {
+        accessor
+    }
+}
+
+// Names the factory method for a variant case. A method can't share its name with the variant type,
+// with the `Tag` field or `Tags` class every variant has, or with any `As<Case>` payload accessor
+// property on the same variant, so those cases get a suffix.
+pub fn variant_new_func_name(variant_name: &str, tag: &str, accessor_names: &[String]) -> String {
+    let tag_field = variant_tag_field_name(variant_name);
+    let tags_class = variant_tags_class_name(variant_name);
+    let mut name = tag.to_string();
+    while name == variant_name
+        || name == tag_field
+        || name == tags_class
+        || accessor_names.iter().any(|a| a == &name)
+    {
+        name.push('_'); // Underscores are not valid in wit identifiers so this should be safe.
+    }
+    name
+}
+
+pub fn resource_handle_property_name(resource_name: &str) -> &'static str {
+    if resource_name == "Handle" {
+        "Handle_"
+    } else {
+        "Handle"
+    }
+}
+
+pub fn resource_thandle_struct_name(resource_name: &str) -> &'static str {
+    if resource_name == "THandle" {
+        "THandle_"
+    } else {
+        "THandle"
+    }
+}
+
+pub fn resource_wasm_interop_class_name(resource_name: &str) -> &'static str {
+    if resource_name == "WasmInterop" {
+        "WasmInterop_"
+    } else {
+        "WasmInterop"
+    }
+}
+
+pub fn resource_func_name(resource_name: &str, func_name: &str) -> String {
+    let handle_prop = resource_handle_property_name(resource_name);
+    let thandle_struct = resource_thandle_struct_name(resource_name);
+    let wasm_interop = resource_wasm_interop_class_name(resource_name);
+    let mut name = func_name.to_string();
+    while name == resource_name
+        || name == handle_prop
+        || name == thandle_struct
+        || name == wasm_interop
+        || name == "Dispose"
+        || (resource_name == "Dispose" && name == "Dispose_")
+    {
+        name.push('_');
+    }
+    name
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

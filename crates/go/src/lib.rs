@@ -2556,9 +2556,13 @@ default:
                             .join("\n");
 
                         let name = case.name.to_upper_camel_case();
+                        let mut case_func = name.clone();
+                        if matches_reserved_variant_function_name(&name) {
+                            case_func.push('_');
+                        }
 
                         let set_payload = if case.ty.is_some() {
-                            format!("{VARIANT_PAYLOAD_NAME} := {value}.{name}()")
+                            format!("{VARIANT_PAYLOAD_NAME} := {value}.{case_func}()")
                         } else {
                             String::new()
                         };
