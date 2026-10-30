@@ -12,63 +12,55 @@
 //@ '''
 
 ///|
-priv struct BodyState {
+struct Body {
   mut contents : @async-core.Stream[Byte]?
-  mut trailers : @async-core.Future[Fields]?
+  mut trailers : @async-core.Future[FieldsHandle]?
+}
+
+// This fixture requires collection before resource destruction. Its destructor
+// assertions catch missed ownership transfers; they are not an abandonment
+// policy for a production body. An API with async endpoint cleanup also needs
+// an explicit async close operation before its synchronous resource drop.
+
+///|
+struct Response {
+  mut body : BodyHandle?
 }
 
 ///|
-priv struct ResponseState {
-  mut body : BodyState?
-}
+struct LeafThing(String)
 
 ///|
-let leaf_values : Map[Int, String] = Map([])
+struct Fields(String)
 
 ///|
-let fields_values : Map[Int, String] = Map([])
+let leaf_drops : Ref[UInt] = { val: 0, }
 
 ///|
-let body_values : Map[Int, BodyState] = Map([])
+let leaf_live : Ref[UInt] = { val: 0, }
 
 ///|
-let response_values : Map[Int, ResponseState] = Map([])
+let fields_live : Ref[UInt] = { val: 0, }
 
 ///|
-let next_resource_rep : Ref[Int] = Ref(1)
+let body_live : Ref[UInt] = { val: 0, }
 
 ///|
-let leaf_drops : Ref[UInt] = { val: 0 }
-
-///|
-let leaf_live : Ref[UInt] = { val: 0 }
-
-///|
-let fields_live : Ref[UInt] = { val: 0 }
-
-///|
-let body_live : Ref[UInt] = { val: 0 }
-
-///|
-let response_live : Ref[UInt] = { val: 0 }
+let response_live : Ref[UInt] = { val: 0, }
 
 ///|
 pub fn LeafThing::leaf_thing(value : String) -> LeafThing {
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  leaf_values[rep] = value
   leaf_live.val += 1
-  LeafThing::new(rep)
+  LeafThing(value)
 }
 
 ///|
 pub fn LeafThing::get(self : LeafThing) -> String {
-  leaf_values[self.0]
+  self.0
 }
 
 ///|
-pub fn LeafThing::dtor(self : LeafThing) -> Unit {
-  leaf_values.remove(self.0)
+fn LeafThing::dtor(_self : LeafThing) -> Unit {
   leaf_drops.val += 1
   leaf_live.val -= 1
 }
@@ -85,65 +77,27 @@ pub fn leaf_live_count() -> UInt {
 
 ///|
 pub fn Fields::fields(value : String) -> Fields {
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  fields_values[rep] = value
   fields_live.val += 1
-  Fields::new(rep)
+  Fields(value)
 }
 
 ///|
 pub fn Fields::get(self : Fields) -> String {
-  fields_values[self.0]
+  self.0
 }
 
 ///|
-pub fn Fields::dtor(self : Fields) -> Unit {
-  fields_values.remove(self.0)
+fn Fields::dtor(_self : Fields) -> Unit {
   fields_live.val -= 1
 }
 
 ///|
 pub fn Body::body(
   contents : @async-core.Stream[Byte],
-  trailers : @async-core.Future[Fields]?,
+  trailers : @async-core.Future[FieldsHandle]?,
 ) -> Body {
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  body_values[rep] = { contents: Some(contents), trailers }
   body_live.val += 1
-  Body::new(rep)
-}
-
-///|
-async fn collect_body_state(state : BodyState) -> (String, String?) {
-  guard state.contents is Some(contents) else { panic() }
-  state.contents = None
-
-  let bytes : Array[Byte] = []
-  for ;; {
-    match contents.read(16) {
-      Some(chunk) =>
-        for byte in chunk {
-          bytes.push(byte)
-        }
-      None => break
-    }
-  }
-  contents.drop()
-
-  let trailers = match state.trailers {
-    Some(future) => {
-      state.trailers = None
-      let fields = future.get()
-      let value = fields_values[fields.rep()]
-      fields.drop()
-      future.drop()
-      Some(value)
-    }
-    None => None
-  }
-  (@utf8.decode_lossy(Bytes::from_array(bytes[:])[:]), trailers)
+  { contents: Some(contents), trailers, }
 }
 
 ///|
@@ -151,58 +105,73 @@ pub async fn Body::collect(
   self : Body,
   _background_group : @async-core.TaskGroup[Unit],
 ) -> (String, String?) {
-  collect_body_state(body_values[self.0])
-}
-
-///|
-pub fn Body::dtor(self : Body) -> Unit {
-  match body_values.get(self.0) {
-    Some(state) => {
-      body_values.remove(self.0)
-      guard state.contents is None && state.trailers is None else {
-        abort("test body dropped before collect")
-      }
-      body_live.val -= 1
+  guard! self.contents is Some(contents)
+  self.contents = None
+  let trailers = self.trailers
+  self.trailers = None
+  // Collection takes ownership of both endpoints before its first suspension.
+  // They belong to this computation, so errors and cancellation must close them.
+  defer @async-core.protect_from_cancel(() => {
+    if trailers is Some(future) {
+      future.drop()
     }
-    None => ()
+  })
+  let bytes = {
+    defer @async-core.protect_from_cancel(() => contents.drop())
+    let bytes : Array[Byte] = []
+    for ;; {
+      match contents.read(16) {
+        Some(chunk) =>
+          for byte in chunk {
+            bytes.push(byte)
+          }
+        None => break
+      }
+    }
+    Bytes::from_array(bytes[:])
   }
+  let trailers = match trailers {
+    Some(future) => {
+      let fields = future.get()
+      defer fields.drop()
+      Some(fields.get())
+    }
+    None => None
+  }
+  (@utf8.decode_lossy(bytes[:]), trailers)
 }
 
 ///|
-pub fn Response::response(body : Body) -> Response {
-  // Move the owned body's representation into the response before releasing
-  // its handle. The body remains live until `Response::collect` consumes it.
-  let body_rep = body.rep()
-  guard body_values.get(body_rep) is Some(body_state) else { panic() }
-  body_values.remove(body_rep)
-  body.drop()
-  let rep = next_resource_rep.val
-  next_resource_rep.val += 1
-  response_values[rep] = { body: Some(body_state) }
+fn Body::dtor(self : Body) -> Unit {
+  guard self.contents is None && self.trailers is None else {
+    abort("test body dropped before collect")
+  }
+  body_live.val -= 1
+}
+
+///|
+pub fn Response::response(body : BodyHandle) -> Response {
   response_live.val += 1
-  Response::new(rep)
+  { body: Some(body), }
 }
 
 ///|
 pub async fn Response::collect(
   self : Response,
-  _background_group : @async-core.TaskGroup[Unit],
+  background_group : @async-core.TaskGroup[Unit],
 ) -> (String, String?) {
-  let state = response_values[self.0]
-  guard state.body is Some(body_state) else { panic() }
-  state.body = None
-  let result = collect_body_state(body_state)
-  body_live.val -= 1
-  result
+  guard! self.body is Some(body)
+  self.body = None
+  // The response hands ownership to the export's group. A forwarded method
+  // may return before work in that group finishes; returning is not a join.
+  // Register cleanup before calling it, including on error or cancellation.
+  background_group.add_defer(() => body.drop())
+  body.collect(background_group)
 }
 
 ///|
-pub fn Response::dtor(self : Response) -> Unit {
-  let state = response_values[self.0]
-  guard state.body is None else {
-    abort("test response dropped before collect")
-  }
-  response_values.remove(self.0)
+fn Response::dtor(self : Response) -> Unit {
+  guard self.body is None else { abort("test response dropped before collect") }
   response_live.val -= 1
 }
 
@@ -219,4 +188,77 @@ pub fn body_live_count() -> UInt {
 ///|
 pub fn response_live_count() -> UInt {
   response_live.val
+}
+
+///|
+suberror CollectionFailed {
+  CollectionFailed
+}
+
+///|
+pub async fn check_collection_cleanup(
+  _background_group : @async-core.TaskGroup[Unit],
+) -> Unit {
+  let bodies = body_live.val
+  let responses = response_live.val
+  let fields = fields_live.val
+
+  // A local producer failure propagates through both forwarding methods. A
+  // local group gives this check an explicit point after all cleanup finishes.
+  try
+    @async-core.with_task_group(group => {
+      let (contents, sink) = @async-core.Stream::new()
+      sink.close()
+      let trailers = @async-core.Future::from(async fn() {
+        raise CollectionFailed
+      })
+      let response = ResponseHandle::response(
+        BodyHandle::body(contents, Some(trailers)),
+      )
+      defer response.drop()
+      ignore(response.collect(group))
+    })
+  catch {
+    CollectionFailed => ()
+    error => raise error
+  } noraise {
+    _ => abort("collection should propagate producer failure")
+  }
+  guard! body_live.val == bodies && response_live.val == responses
+
+  // Cancel while collection is blocked in the contents stream, before it can
+  // read the trailer. Both the endpoint and its unread resource must be freed.
+  let (contents, sink) = @async-core.Stream::new()
+  @async-core.with_task_group(group => {
+    let trailers = @async-core.Future::ready_with_cleanup(
+      FieldsHandle::fields("unread trailer"),
+      fields => fields.drop(),
+    )
+    let response = ResponseHandle::response(
+      BodyHandle::body(contents, Some(trailers)),
+    )
+    defer response.drop()
+    let (started, start) = @async-core.Future::new()
+    defer @async-core.protect_from_cancel(() => started.drop())
+    let reader = group.spawn(
+      async fn() {
+        guard! start.complete(())
+        ignore(response.collect(group))
+      },
+      allow_failure=true,
+    )
+    started.get()
+    reader.cancel()
+    try reader.wait() catch {
+      @async-core.TaskCancelled::TaskCancelled => ()
+      error => raise error
+    } noraise {
+      _ => abort("collection should be cancelled")
+    }
+  })
+  guard! body_live.val == bodies && response_live.val == responses
+  guard! fields_live.val == fields
+  let unread : FixedArray[Byte] = [0]
+  guard! !sink.write_all(unread[:])
+  sink.close()
 }
