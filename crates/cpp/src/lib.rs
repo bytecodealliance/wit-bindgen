@@ -18,7 +18,7 @@ use wit_bindgen_core::{
     wit_parser::{
         Alignment, ArchitectureSize, Docs, Function, FunctionKind, Handle, Int, InterfaceId, Param,
         Resolve, SizeAlign, Stability, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId,
-        WorldKey,
+        WorldItem, WorldKey,
     },
 };
 use wit_parser::TypeIdVisitor;
@@ -79,6 +79,27 @@ struct Includes {
     needs_array: bool,
 }
 
+impl Includes {
+    fn merge(&mut self, other: &Includes) {
+        self.needs_vector |= other.needs_vector;
+        self.needs_expected |= other.needs_expected;
+        self.needs_string |= other.needs_string;
+        self.needs_string_view |= other.needs_string_view;
+        self.needs_optional |= other.needs_optional;
+        self.needs_cstring |= other.needs_cstring;
+        self.needs_imported_resources |= other.needs_imported_resources;
+        self.needs_exported_resources |= other.needs_exported_resources;
+        self.needs_variant |= other.needs_variant;
+        self.needs_tuple |= other.needs_tuple;
+        self.needs_assert |= other.needs_assert;
+        self.needs_bit |= other.needs_bit;
+        self.needs_span |= other.needs_span;
+        self.needs_wit |= other.needs_wit;
+        self.needs_memory |= other.needs_memory;
+        self.needs_array |= other.needs_array;
+    }
+}
+
 #[derive(Default)]
 struct SourceWithState {
     src: Source,
@@ -105,6 +126,7 @@ struct Cpp {
     imported_interfaces: HashSet<InterfaceId>,
     instance_names: HashMap<InterfaceId, String>,
     user_class_files: HashMap<String, String>,
+    user_class_includes: Vec<String>,
     defined_types: HashSet<(Vec<String>, String)>,
     types: Types,
 
@@ -460,6 +482,7 @@ impl Cpp {
                 includes: std::mem::take(&mut self.includes),
                 src: std::mem::take(&mut self.h_src),
                 dependencies: std::mem::take(&mut self.dependencies),
+                user_class_includes: std::mem::take(&mut self.user_class_includes),
             }
         } else {
             Default::default()
@@ -476,6 +499,9 @@ impl Cpp {
                 uwriteln!(header, "#include {include}");
             }
             header.push_str(&self.h_src.src);
+            for include in self.user_class_includes.iter() {
+                uwriteln!(header, "#include {include}");
+            }
             let mut filename = namespace.join("-");
             filename.push_str(".h");
             if self.opts.format {
@@ -485,8 +511,13 @@ impl Cpp {
 
             let _ = std::mem::replace(&mut self.includes, store.includes);
             let _ = std::mem::replace(&mut self.h_src, store.src);
-            let _ = std::mem::replace(&mut self.dependencies, store.dependencies);
-            self.includes.push(String::from("\"") + &filename + "\"");
+            let file_deps = std::mem::replace(&mut self.dependencies, store.dependencies);
+            self.dependencies.merge(&file_deps);
+            let _ = std::mem::replace(&mut self.user_class_includes, store.user_class_includes);
+            let inc = String::from("\"") + &filename + "\"";
+            if !self.user_class_includes.contains(&inc) {
+                self.user_class_includes.push(inc);
+            }
         }
     }
 }
@@ -496,6 +527,7 @@ struct FileContext {
     includes: Vec<String>,
     src: SourceWithState,
     dependencies: Includes,
+    user_class_includes: Vec<String>,
 }
 
 impl WorldGenerator for Cpp {
@@ -504,6 +536,27 @@ impl WorldGenerator for Cpp {
         self.world = name.to_string();
         self.types.analyze(resolve);
         self.world_id = Some(world);
+        for (name, item) in &resolve.worlds[world].exports {
+            if let WorldItem::Interface { id, .. } = item {
+                self.update_instance_name(resolve, name, *id);
+            }
+        }
+        for (_name, item) in &resolve.worlds[world].exports {
+            if let WorldItem::Interface { id, .. } = item {
+                let namespc = namespace(resolve, &TypeOwner::Interface(*id), true, self);
+                for &type_id in resolve.interfaces[*id].types.values() {
+                    let ty = &resolve.types[type_id];
+                    if matches!(ty.kind, TypeDefKind::Resource) {
+                        if let Some(name) = &ty.name {
+                            let pascal = name.to_upper_camel_case();
+                            self.h_src.change_namespace(&namespc);
+                            uwriteln!(self.h_src.src, "class {pascal};");
+                        }
+                    }
+                }
+            }
+        }
+        self.h_src.change_namespace(&Vec::default());
         uwriteln!(
             self.c_src_head,
             r#"#include "{}_cpp.h"
@@ -759,6 +812,10 @@ impl WorldGenerator for Cpp {
         self.h_src.change_namespace(&Vec::default());
         h_str.src.push_str(&self.h_src.src);
 
+        for include in self.user_class_includes.iter() {
+            uwriteln!(h_str.src, "#include {include}");
+        }
+
         uwriteln!(c_str.src, "\n// Component Adapters");
 
         uwriteln!(
@@ -915,6 +972,16 @@ struct CppInterfaceGenerator<'a> {
 impl CppInterfaceGenerator<'_> {
     fn types(&mut self, iface: InterfaceId) {
         let iface_data = &self.resolve().interfaces[iface];
+
+        for &id in iface_data.types.values() {
+            let ty = &self.resolve().types[id];
+            if matches!(ty.kind, TypeDefKind::Resource) {
+                if let Some(name) = &ty.name {
+                    let pascal = name.to_upper_camel_case();
+                    uwriteln!(self.r#gen.h_src.src, "class {pascal};");
+                }
+            }
+        }
 
         // Here we sort the types topologically before emitting code for them,
         // taking into consideration the parameter and return types of functions
@@ -1685,7 +1752,10 @@ impl CppInterfaceGenerator<'_> {
                         | (true, Flavor::Result(AbiVariant::GuestImport)) => {
                             // Only exported resources have ::Owned typedef
                             if is_exported {
-                                typename.push_str(&format!("::{OWNED_CLASS_NAME}"))
+                                self.r#gen.dependencies.needs_wit = true;
+                                typename = format!(
+                                    "wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<{typename}>::{OWNED_CLASS_NAME}"
+                                );
                             } else {
                                 typename.push_str("&&")
                             }
@@ -1697,7 +1767,10 @@ impl CppInterfaceGenerator<'_> {
                         (_, _) => todo!(),
                     }
                     if matches!(flavor, Flavor::InStruct) && is_exported {
-                        typename.push_str(&format!("::{OWNED_CLASS_NAME}"))
+                        self.r#gen.dependencies.needs_wit = true;
+                        typename = format!(
+                            "wit::{RESOURCE_EXPORT_BASE_CLASS_NAME}<{typename}>::{OWNED_CLASS_NAME}"
+                        );
                     }
                     typename
                 }
