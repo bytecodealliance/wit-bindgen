@@ -20,6 +20,7 @@ namespace TestWorld.wit.Exports.my.test
 
             // If the cancel occurs before the read is complete (or the writer ignores the cancel) we return Cancelled.
             Debug.Assert(task.Cancel() == CancelCode.Cancelled);
+            future.Dispose();
             return Task.CompletedTask;
         }
 
@@ -31,6 +32,8 @@ namespace TestWorld.wit.Exports.my.test
             await signal.Read();
 
             Debug.Assert(task.Cancel() == CancelCode.Completed);
+            future.Dispose();
+            signal.Dispose();
         }
     }
 }
