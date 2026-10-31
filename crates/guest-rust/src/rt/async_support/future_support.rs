@@ -819,7 +819,9 @@ impl<O: FutureOps> RawFutureReader<O> {
         ret
     }
 
-    fn handle(&self) -> u32 {
+    /// Returns the index of the component-model handle that this future is
+    /// using.
+    pub fn handle(&self) -> u32 {
         self.opt_handle().unwrap()
     }
 
