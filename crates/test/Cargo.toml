@@ -28,7 +28,7 @@ toml = "1.1.2"
 wasi-preview1-component-adapter-provider = "50.0.1"
 wac-parser = "0.11.0"
 wac-types = "0.11.0"
-wac-graph = "0.11.0"
+wac-graph = "0.12.0"
 wasm-compose = { workspace = true }
 indexmap = { workspace = true }
 wasm-encoder = { workspace = true }
