@@ -1,13 +1,10 @@
-// TODO: Switch to interior mutability (e.g. use Mutexes or thread-local
-// RefCells) and remove this, since even in single-threaded mode `static mut`
-// references can be a hazard due to recursive access.
-#![allow(static_mut_refs)]
-
 use super::cabi;
+use super::try_lock::TryLock;
 use crate::rt::async_support::BoxFuture;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::future::Future;
+use core::mem;
 use core::pin::Pin;
 use core::ptr;
 use core::task::{Context, Poll};
@@ -15,9 +12,29 @@ use futures::channel::oneshot;
 use futures::future::{AbortHandle, Abortable, Aborted};
 use futures::stream::{FuturesUnordered, StreamExt};
 
-/// Any newly-deferred work queued by calls to the `spawn` function while
-/// polling the current task.
-static mut SPAWNED: Vec<BoxFuture> = Vec::new();
+/// Futures spawned with `spawn_local` while a task was the current task, which
+/// that task's executor hasn't added to its `Tasks` yet.
+#[derive(Default)]
+pub struct Spawned {
+    queue: TryLock<Vec<BoxFuture<'static>>>,
+}
+
+// Note: the queued futures are `!Send`. Component model threads never run in
+// parallel, and only switch inside built-ins such as `waitable-set.wait`, none
+// of which are called while `queue` is locked. Futures are only pushed and
+// polled on the thread that polls the task.
+unsafe impl Send for Spawned {}
+unsafe impl Sync for Spawned {}
+
+impl Spawned {
+    pub fn push(&self, task: BoxFuture<'static>) {
+        self.queue.try_lock().unwrap().push(task);
+    }
+
+    pub fn take(&self) -> Vec<BoxFuture<'static>> {
+        mem::take(&mut *self.queue.try_lock().unwrap())
+    }
+}
 
 #[derive(Default)]
 pub struct Tasks<'a> {
@@ -43,17 +60,18 @@ impl<'a> Tasks<'a> {
         }
     }
 
-    pub fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+    pub fn poll_next(&mut self, cx: &mut Context<'_>, spawned: &Spawned) -> Poll<()> {
         loop {
             // Perform some work by seeing what's next in this
             // `FuturesUnordered`. Afterwards check the set of spawned tasks
             // and, if any, add them to our set of tasks being done.
             let poll = self.tasks.poll_next_unpin(cx);
-            let spawned = unsafe {
-                if SPAWNED.is_empty() {
+            let spawned = {
+                let spawned = spawned.take();
+                if spawned.is_empty() {
                     false
                 } else {
-                    self.tasks.extend(SPAWNED.drain(..));
+                    self.tasks.extend(spawned);
                     true
                 }
             };
@@ -88,12 +106,6 @@ impl<'a> Tasks<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
-    }
-}
-
-pub(super) fn push(task: BoxFuture<'static>) {
-    unsafe {
-        SPAWNED.push(task);
     }
 }
 
