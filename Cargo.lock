@@ -1354,9 +1354,9 @@ dependencies = [
 
 [[package]]
 name = "wasi-preview1-component-adapter-provider"
-version = "48.0.1"
+version = "50.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0094c9d281ca1ee9434e1287601ef8442cb23341b1cda917755619694814ba5"
+checksum = "08af31e188aec735fabb6370000e3c5954eae92d434a63ad22f665b55b01dda4"
 
 [[package]]
 name = "wasm-compose"
