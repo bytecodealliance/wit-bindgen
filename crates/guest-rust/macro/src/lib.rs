@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
@@ -68,7 +68,7 @@ struct Config {
     resolve: Resolve,
     world: WorldId,
     files: Vec<PathBuf>,
-    debug: bool,
+    debug: Option<syn::LitStr>,
 }
 
 /// The source of the wit package definition
@@ -88,7 +88,7 @@ impl Parse for Config {
         let mut features = Vec::new();
         let mut sync_configured = false;
         let mut method_chaining_configured = false;
-        let mut debug = false;
+        let mut debug = None;
 
         if input.peek(token::Brace) {
             let content;
@@ -188,8 +188,8 @@ impl Parse for Config {
                     Opt::DisableCustomSectionLinkHelpers(disable) => {
                         opts.disable_custom_section_link_helpers = disable.value();
                     }
-                    Opt::Debug(enable) => {
-                        debug = enable.value();
+                    Opt::Debug(dir) => {
+                        debug = Some(dir);
                     }
                     Opt::Sync(val, span) => {
                         if sync_configured {
@@ -294,7 +294,41 @@ fn parse_source(
 }
 
 impl Config {
+    fn debug_output_dir(&self) -> Result<Option<PathBuf>> {
+        let dir = match (&self.debug, std::env::var_os("WIT_BINDGEN_DEBUG")) {
+            (Some(dir), _) => {
+                let value = dir.value();
+                if value.is_empty() {
+                    return Err(Error::new(dir.span(), "`debug` directory cannot be empty"));
+                }
+                PathBuf::from(value)
+            }
+            (None, Some(env)) => {
+                // Historically `WIT_BINDGEN_DEBUG=1` was the documented way to
+                // turn this on, so reject that (and `0`, which previously
+                // still enabled debug output) rather than silently writing
+                // to a directory named `1` or `0`.
+                if env.is_empty() || env == "1" || env == "0" {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        format!(
+                            "`WIT_BINDGEN_DEBUG={}` is no longer supported; set it to \
+                             a directory to write generated code to instead, for example \
+                             `WIT_BINDGEN_DEBUG=/tmp/wit-bindgen-debug`",
+                            env.display(),
+                        ),
+                    ));
+                }
+                PathBuf::from(env)
+            }
+            (None, None) => return Ok(None),
+        };
+        let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+        Ok(Some(root.join(dir)))
+    }
+
     fn expand(mut self) -> Result<TokenStream> {
+        let debug_output_dir = self.debug_output_dir()?;
         let mut files = Default::default();
         let mut generator = self.opts.build();
         generator
@@ -303,23 +337,30 @@ impl Config {
         let (_, src) = files.iter().next().unwrap();
         let mut src = std::str::from_utf8(src).unwrap().to_string();
 
-        // If a magical `WIT_BINDGEN_DEBUG` environment variable is set then
-        // place a formatted version of the expanded code into a file. This file
-        // will then show up in rustc error messages for any codegen issues and can
-        // be inspected manually.
-        if std::env::var("WIT_BINDGEN_DEBUG").is_ok() || self.debug {
+        // If debugging is set then place a formatted version of the expanded
+        // code into a file in that directory. This file will then show up in
+        // rustc error messages for any codegen issues and can be inspected
+        // manually.
+        if let Some(root) = debug_output_dir {
             static INVOCATION: AtomicUsize = AtomicUsize::new(0);
-            let root = Path::new(env!("DEBUG_OUTPUT_DIR"));
             let world_name = &self.resolve.worlds[self.world].name;
             let n = INVOCATION.fetch_add(1, Relaxed);
-            let path = root.join(format!("{world_name}{n}.rs"));
+            let krate = std::env::var("CARGO_CRATE_NAME").unwrap_or_default();
+            let path = root.join(format!("{krate}-{world_name}-{n}.rs"));
 
             // optimistically format the code but don't require success
             let contents = match fmt(&src) {
                 Ok(formatted) => formatted,
                 Err(_) => src.clone(),
             };
-            std::fs::write(&path, contents.as_bytes()).unwrap();
+            std::fs::create_dir_all(&root)
+                .and_then(|()| std::fs::write(&path, contents.as_bytes()))
+                .map_err(|e| {
+                    Error::new(
+                        Span::call_site(),
+                        format!("failed to write debug output to `{}`: {e}", path.display()),
+                    )
+                })?;
 
             src = format!("include!({path:?});");
         }
@@ -456,7 +497,7 @@ enum Opt {
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
     Sync(AsyncFilterSet, Span),
-    Debug(syn::LitBool),
+    Debug(syn::LitStr),
     ChainableMethods(ChainableMethodFilterSet, Span),
     MergeStructurallyEqualTypes(syn::LitBool),
 }
