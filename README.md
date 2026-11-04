@@ -242,7 +242,7 @@ By using [`cargo expand`](https://github.com/dtolnay/cargo-expand) or `cargo
 doc` you can also explore the generated code. If there's a bug in `wit-bindgen`
 and the generated bindings do not compile or if there's an error in the
 generated code (which is probably also a bug in `wit-bindgen`), you can use
-`WIT_BINDGEN_DEBUG=1` as an environment variable to help debug this.
+`WIT_BINDGEN_DEBUG=/some/dir` as an environment variable to help debug this.
 
 This project can then be built with:
 
