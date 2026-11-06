@@ -14,6 +14,7 @@
 #include <new>
 #include <span>
 #include <utility> // pair
+#include <coroutine>
 
 namespace wit {
 /// @brief Helper class to map between IDs and resources
@@ -330,5 +331,171 @@ public:
     return *this;
   }
   ResourceImportBase &operator=(ResourceImportBase const &r) = delete;
+};
+
+/// @brief Represents an ongoing asynchronous computation in C++20 coroutines.
+template <typename T = void>
+class Task {
+public:
+  struct promise_type;
+  using handle_type = std::coroutine_handle<promise_type>;
+
+  struct promise_type {
+    std::optional<T> value;
+    std::coroutine_handle<> continuation = nullptr;
+
+    Task get_return_object() {
+      return Task(handle_type::from_promise(*this));
+    }
+    std::suspend_never initial_suspend() noexcept { return {}; }
+    auto final_suspend() noexcept {
+      struct FinalAwaiter {
+        bool await_ready() noexcept { return false; }
+        std::coroutine_handle<> await_suspend(handle_type h) noexcept {
+          auto cont = h.promise().continuation;
+          if (cont) return cont;
+          return std::noop_coroutine();
+        }
+        void await_resume() noexcept {}
+      };
+      return FinalAwaiter{};
+    }
+    void return_value(T v) {
+      value = std::move(v);
+    }
+    void unhandled_exception() {
+      assert(false && "unhandled exception in wit::Task");
+    }
+  };
+
+  handle_type handle = nullptr;
+
+  Task() = default;
+  explicit Task(handle_type h) : handle(h) {}
+  Task(Task &&other) noexcept : handle(other.handle) { other.handle = nullptr; }
+  Task &operator=(Task &&other) noexcept {
+    if (this != &other) {
+      if (handle) handle.destroy();
+      handle = other.handle;
+      other.handle = nullptr;
+    }
+    return *this;
+  }
+  ~Task() {
+    if (handle) handle.destroy();
+  }
+  Task(const Task &) = delete;
+  Task &operator=(const Task &) = delete;
+
+  bool await_ready() const noexcept {
+    return !handle || handle.done();
+  }
+  std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) noexcept {
+    handle.promise().continuation = awaiting;
+    return handle;
+  }
+  T await_resume() {
+    assert(handle && handle.promise().value.has_value());
+    return std::move(*handle.promise().value);
+  }
+
+  bool done() const noexcept {
+    return !handle || handle.done();
+  }
+
+  T get() {
+    assert(handle && handle.promise().value.has_value());
+    return std::move(*handle.promise().value);
+  }
+};
+
+template <>
+class Task<void> {
+public:
+  struct promise_type;
+  using handle_type = std::coroutine_handle<promise_type>;
+
+  struct promise_type {
+    std::coroutine_handle<> continuation = nullptr;
+
+    Task get_return_object() {
+      return Task(handle_type::from_promise(*this));
+    }
+    std::suspend_never initial_suspend() noexcept { return {}; }
+    auto final_suspend() noexcept {
+      struct FinalAwaiter {
+        bool await_ready() noexcept { return false; }
+        std::coroutine_handle<> await_suspend(handle_type h) noexcept {
+          auto cont = h.promise().continuation;
+          if (cont) return cont;
+          return std::noop_coroutine();
+        }
+        void await_resume() noexcept {}
+      };
+      return FinalAwaiter{};
+    }
+    void return_void() {}
+    void unhandled_exception() {
+      assert(false && "unhandled exception in wit::Task");
+    }
+  };
+
+  handle_type handle = nullptr;
+
+  Task() = default;
+  explicit Task(handle_type h) : handle(h) {}
+  Task(Task &&other) noexcept : handle(other.handle) { other.handle = nullptr; }
+  Task &operator=(Task &&other) noexcept {
+    if (this != &other) {
+      if (handle) handle.destroy();
+      handle = other.handle;
+      other.handle = nullptr;
+    }
+    return *this;
+  }
+  ~Task() {
+    if (handle) handle.destroy();
+  }
+  Task(const Task &) = delete;
+  Task &operator=(const Task &) = delete;
+
+  bool await_ready() const noexcept {
+    return !handle || handle.done();
+  }
+  std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) noexcept {
+    handle.promise().continuation = awaiting;
+    return handle;
+  }
+  void await_resume() {}
+
+  bool done() const noexcept {
+    return !handle || handle.done();
+  }
+};
+
+template <typename T = void>
+class FutureReader {
+public:
+  int32_t handle = -1;
+  FutureReader() = default;
+  explicit FutureReader(int32_t h) : handle(h) {}
+  int32_t get_handle() const { return handle; }
+};
+
+template <typename T = void>
+class StreamReader {
+public:
+  int32_t handle = -1;
+  StreamReader() = default;
+  explicit StreamReader(int32_t h) : handle(h) {}
+  int32_t get_handle() const { return handle; }
+};
+
+class ErrorContext {
+public:
+  int32_t handle = -1;
+  ErrorContext() = default;
+  explicit ErrorContext(int32_t h) : handle(h) {}
+  int32_t get_handle() const { return handle; }
 };
 } // namespace wit
