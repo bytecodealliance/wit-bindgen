@@ -28,6 +28,8 @@ interface leaf-interface {
   fields-live-count: func() -> u32;
   body-live-count: func() -> u32;
   response-live-count: func() -> u32;
+  // Exercise language-local unwinding and cancellation before crossing the ABI.
+  check-collection-cleanup: async func();
 }
 
 interface test-interface {
