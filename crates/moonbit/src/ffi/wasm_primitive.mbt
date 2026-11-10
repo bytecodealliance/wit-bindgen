@@ -10,13 +10,14 @@ pub(open) trait Waitable {
 }
 
 ///|
+#derive(Eq)
 pub(all) enum SubtaskStatus {
   Starting(Int)
   Started(Int)
   Returned(Int)
   StartCancelled(Int)
   ReturnCancelled(Int)
-} derive(Eq, Show)
+}
 
 ///|
 pub fn SubtaskStatus::decode(int : Int) -> SubtaskStatus {
@@ -43,6 +44,7 @@ pub fn SubtaskStatus::handle(self : Self) -> Int {
 }
 
 ///|
+#derive(Eq)
 pub(all) enum Event {
   None
   Subtask
@@ -51,7 +53,7 @@ pub(all) enum Event {
   FutureRead
   FutureWrite
   TaskCancel
-} derive(Eq, Show)
+}
 
 ///|
 pub fn Event::decode(int : Int) -> Event {
@@ -81,12 +83,13 @@ pub fn Event::encode(self : Self) -> Int {
 }
 
 ///|
+#derive(Eq)
 pub(all) enum WaitableStatus {
   Completed(Int)
   Dropped(Int)
   Cancelled(Int)
   Blocking
-} derive(Eq, Show)
+}
 
 ///|
 let waitable_status_block : Int = 0xffff_ffff
@@ -111,12 +114,13 @@ pub fn WaitableStatus::count(int : Int) -> Int {
 }
 
 ///|
+#derive(Eq)
 pub(all) enum CallbackCode {
   Exit
   Yield
   Wait(Int)
   Cancel(Int)
-} derive(Eq, Show)
+}
 
 ///|
 pub fn CallbackCode::encode(self : Self) -> Int {

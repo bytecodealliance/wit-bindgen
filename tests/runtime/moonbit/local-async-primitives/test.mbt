@@ -3,7 +3,8 @@
 //@ path = 'gen/interface/test/moonbit-local-async-primitives/operations/stub.mbt'
 
 ///|
-suberror ExpectedPromiseFailure derive(Debug)
+#derive(Debug)
+suberror ExpectedPromiseFailure
 
 ///|
 // During the transition from implicit method attachment to separate `impl`
