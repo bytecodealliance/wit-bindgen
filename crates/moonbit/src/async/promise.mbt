@@ -40,7 +40,8 @@ pub struct Promise[X] {
 }
 
 ///|
-pub(all) suberror PromiseClosed derive(Debug)
+#derive(Debug)
+pub(all) suberror PromiseClosed
 
 ///|
 #deprecated

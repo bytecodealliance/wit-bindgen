@@ -970,15 +970,14 @@ impl<'a> InterfaceGenerator<'a> {
         let export = format!(
             r#"
             ///|
+            #export_name({callback_export_name:?})
             #doc(hidden)
             pub fn {export_func_name}(event_raw : Int, waitable : Int, code : Int) -> Int {{
                 {package}{export_func_name}(event_raw, waitable, code)
             }}
             "#,
         );
-        self.world_gen
-            .export
-            .insert(callback_export_name, (export_func_name.clone(), export));
+        self.world_gen.export.insert(callback_export_name, export);
 
         true
     }

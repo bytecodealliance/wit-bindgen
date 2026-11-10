@@ -102,7 +102,8 @@ extern "wasm" fn int_array2ptr(array : FixedArray[Int]) -> Int =
   #|(func (param i32) (result i32) local.get 0)
 
 ///|
-struct WaitableSet(Int) derive(Eq, Hash)
+#derive(Eq, Hash)
+struct WaitableSet(Int)
 
 ///|
 #deprecated

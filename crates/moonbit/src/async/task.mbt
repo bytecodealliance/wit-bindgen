@@ -23,7 +23,8 @@ pub struct Task[X] {
 ///|
 /// An observed task terminated by cancellation. This is an ordinary error in
 /// the waiter, distinct from cancellation of the waiter itself.
-pub suberror TaskCancelled derive(Debug)
+#derive(Debug)
+pub suberror TaskCancelled
 
 ///|
 #deprecated

@@ -76,10 +76,6 @@ pub struct DeriveOpts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_debug: bool,
 
-    /// Whether or not to derive Show for all types
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_show: bool,
-
     /// Whether or not to derive Eq for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_eq: bool,
@@ -125,8 +121,8 @@ pub struct MoonBit {
     interface_ns: Ns,
     // dependencies between packages
     pkg_resolver: PkgResolver,
-    // Wasm export name -> (exported function name, func)
-    export: HashMap<String, (String, String)>,
+    // Wasm export name -> exported wrapper
+    export: HashMap<String, String>,
 
     export_ns: Ns,
 
@@ -186,24 +182,7 @@ impl MoonBit {
             moon_pkg.push_str("link: {\n\"wasm\": {\n");
             moon_pkg.push_str(&format!("\"export-memory-name\": \"{memory_name}\",\n"));
             moon_pkg.push_str("\"heap-start-address\": 16,\n");
-            moon_pkg.push_str("\"exports\": [\n");
-            moon_pkg.indent(1);
-            let mut exports = self
-                .export
-                .iter()
-                .map(|(export_name, (func_name, _))| format!("\"{func_name}:{export_name}\""))
-                .collect::<Vec<_>>();
-            exports.push(format!(
-                "\"mbt_ffi_cabi_realloc:{}\"",
-                self.pkg_resolver.resolve.wasm_export_name(
-                    ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
-                    WasmExport::Realloc,
-                ),
-            ));
-            exports.sort();
-            uwrite!(moon_pkg, "{}", exports.join(",\n"));
-            moon_pkg.deindent(1);
-            moon_pkg.push_str("\n],\n},\n},\n");
+            moon_pkg.push_str("},\n},\n");
             moon_pkg.deindent(1);
             moon_pkg.push_str(")\n");
         }
@@ -552,7 +531,7 @@ impl WorldGenerator for MoonBit {
             uwriteln!(&mut body, "{}", builtin);
         }
         // Import all exported interfaces
-        for (_, (_, impl_)) in self.export.iter() {
+        for impl_ in self.export.values() {
             uwriteln!(&mut body, "{impl_}");
         }
 
@@ -596,6 +575,20 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    fn emit_derives(&mut self, contains_endpoint: bool) -> Vec<&'static str> {
+        let traits = [
+            ("Debug", self.derive_opts.derive_debug),
+            ("Eq", self.derive_opts.derive_eq),
+        ]
+        .into_iter()
+        .filter_map(|(name, enabled)| (enabled && !contains_endpoint).then_some(name))
+        .collect::<Vec<_>>();
+        if !traits.is_empty() {
+            uwrite!(self.src, "\n#derive({})", traits.join(", "));
+        }
+        traits
+    }
+
     fn emit_derived_methods(&mut self, name: &str, traits: &[&str]) {
         // MoonBit used to attach trait methods to types automatically through
         // `impl`, including derived implementations. During the transition to
@@ -604,7 +597,6 @@ impl InterfaceGenerator<'_> {
         for trait_ in traits {
             let methods = match *trait_ {
                 "Debug" => "Debug::{to_repr}",
-                "Show" => "Show::{to_string, output}",
                 "Eq" => "Eq::{not_equal, equal}",
                 _ => unreachable!(),
             };
@@ -815,6 +807,7 @@ impl InterfaceGenerator<'_> {
         let export = format!(
             r#"
             ///|
+            #export_name({export_name:?})
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
                 {}{func_name}({})
@@ -829,9 +822,7 @@ impl InterfaceGenerator<'_> {
                 .join(", "),
         );
 
-        self.world_gen
-            .export
-            .insert(export_name, (func_name, export));
+        self.world_gen.export.insert(export_name, export);
 
         if !self.emit_async_export_callback(
             &async_plan,
@@ -887,6 +878,7 @@ impl InterfaceGenerator<'_> {
             let export = format!(
                 r#"
                 ///|
+                #export_name({export_name:?})
                 #doc(hidden)
                 pub fn {func_name}({params}) -> Unit {{
                     {}{func_name}({})
@@ -900,9 +892,7 @@ impl InterfaceGenerator<'_> {
                     .collect::<Vec<_>>()
                     .join(", "),
             );
-            self.world_gen
-                .export
-                .insert(export_name, (func_name, export));
+            self.world_gen.export.insert(export_name, export);
         }
     }
 
@@ -959,48 +949,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .fields
             .iter()
             .any(|field| type_contains_future_or_stream(self.resolve, &field.ty));
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug && !contains_endpoint {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show && !contains_endpoint {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq && !contains_endpoint {
-            deriviation.push("Eq")
-        }
-
-        let derivation = if deriviation.is_empty() {
-            String::new()
-        } else {
-            format!(" derive({})", deriviation.join(", "))
-        };
+        let derives = self.emit_derives(contains_endpoint);
 
         uwrite!(
             self.src,
             "
             pub(all) struct {name} {{
                 {parameters}
-            }}{derivation}
+            }}
             "
         );
-        self.emit_derived_methods(&name, &deriviation);
+        self.emit_derived_methods(&name, &derives);
     }
 
     fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
         print_docs(&mut self.src, docs);
         let name = name.to_moonbit_type_ident();
 
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(false);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             format!("suberror {name} {{ {name}(Int) }}")
         } else {
@@ -1010,11 +976,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             r#"
-            pub(all) {declaration} derive({})
+            pub(all) {declaration}
             "#,
-            deriviation.join(", "),
         );
-        self.emit_derived_methods(&name, &deriviation);
+        self.emit_derived_methods(&name, &derives);
 
         if self.direction == Direction::Import {
             let (drop_module, drop_name) = self.resolve.wasm_import_name(
@@ -1136,6 +1101,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             let export = format!(
                 r#"
                 ///|
+                #export_name({export_name:?})
                 #doc(hidden)
                 pub fn {func_name}(handle : Int) -> Unit {{
                     {}{func_name}(handle)
@@ -1145,9 +1111,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     .pkg_resolver
                     .qualify_package(self.world_gen.opts.gen_dir.as_str(), self.name),
             );
-            self.world_gen
-                .export
-                .insert(export_name, (func_name, export));
+            self.world_gen.export.insert(export_name, export);
         }
     }
 
@@ -1191,16 +1155,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n    ");
 
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(false);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             format!("suberror {name} {{ {name}({ty}) }}")
         } else {
@@ -1210,7 +1165,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            pub(all) {declaration} derive({})
+            pub(all) {declaration}
             ///|
             pub fn {name}::default() -> {name} {{
                 {name}({})
@@ -1241,7 +1196,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
               (flag.land(other.value()) == other.value())
             }}
             ",
-            deriviation.join(", "),
             match ty {
                 "Byte" => "b'\\x00'",
                 "UInt" => "0U",
@@ -1249,7 +1203,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 _ => unreachable!(),
             }
         );
-        self.emit_derived_methods(&name, &deriviation);
+        self.emit_derived_methods(&name, &derives);
     }
 
     fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
@@ -1281,26 +1235,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .iter()
             .filter_map(|case| case.ty.as_ref())
             .any(|ty| type_contains_future_or_stream(self.resolve, ty));
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug && !contains_endpoint {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show && !contains_endpoint {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq && !contains_endpoint {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(contains_endpoint);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
             "enum"
-        };
-
-        let derivation = if deriviation.is_empty() {
-            String::new()
-        } else {
-            format!(" derive({})", deriviation.join(", "))
         };
 
         uwrite!(
@@ -1308,10 +1247,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "
             pub(all) {declaration} {name} {{
               {cases}
-            }}{derivation}
+            }}
             "
         );
-        self.emit_derived_methods(&name, &deriviation);
+        self.emit_derived_methods(&name, &derives);
     }
 
     fn type_option(&mut self, _id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
@@ -1335,16 +1274,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("; ");
 
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(false);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
@@ -1356,11 +1286,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "
             pub(all) {declaration} {name} {{
                 {cases}
-            }} derive({})
+            }}
             ",
-            deriviation.join(", ")
         );
-        self.emit_derived_methods(&name, &deriviation);
+        self.emit_derived_methods(&name, &derives);
 
         // Case to integer
         let cases = enum_
@@ -3389,7 +3318,6 @@ mod tests {
             opts: Opts {
                 derive: DeriveOpts {
                     derive_debug: true,
-                    derive_show: false,
                     derive_eq: true,
                     derive_error: false,
                 },
@@ -3402,25 +3330,23 @@ mod tests {
 
         let source = file(&files, "interface/a/b/types/top.mbt");
         assert!(
-            source.contains("struct Plain {\n      value : UInt\n} derive(Debug, Eq)"),
-            "{source}"
-        );
-        assert!(
-            source.contains("struct Nested {\n      value : @async-core.Future[UInt]?\n}"),
-            "{source}"
-        );
-        assert!(
-            !source.contains("struct Nested {\n      value : @async-core.Future[UInt]?\n} derive(")
-        );
-        assert!(
             source.contains(
-                "Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n}"
+                "///|\n#derive(Debug, Eq)\npub(all) struct Plain {\n      value : UInt\n}"
             ),
             "{source}"
         );
-        assert!(!source.contains(
-            "Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n} derive("
-        ));
+        assert!(
+            source.contains(
+                "///|\npub(all) struct Nested {\n      value : @async-core.Future[UInt]?\n}"
+            ),
+            "{source}"
+        );
+        assert!(
+            source.contains(
+                "///|\npub(all) enum Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n}"
+            ),
+            "{source}"
+        );
     }
 
     #[test]

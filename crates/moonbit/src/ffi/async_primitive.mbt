@@ -67,7 +67,7 @@ pub fn current_coroutine_done() -> Bool {
 }
 
 ///|
-pub(all) suberror Cancelled derive(Show)
+pub(all) suberror Cancelled
 
 ///|
 pub fn Coroutine::cancel(self : Coroutine) -> Unit {
