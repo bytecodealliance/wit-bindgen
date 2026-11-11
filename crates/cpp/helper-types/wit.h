@@ -516,16 +516,17 @@ struct AsyncTaskContext {
     }
   }
 
-  bool has_pending() const {
-    if (!ready_queue.empty()) {
-      return true;
-    }
+  bool has_active_waitables() const {
     for (const auto &entry : entries) {
       if (entry.active) {
         return true;
       }
     }
     return false;
+  }
+
+  bool has_pending() const {
+    return !ready_queue.empty() || has_active_waitables();
   }
 
   bool is_done() const {
@@ -639,24 +640,41 @@ struct AsyncTaskContext {
     if (is_done()) {
       return CALLBACK_CODE_EXIT;
     }
-    while (!ready_queue.empty() && !should_yield) {
-      auto h = ready_queue.front();
-      ready_queue.erase(ready_queue.begin());
-      h.resume();
-      cleanup_finished();
+    for (;;) {
+      while (!ready_queue.empty() && !should_yield) {
+        size_t batch = ready_queue.size();
+        for (size_t i = 0; i < batch && !ready_queue.empty(); ++i) {
+          auto h = ready_queue.front();
+          ready_queue.erase(ready_queue.begin());
+          h.resume();
+          cleanup_finished();
+          if (is_done()) {
+            return CALLBACK_CODE_EXIT;
+          }
+        }
+      }
       if (is_done()) {
         return CALLBACK_CODE_EXIT;
       }
+      if (should_yield) {
+        if (waitable_set != 0 && has_active_waitables()) {
+          uint32_t payload[2] = {0, 0};
+          uint32_t ev = wit_async_waitable_set_poll(waitable_set, payload);
+          if (ev != EVENT_NONE) {
+            should_yield = false;
+            deliver_event(ev, payload[0], payload[1]);
+            if (is_done()) {
+              return CALLBACK_CODE_EXIT;
+            }
+            continue;
+          }
+        }
+        should_yield = false;
+        return CALLBACK_CODE_YIELD;
+      }
+      assert(waitable_set != 0);
+      return CALLBACK_CODE_WAIT | (waitable_set << 4);
     }
-    if (is_done()) {
-      return CALLBACK_CODE_EXIT;
-    }
-    if (should_yield) {
-      should_yield = false;
-      return CALLBACK_CODE_YIELD;
-    }
-    assert(waitable_set != 0);
-    return CALLBACK_CODE_WAIT | (waitable_set << 4);
   }
 };
 
