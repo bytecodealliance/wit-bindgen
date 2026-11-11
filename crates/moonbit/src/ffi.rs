@@ -245,6 +245,7 @@ extern "wasm" fn mbt_ffi_free(position : Int) =
 
 pub(crate) const CABI_REALLOC: &str = r#"
 ///|
+#export_name("cabi_realloc")
 pub fn mbt_ffi_cabi_realloc(
   src_offset : Int,
   src_size : Int,

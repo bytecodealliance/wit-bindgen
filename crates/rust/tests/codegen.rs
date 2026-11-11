@@ -218,7 +218,7 @@ mod retyped_list {
 }
 
 #[allow(unused, reason = "testing codegen, not functionality")]
-mod method_chaining {
+mod owning_method_chaining {
     wit_bindgen::generate!({
         inline: r#"
         package test:method-chaining;
@@ -232,7 +232,26 @@ mod method_chaining {
         }
         "#,
         generate_all,
-        enable_method_chaining: true
+        chainable_methods: ["all"]
+    });
+}
+
+#[allow(unused, reason = "testing codegen, not functionality")]
+mod borrowing_method_chaining {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:method-chaining;
+        world test {
+            resource a {
+                constructor();
+                set-a: func(arg: u32);
+                set-b: func(arg: bool);
+                do: func();
+            }
+        }
+        "#,
+        generate_all,
+        chainable_methods: ["&all"]
     });
 }
 
@@ -300,4 +319,245 @@ mod merge_structurally_equal_types {
         generate_all,
         merge_structurally_equal_types: true
     });
+}
+
+mod targeted_attributes {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:attrs;
+
+        interface iface {
+            record point { x: u32, y: u32 }
+            enum color { red, green, blue }
+            variant shape { circle(u32), square(point), a-b }
+
+            // used as both return and param, so `duplicate_if_necessary` generates
+            // an owned `String` form and a borrowed `&str` form
+            record label { text: string }
+
+            paint: func(c: color) -> color;
+            draw: func(s: shape) -> shape;
+            round: func(p: point) -> point;
+            make-label: func() -> label;
+            use-label: func(l: label) -> u32;
+        }
+
+        world test {
+            import iface;
+        }
+        "#,
+        generate_all,
+        ownership: Borrowing { duplicate_if_necessary: true },
+        additional_type_attributes: {
+            // two entries for one selector, both apply
+            "test:attrs/iface/point": [#[derive(PartialEq, Eq)] #[derive(Hash)]],
+            "test:attrs/iface/color": [#[doc = "a primary color"] #[derive(Hash)]],
+            "test:attrs/iface/shape": [#[derive(PartialEq)]],
+            "test:attrs/iface/label": [#[derive(PartialEq, Eq)]],
+        },
+        additional_member_attributes: {
+            "test:attrs/iface/point.x": [#[allow(dead_code)]],
+            "test:attrs/iface/color.red": [#[doc = "the primary color"]],
+            "test:attrs/iface/shape.circle": [#[doc = "a round shape"]],
+            // `a-b` upper-camels to `AB`, so this matches only via the raw wit name
+            "test:attrs/iface/shape.a-b": [#[allow(dead_code)]],
+            "test:attrs/iface/label.text": [#[allow(dead_code)]],
+        },
+    });
+
+    #[test]
+    fn injected_derives_are_usable() {
+        use test::attrs::iface::{Color, LabelParam, LabelResult, Point, Shape};
+
+        let a = Point { x: 1, y: 2 };
+        assert_eq!(a, a.clone());
+        let mut set = std::collections::HashSet::new();
+        set.insert(a);
+        assert!(set.contains(&Point { x: 1, y: 2 }));
+
+        let mut colors = std::collections::HashSet::new();
+        colors.insert(Color::Red);
+        assert!(colors.contains(&Color::Red));
+        assert!(!colors.contains(&Color::Blue));
+
+        assert_eq!(Shape::Circle(3), Shape::Circle(3).clone());
+        assert_ne!(Shape::Circle(3), Shape::Circle(4));
+
+        // both the owned `String` form and the borrowed `&str` form got the derives
+        assert_eq!(
+            LabelResult { text: "hi".into() },
+            LabelResult { text: "hi".into() }
+        );
+        assert_eq!(LabelParam { text: "hi" }, LabelParam { text: "hi" });
+        assert_ne!(LabelParam { text: "hi" }, LabelParam { text: "bye" });
+    }
+}
+
+// Guards where `@version` lands in a qualified selector: after the interface,
+// before the type.
+mod versioned_selectors {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:hier@1.2.3;
+        interface types {
+            record alpha { x: u32 }
+            get-alpha: func() -> alpha;
+        }
+        world w { import types; }
+        "#,
+        generate_all,
+        additional_type_attributes: {
+            "test:hier/types@1.2.3/alpha": [#[derive(PartialEq, Eq)] #[derive(PartialOrd, Ord)]],
+        },
+        additional_member_attributes: {
+            "test:hier/types@1.2.3/alpha.x": [#[allow(dead_code)]],
+        },
+    });
+
+    #[test]
+    fn versioned_selectors_resolve() {
+        use test::hier::types::Alpha;
+
+        assert_eq!(Alpha { x: 1 }, Alpha { x: 1 });
+        assert!(Alpha { x: 1 } < Alpha { x: 2 });
+    }
+}
+
+mod accessors {
+    wit_bindgen::generate!({
+        inline: r#"
+        package test:accessors;
+
+        interface i {
+            prop: get() -> u64;
+            prop: set(value: u64);
+
+            read-only: get() -> string;
+
+            fallible: get() -> u32;
+            fallible: set(value: u32) -> result<_, string>;
+
+            %type: get() -> u32;
+            %type: set(value: u32);
+
+            get: func();
+            set: func(value: u32);
+
+            resource blob {
+                constructor();
+                position: get() -> u64;
+                position: set(value: u64);
+                label: get() -> string;
+                label: set(value: string) -> result<_, string>;
+                max-size: static get() -> u64;
+                max-size: static set(value: u64) -> result<_, string>;
+            }
+        }
+
+        world test {
+            import i;
+            export i;
+
+            import world-prop: get() -> u64;
+            import world-prop: set(value: u64);
+            export other-prop: get() -> string;
+            export other-prop: set(value: string) -> result<_, string>;
+        }
+        "#,
+        generate_all,
+    });
+
+    fn use_imports() {
+        use test::accessors::i::*;
+
+        let _: u64 = prop();
+        let _: () = set_prop(1);
+        let _: String = read_only();
+        let _: u32 = fallible();
+        let _: Result<(), String> = set_fallible(1);
+        let _: u32 = type_();
+        let _: () = set_type(1);
+        let _: () = get();
+        let _: () = set(1);
+
+        let b = Blob::new();
+        let _: u64 = b.position();
+        let _: () = b.set_position(1);
+        let _: String = b.label();
+        let _: Result<(), String> = b.set_label("x");
+        let _: u64 = Blob::max_size();
+        let _: Result<(), String> = Blob::set_max_size(1);
+
+        let _: u64 = world_prop();
+        let _: () = set_world_prop(1);
+    }
+
+    struct Component;
+
+    impl Guest for Component {
+        fn other_prop() -> String {
+            todo!()
+        }
+        fn set_other_prop(value: String) -> Result<(), String> {
+            todo!()
+        }
+    }
+
+    impl exports::test::accessors::i::Guest for Component {
+        type Blob = MyBlob;
+
+        fn prop() -> u64 {
+            todo!()
+        }
+        fn set_prop(value: u64) {
+            todo!()
+        }
+        fn read_only() -> String {
+            todo!()
+        }
+        fn fallible() -> u32 {
+            todo!()
+        }
+        fn set_fallible(value: u32) -> Result<(), String> {
+            todo!()
+        }
+        fn type_() -> u32 {
+            todo!()
+        }
+        fn set_type(value: u32) {
+            todo!()
+        }
+        fn get() {
+            todo!()
+        }
+        fn set(value: u32) {
+            todo!()
+        }
+    }
+
+    struct MyBlob;
+
+    impl exports::test::accessors::i::GuestBlob for MyBlob {
+        fn new() -> MyBlob {
+            todo!()
+        }
+        fn position(&self) -> u64 {
+            todo!()
+        }
+        fn set_position(&self, value: u64) {
+            todo!()
+        }
+        fn label(&self) -> String {
+            todo!()
+        }
+        fn set_label(&self, value: String) -> Result<(), String> {
+            todo!()
+        }
+        fn max_size() -> u64 {
+            todo!()
+        }
+        fn set_max_size(value: u64) -> Result<(), String> {
+            todo!()
+        }
+    }
 }

@@ -13,9 +13,19 @@
 // limitations under the License.
 
 ///|
-async fn[T, E : Error] async_suspend(
-  cb : ((T) -> Unit, (E) -> Unit) -> Unit,
-) -> T raise E = "%async.suspend"
+async fn[T] async_suspend(cb : ((T) -> Unit) -> Unit) -> T noraise + nocancel = "%async.suspend"
 
 ///|
-fn run_async(f : async () -> Unit noraise) = "%async.run"
+fn run_async(f : async () -> Unit noraise + nocancel) = "%async.run"
+
+///|
+/// Deliver cancellation from the runtime, or resume it after boundary cleanup.
+#internal(wit_bindgen, "runtime and generated binding code only")
+#doc(hidden)
+pub async fn[X] raise_cancellation_signal() -> X noraise = "%async.raise_cancellation_signal"
+
+///|
+async fn[X] capture_cancellation(
+  f : async () -> X,
+  handler~ : async () -> X nocancel,
+) -> X nocancel = "%async.capture_cancellation"

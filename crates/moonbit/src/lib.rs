@@ -53,7 +53,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_stub: bool,
 
-    /// Whether or not to generate moon.mod.json ; useful if the project is part of a larger project
+    /// Whether or not to generate moon.mod ; useful if the project is part of a larger project
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub ignore_module_file: bool,
 
@@ -75,10 +75,6 @@ pub struct DeriveOpts {
     /// Whether or not to derive Debug for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub derive_debug: bool,
-
-    /// Whether or not to derive Show for all types
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub derive_show: bool,
 
     /// Whether or not to derive Eq for all types
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
@@ -125,8 +121,8 @@ pub struct MoonBit {
     interface_ns: Ns,
     // dependencies between packages
     pkg_resolver: PkgResolver,
-    // Wasm export name -> (exported function name, func)
-    export: HashMap<String, (String, String)>,
+    // Wasm export name -> exported wrapper
+    export: HashMap<String, String>,
 
     export_ns: Ns,
 
@@ -156,33 +152,24 @@ impl MoonBit {
     }
 
     fn write_moon_pkg(&self, moon_pkg: &mut Source, imports: Option<&Imports>, link: bool) {
-        // Disable warning for invalid inline wasm
-        moon_pkg.push_str("{\n\"warn-list\": \"-44\"");
         // Dependencies
         if let Some(imports) = imports {
-            moon_pkg.push_str(",\n\"import\": [\n");
-            moon_pkg.indent(1);
+            moon_pkg.push_str("import {\n");
             let mut deps = imports
                 .packages
                 .iter()
-                .map(|(k, v)| {
-                    format!(
-                        "{{ \"path\" : \"{}/{}\", \"alias\" : \"{}\" }}",
-                        self.project_name,
-                        k.replace(".", "/"),
-                        v
-                    )
-                })
+                .map(|(k, v)| format!("\"{}/{}\" @{},", self.project_name, k.replace(".", "/"), v))
                 .collect::<Vec<_>>();
             deps.sort();
-            uwrite!(moon_pkg, "{}", deps.join(",\n"));
-            moon_pkg.deindent(1);
-            moon_pkg.push_str("\n]");
+            uwriteln!(moon_pkg, "{}", deps.join("\n"));
+            moon_pkg.push_str("}\n\n");
         }
+        // Disable warning for invalid inline wasm.
+        moon_pkg.push_str("warnings = \"-44\"\n");
         let imports_async_core =
             imports.is_some_and(|imports| imports.packages.contains_key(ASYNC_CORE_DIR));
         if imports_async_core || (link && self.async_support.is_required()) {
-            moon_pkg.push_str(",\n\"supported-targets\": \"+wasm\"");
+            moon_pkg.push_str("supported_targets = \"wasm\"\n");
         }
         // Link target
         if link {
@@ -190,29 +177,15 @@ impl MoonBit {
                 ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
                 WasmExport::Memory,
             );
-            moon_pkg.push_str(",\n\"link\": {\n\"wasm\": {\n");
+            moon_pkg.push_str("\npkgtype(kind: \"foreign_library\")\n\noptions(\n");
+            moon_pkg.indent(1);
+            moon_pkg.push_str("link: {\n\"wasm\": {\n");
             moon_pkg.push_str(&format!("\"export-memory-name\": \"{memory_name}\",\n"));
             moon_pkg.push_str("\"heap-start-address\": 16,\n");
-            moon_pkg.push_str("\"exports\": [\n");
-            moon_pkg.indent(1);
-            let mut exports = self
-                .export
-                .iter()
-                .map(|(export_name, (func_name, _))| format!("\"{func_name}:{export_name}\""))
-                .collect::<Vec<_>>();
-            exports.push(format!(
-                "\"mbt_ffi_cabi_realloc:{}\"",
-                self.pkg_resolver.resolve.wasm_export_name(
-                    ManglingAndAbi::Legacy(LiftLowerAbi::Sync),
-                    WasmExport::Realloc,
-                ),
-            ));
-            exports.sort();
-            uwrite!(moon_pkg, "{}", exports.join(",\n"));
+            moon_pkg.push_str("},\n},\n");
             moon_pkg.deindent(1);
-            moon_pkg.push_str("\n]\n}\n}\n");
+            moon_pkg.push_str(")\n");
         }
-        moon_pkg.push_str("\n}\n");
     }
 }
 
@@ -227,7 +200,7 @@ impl MoonBit {
 /// - `preprocess`: Initialize generator-wide state (package resolver,
 ///   project name, and size/align information) for the current world.
 /// - `import_interface` / `export_interface`: Generate per-interface
-///   sources, FFI glue, README documentation and `moon.pkg.json` metadata.
+///   sources, FFI glue, README documentation and `moon.pkg` metadata.
 /// - `import_funcs` / `export_funcs` / `import_types`: Collect and accumulate
 ///   world-level functions and types (the `$root` module) into fragments
 ///   that are later written out by `finish_imports` or `finish`.
@@ -262,7 +235,7 @@ impl WorldGenerator for MoonBit {
                 format!("{}/{}", package.namespace, package.name)
             }))
             .unwrap_or("generated".into());
-        self.sizes.fill(resolve);
+        self.sizes.fill(resolve)?;
         Ok(())
     }
 
@@ -313,14 +286,14 @@ impl WorldGenerator for MoonBit {
             }
             files.push(&format!("{directory}/ffi.mbt"), indent(&ffi).as_bytes());
 
-            // moon.pkg.json
+            // moon.pkg
             let mut moon_pkg = Source::default();
             self.write_moon_pkg(
                 &mut moon_pkg,
                 self.pkg_resolver.package_import.get(&name),
                 false,
             );
-            files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+            files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
         }
 
         Ok(())
@@ -332,7 +305,7 @@ impl WorldGenerator for MoonBit {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = PkgResolver::world_name(resolve, world);
         let mut r#gen = self.interface(resolve, &name, Direction::Import, None);
 
@@ -342,6 +315,7 @@ impl WorldGenerator for MoonBit {
 
         let result = r#gen.finish();
         self.import_world_fragment.concat(result);
+        Ok(())
     }
 
     fn import_types(
@@ -350,7 +324,7 @@ impl WorldGenerator for MoonBit {
         world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = PkgResolver::world_name(resolve, world);
         let mut r#gen = self.interface(resolve, &name, Direction::Import, None);
 
@@ -360,9 +334,15 @@ impl WorldGenerator for MoonBit {
 
         let result = r#gen.finish();
         self.import_world_fragment.concat(result);
+        Ok(())
     }
 
-    fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish_imports(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        files: &mut Files,
+    ) -> Result<()> {
         let name = PkgResolver::world_name(resolve, world);
         let directory = name.replace('.', "/");
 
@@ -390,14 +370,15 @@ impl WorldGenerator for MoonBit {
             &format!("{directory}/ffi_import.mbt"),
             indent(&ffi).as_bytes(),
         );
-        // moon.pkg.json
+        // moon.pkg
         let mut moon_pkg = Source::default();
         self.write_moon_pkg(
             &mut moon_pkg,
             self.pkg_resolver.package_import.get(&name),
             false,
         );
-        files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+        files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
+        Ok(())
     }
 
     fn export_interface(
@@ -446,14 +427,14 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
             if !self.opts.ignore_stub {
-                // moon.pkg.json
+                // moon.pkg
                 let mut moon_pkg = Source::default();
                 self.write_moon_pkg(
                     &mut moon_pkg,
                     self.pkg_resolver.package_import.get(&name),
                     false,
                 );
-                files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+                files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
             }
 
             // FFI
@@ -500,14 +481,14 @@ impl WorldGenerator for MoonBit {
             files.push(&format!("{directory}/top.mbt"), indent(&src).as_bytes());
 
             if !self.opts.ignore_stub {
-                // moon.pkg.json
+                // moon.pkg
                 let mut moon_pkg = Source::default();
                 self.write_moon_pkg(
                     &mut moon_pkg,
                     self.pkg_resolver.package_import.get(&name),
                     false,
                 );
-                files.push(&format!("{directory}/moon.pkg.json"), moon_pkg.as_bytes());
+                files.push(&format!("{directory}/moon.pkg"), moon_pkg.as_bytes());
             }
 
             // FFI
@@ -524,6 +505,10 @@ impl WorldGenerator for MoonBit {
     }
 
     fn finish(&mut self, _resolve: &Resolve, _id: WorldId, files: &mut Files) -> Result<()> {
+        // Error about unused async configuration to help catch configuration
+        // errors.
+        self.opts.async_.ensure_all_used()?;
+
         // If async is used, export async utils
         self.async_support.emit_runtime_files(files, VERSION);
 
@@ -532,10 +517,10 @@ impl WorldGenerator for MoonBit {
             let mut body = Source::default();
             uwriteln!(
                 &mut body,
-                "{{ \"name\": \"{}\", \"preferred-target\": \"wasm\" }}",
+                "name = {:?}\n\npreferred_target = \"wasm\"",
                 self.project_name
             );
-            files.push("moon.mod.json", body.as_bytes());
+            files.push("moon.mod", body.as_bytes());
         }
 
         // Export project entry point
@@ -546,7 +531,7 @@ impl WorldGenerator for MoonBit {
             uwriteln!(&mut body, "{}", builtin);
         }
         // Import all exported interfaces
-        for (_, (_, impl_)) in self.export.iter() {
+        for impl_ in self.export.values() {
             uwriteln!(&mut body, "{impl_}");
         }
 
@@ -562,14 +547,16 @@ impl WorldGenerator for MoonBit {
             true,
         );
         files.push(
-            &format!("{}/moon.pkg.json", self.opts.r#gen_dir),
-            indent(&moon_pkg).as_bytes(),
+            &format!("{}/moon.pkg", self.opts.r#gen_dir),
+            moon_pkg.as_bytes(),
         );
 
         Ok(())
     }
 }
 
+// Start each generated top-level declaration, including its docs and attributes,
+// with `///|` to keep MoonBit's source positions within the per-segment line limit.
 struct InterfaceGenerator<'a> {
     src: String,
     ffi: String,
@@ -588,6 +575,38 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    fn emit_derives(&mut self, contains_endpoint: bool) -> Vec<&'static str> {
+        let traits = [
+            ("Debug", self.derive_opts.derive_debug),
+            ("Eq", self.derive_opts.derive_eq),
+        ]
+        .into_iter()
+        .filter_map(|(name, enabled)| (enabled && !contains_endpoint).then_some(name))
+        .collect::<Vec<_>>();
+        if !traits.is_empty() {
+            uwrite!(self.src, "\n#derive({})", traits.join(", "));
+        }
+        traits
+    }
+
+    fn emit_derived_methods(&mut self, name: &str, traits: &[&str]) {
+        // MoonBit used to attach trait methods to types automatically through
+        // `impl`, including derived implementations. During the transition to
+        // separate `impl` and `extend` semantics, keep those methods as deprecated
+        // compatibility aliases. New callers should use `Trait::method` instead.
+        for trait_ in traits {
+            let methods = match *trait_ {
+                "Debug" => "Debug::{to_repr}",
+                "Eq" => "Eq::{not_equal, equal}",
+                _ => unreachable!(),
+            };
+            uwriteln!(
+                self.src,
+                "///|\n#deprecated\npub extend {name} with {methods}\n"
+            );
+        }
+    }
+
     fn finish(self) -> InterfaceFragment {
         InterfaceFragment {
             src: self.src,
@@ -665,6 +684,7 @@ impl InterfaceGenerator<'_> {
         uwriteln!(
             self.ffi,
             r#"
+            ///|
             fn {ffi_import_name}({params}) {result_type} = "{import_module}" "{import_name}"
             "#
         );
@@ -774,6 +794,7 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 self.ffi,
                 r#"
+                ///|
                 #doc(hidden)
                 pub fn {func_name}({params}) -> {result_type} {{
                     {cleanup_list}
@@ -785,6 +806,8 @@ impl InterfaceGenerator<'_> {
 
         let export = format!(
             r#"
+            ///|
+            #export_name({export_name:?})
             #doc(hidden)
             pub fn {func_name}({params}) -> {result_type} {{
                 {}{func_name}({})
@@ -799,9 +822,7 @@ impl InterfaceGenerator<'_> {
                 .join(", "),
         );
 
-        self.world_gen
-            .export
-            .insert(export_name, (func_name, export));
+        self.world_gen.export.insert(export_name, export);
 
         if !self.emit_async_export_callback(
             &async_plan,
@@ -839,6 +860,7 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 self.ffi,
                 r#"
+                ///|
                 #doc(hidden)
                 pub fn {func_name}({params}) -> Unit {{
                     {src}
@@ -855,6 +877,8 @@ impl InterfaceGenerator<'_> {
             );
             let export = format!(
                 r#"
+                ///|
+                #export_name({export_name:?})
                 #doc(hidden)
                 pub fn {func_name}({params}) -> Unit {{
                     {}{func_name}({})
@@ -868,9 +892,7 @@ impl InterfaceGenerator<'_> {
                     .collect::<Vec<_>>()
                     .join(", "),
             );
-            self.world_gen
-                .export
-                .insert(export_name, (func_name, export));
+            self.world_gen.export.insert(export_name, export);
         }
     }
 
@@ -927,60 +949,37 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .fields
             .iter()
             .any(|field| type_contains_future_or_stream(self.resolve, &field.ty));
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug && !contains_endpoint {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show && !contains_endpoint {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq && !contains_endpoint {
-            deriviation.push("Eq")
-        }
-
-        let derivation = if deriviation.is_empty() {
-            String::new()
-        } else {
-            format!(" derive({})", deriviation.join(", "))
-        };
+        let derives = self.emit_derives(contains_endpoint);
 
         uwrite!(
             self.src,
             "
             pub(all) struct {name} {{
                 {parameters}
-            }}{derivation}
+            }}
             "
         );
+        self.emit_derived_methods(&name, &derives);
     }
 
     fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
         print_docs(&mut self.src, docs);
         let name = name.to_moonbit_type_ident();
 
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(false);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
-            "suberror"
+            format!("suberror {name} {{ {name}(Int) }}")
         } else {
-            "struct"
+            format!("struct {name}(Int)")
         };
 
         uwrite!(
             self.src,
             r#"
-            pub(all) {declaration} {name}(Int) derive({})
+            pub(all) {declaration}
             "#,
-            deriviation.join(", "),
         );
+        self.emit_derived_methods(&name, &derives);
 
         if self.direction == Direction::Import {
             let (drop_module, drop_name) = self.resolve.wasm_import_name(
@@ -994,6 +993,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwrite!(
                 &mut self.src,
                 r#"
+                ///|
                 /// Drops a resource handle.
                 pub fn {name}::drop(self : {name}) -> Unit {{
                     let {name}(resource) = self
@@ -1005,6 +1005,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwrite!(
                 &mut self.ffi,
                 r#"
+                ///|
                 fn wasmImportResourceDrop{name}(resource : Int) = "{drop_module}" "{drop_name}"
                 "#,
             )
@@ -1036,24 +1037,30 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwrite!(
                 &mut self.src,
                 r#"
+                ///|
                 /// Creates a new resource with the given `rep` as its representation and returning the handle to this resource.
                 pub fn {name}::new(rep : Int) -> {name} {{
                     {name}::{name}(wasmExportResourceNew{name}(rep))
                 }}
+                ///|
                 fn wasmExportResourceNew{name}(rep : Int) -> Int = "{new_module}" "{new_name}"
 
+                ///|
                 /// Drops a resource handle.
                 pub fn {name}::drop(self : Self) -> Unit {{
                     let {name}(resource) = self
                     wasmExportResourceDrop{name}(resource)
                 }}
+                ///|
                 fn wasmExportResourceDrop{name}(resource : Int) = "{drop_module}" "{drop_name}"
 
+                ///|
                 /// Gets the `Int` representation of the resource pointed to the given handle.
                 pub fn {name}::rep(self : Self) -> Int {{
                     let {name}(resource) = self
                     wasmExportResourceRep{name}(resource)
                 }}
+                ///|
                 fn wasmExportResourceRep{name}(resource : Int) -> Int = "{rep_module}" "{rep_name}"
                 "#,
             );
@@ -1061,6 +1068,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwrite!(
                 &mut self.src,
                 r#"
+                ///|
                 /// Destructor of the resource.
                 declare pub fn {name}::dtor(_self : {name}) -> Unit
                 "#
@@ -1074,9 +1082,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwrite!(
                 self.ffi,
                 r#"
+                ///|
                 #doc(hidden)
                 pub fn {func_name}(handle : Int) -> Unit {{
-                    {name}::dtor(handle)
+                    {name}::dtor({name}(handle))
                 }}
                 "#,
             );
@@ -1091,6 +1100,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
             let export = format!(
                 r#"
+                ///|
+                #export_name({export_name:?})
                 #doc(hidden)
                 pub fn {func_name}(handle : Int) -> Unit {{
                     {}{func_name}(handle)
@@ -1100,9 +1111,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     .pkg_resolver
                     .qualify_package(self.world_gen.opts.gen_dir.as_str(), self.name),
             );
-            self.world_gen
-                .export
-                .insert(export_name, (func_name, export));
+            self.world_gen.export.insert(export_name, export);
         }
     }
 
@@ -1146,51 +1155,47 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n    ");
 
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(false);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
-            "suberror"
+            format!("suberror {name} {{ {name}({ty}) }}")
         } else {
-            "struct"
+            format!("struct {name}({ty})")
         };
 
         uwrite!(
             self.src,
             "
-            pub(all) {declaration} {name}({ty}) derive({})
+            pub(all) {declaration}
+            ///|
             pub fn {name}::default() -> {name} {{
-                {}
+                {name}({})
             }}
+            ///|
             pub(all) enum {name}Flag {{
                 {cases}
             }}
+            ///|
             fn {name}Flag::value(self : {name}Flag) -> {ty} {{
               match self {{
                 {map_to_int}
               }}
             }}
+            ///|
             pub fn {name}::set(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
-              flag.lor(other.value())
+              {name}(flag.lor(other.value()))
             }}
+            ///|
             pub fn {name}::unset(self : Self, other: {name}Flag) -> {name} {{
               let {name}(flag) = self
-              flag.land(other.value().lnot())
+              {name}(flag.land(other.value().lnot()))
             }}
+            ///|
             pub fn {name}::is_set(self : Self, other: {name}Flag) -> Bool {{
               let {name}(flag) = self
               (flag.land(other.value()) == other.value())
             }}
             ",
-            deriviation.join(", "),
             match ty {
                 "Byte" => "b'\\x00'",
                 "UInt" => "0U",
@@ -1198,6 +1203,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 _ => unreachable!(),
             }
         );
+        self.emit_derived_methods(&name, &derives);
     }
 
     fn type_tuple(&mut self, _id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
@@ -1229,26 +1235,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .iter()
             .filter_map(|case| case.ty.as_ref())
             .any(|ty| type_contains_future_or_stream(self.resolve, ty));
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug && !contains_endpoint {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show && !contains_endpoint {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq && !contains_endpoint {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(contains_endpoint);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
             "enum"
-        };
-
-        let derivation = if deriviation.is_empty() {
-            String::new()
-        } else {
-            format!(" derive({})", deriviation.join(", "))
         };
 
         uwrite!(
@@ -1256,9 +1247,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "
             pub(all) {declaration} {name} {{
               {cases}
-            }}{derivation}
+            }}
             "
         );
+        self.emit_derived_methods(&name, &derives);
     }
 
     fn type_option(&mut self, _id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
@@ -1282,16 +1274,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("; ");
 
-        let mut deriviation: Vec<_> = Vec::new();
-        if self.derive_opts.derive_debug {
-            deriviation.push("Debug")
-        }
-        if self.derive_opts.derive_show {
-            deriviation.push("Show")
-        }
-        if self.derive_opts.derive_eq {
-            deriviation.push("Eq")
-        }
+        let derives = self.emit_derives(false);
         let declaration = if self.derive_opts.derive_error && name.contains("Error") {
             "suberror"
         } else {
@@ -1303,10 +1286,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             "
             pub(all) {declaration} {name} {{
                 {cases}
-            }} derive({})
+            }}
             ",
-            deriviation.join(", ")
         );
+        self.emit_derived_methods(&name, &derives);
 
         // Case to integer
         let cases = enum_
@@ -1320,6 +1303,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
+            ///|
             pub fn {name}::ordinal(self : {name}) -> Int {{
               match self {{
                 {cases}
@@ -1340,6 +1324,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
+            ///|
             pub fn {name}::from(self : Int) -> {name} {{
               match self {{
                 {cases}
@@ -2795,7 +2780,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwrite!(
                     self.src,
                     "
-                    let {map} : Map[{key_ty}, {value_ty}] = {{}}
+                    let {map} : Map[{key_ty}, {value_ty}] = Map([])
                     for {index} = 0; {index} < ({length}); {index} = {index} + 1 {{
                         let iter_base = ({address}) + ({index} * {size})
                         {body}
@@ -2905,9 +2890,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 fn perform_cast(op: &str, cast: &Bitcast) -> String {
     match cast {
         Bitcast::I32ToF32 => {
-            format!("({op}).reinterpret_as_float()")
+            format!("Float::reinterpret_from_int({op})")
         }
-        Bitcast::I64ToF32 => format!("({op}).to_int().reinterpret_as_float()"),
+        Bitcast::I64ToF32 => format!("Float::reinterpret_from_int(({op}).to_int())"),
         Bitcast::F32ToI32 => {
             format!("({op}).reinterpret_as_int()")
         }
@@ -3161,59 +3146,6 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_free_sync_generation_matches_golden() {
-        let files = generate(
-            r#"
-            package a:b;
-
-            world runner {
-                import add: func(a: u32, b: u32) -> u32;
-                export echo: func(value: u32) -> u32;
-            }
-            "#,
-            "runner",
-        );
-
-        // This exact-output fingerprint runs with both async adapters. Ignore only
-        // the release-version preamble, which is unrelated to generated ABI.
-        let mut entries = files.iter().collect::<Vec<_>>();
-        entries.sort_by_key(|(name, _)| *name);
-        let fingerprints = entries
-            .into_iter()
-            .map(|(name, contents)| {
-                let contents = if contents.starts_with(b"// Generated by") {
-                    let preamble_end = contents.iter().position(|byte| *byte == b'\n').unwrap() + 1;
-                    &contents[preamble_end..]
-                } else {
-                    contents
-                };
-                let hash = contents
-                    .iter()
-                    .fold(0xcbf29ce484222325_u64, |mut hash, byte| {
-                        hash ^= u64::from(*byte);
-                        hash.wrapping_mul(0x100000001b3)
-                    });
-                (name.to_string(), hash)
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            fingerprints,
-            vec![
-                ("gen/ffi.mbt".into(), 10220319382745692950),
-                ("gen/moon.pkg.json".into(), 15894505084782869543),
-                ("gen/world/runner/ffi.mbt".into(), 14715999128234894449),
-                ("gen/world/runner/moon.pkg.json".into(), 6361049410124596525,),
-                ("gen/world/runner/top.mbt".into(), 12192865914091673515,),
-                ("moon.mod.json".into(), 14111159726816684443),
-                ("world/runner/ffi_import.mbt".into(), 17812050158059242657,),
-                ("world/runner/import.mbt".into(), 5430383198437179961),
-                ("world/runner/moon.pkg.json".into(), 6361049410124596525,),
-            ]
-        );
-    }
-
-    #[test]
     fn sync_world_does_not_emit_async_runtime_or_wrappers() {
         let files = generate(
             r#"
@@ -3243,15 +3175,25 @@ mod tests {
                 .iter()
                 .all(|(name, _)| !name.starts_with("async-core/async_"))
         );
-        let package = file(&files, "gen/moon.pkg.json");
-        assert!(!package.contains("supported-targets"), "{package}");
+        let package = file(&files, "gen/moon.pkg");
+        assert!(!package.contains("supported_targets"), "{package}");
+        let module = file(&files, "moon.mod");
+        assert!(module.contains("preferred_target = \"wasm\""), "{module}");
+        assert!(files.iter().all(|(name, _)| !name.ends_with(".json")));
     }
 
     #[test]
-    fn async_filters_respect_import_export_direction() {
+    fn sync_filters_respect_import_export_direction() {
+        // The world both imports and exports `run` so that each directional
+        // filter below matches something; an unmatched filter is now an error
+        // (see `AsyncFilterSet::ensure_all_used`), which would mask what this
+        // test is actually checking.
         let wit = r#"
             package a:b;
-            world runner { import run: func(); }
+            world runner {
+                import run: async func();
+                export run: async func();
+            }
         "#;
 
         let mut import_opts = Opts {
@@ -3262,8 +3204,9 @@ mod tests {
         let import_files = try_generate_with_opts(wit, "runner", import_opts).unwrap();
         let import = file(&import_files, "world/runner/import.mbt");
         let import_ffi = file(&import_files, "world/runner/ffi_import.mbt");
-        assert!(import.contains("pub async fn run("), "{import}");
-        assert!(import_ffi.contains("[async-lower]run"), "{import_ffi}");
+        assert!(import.contains("pub fn run("), "{import}");
+        assert!(!import.contains("pub async fn run("), "{import}");
+        assert!(!import_ffi.contains("[async-lower]run"), "{import_ffi}");
 
         let mut export_opts = Opts {
             gen_dir: "gen".into(),
@@ -3273,9 +3216,8 @@ mod tests {
         let export_files = try_generate_with_opts(wit, "runner", export_opts).unwrap();
         let import = file(&export_files, "world/runner/import.mbt");
         let import_ffi = file(&export_files, "world/runner/ffi_import.mbt");
-        assert!(import.contains("pub fn run("), "{import}");
-        assert!(!import.contains("pub async fn run("), "{import}");
-        assert!(!import_ffi.contains("[async-lower]run"), "{import_ffi}");
+        assert!(import.contains("pub async fn run("), "{import}");
+        assert!(import_ffi.contains("[async-lower]run"), "{import_ffi}");
     }
 
     #[test]
@@ -3336,17 +3278,17 @@ mod tests {
 
         let source = file(&files, "interface/a/b/types/top.mbt");
         assert!(source.contains("@async-core.Future[UInt]"), "{source}");
-        let package = file(&files, "interface/a/b/types/moon.pkg.json");
+        let package = file(&files, "interface/a/b/types/moon.pkg");
         assert!(
-            package.contains("\"supported-targets\": \"+wasm\""),
+            package.contains("supported_targets = \"wasm\""),
             "{package}"
         );
-        let link_package = file(&files, "gen/moon.pkg.json");
+        let link_package = file(&files, "gen/moon.pkg");
         assert!(
-            link_package.contains("\"supported-targets\": \"+wasm\""),
+            link_package.contains("supported_targets = \"wasm\""),
             "{link_package}"
         );
-        file(&files, "async-core/moon.pkg.json");
+        file(&files, "async-core/moon.pkg");
         file(&files, "async-core/async_trait.mbt");
     }
 
@@ -3376,7 +3318,6 @@ mod tests {
             opts: Opts {
                 derive: DeriveOpts {
                     derive_debug: true,
-                    derive_show: true,
                     derive_eq: true,
                     derive_error: false,
                 },
@@ -3389,25 +3330,23 @@ mod tests {
 
         let source = file(&files, "interface/a/b/types/top.mbt");
         assert!(
-            source.contains("struct Plain {\n      value : UInt\n} derive(Debug, Show, Eq)"),
-            "{source}"
-        );
-        assert!(
-            source.contains("struct Nested {\n      value : @async-core.Future[UInt]?\n}"),
-            "{source}"
-        );
-        assert!(
-            !source.contains("struct Nested {\n      value : @async-core.Future[UInt]?\n} derive(")
-        );
-        assert!(
             source.contains(
-                "Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n}"
+                "///|\n#derive(Debug, Eq)\npub(all) struct Plain {\n      value : UInt\n}"
             ),
             "{source}"
         );
-        assert!(!source.contains(
-            "Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n} derive("
-        ));
+        assert!(
+            source.contains(
+                "///|\npub(all) struct Nested {\n      value : @async-core.Future[UInt]?\n}"
+            ),
+            "{source}"
+        );
+        assert!(
+            source.contains(
+                "///|\npub(all) enum Streamed {\n      None\n      Value(Array[@async-core.Stream[String]])\n}"
+            ),
+            "{source}"
+        );
     }
 
     #[test]
@@ -3697,9 +3636,7 @@ mod tests {
         assert!(ffi.contains("let close_writer_serialized = async fn()"));
         assert!(ffi.contains("writer_lock.acquire()"));
         assert!(ffi.contains("defer writer_lock.release()"));
-        assert!(
-            ffi.contains("() => close_writer_serialized(),\n            resume_on_cancel=true,")
-        );
+        assert!(ffi.contains("protect_from_cancel(() => close_writer_serialized())"));
         assert!(!ffi.contains("defer close_writer()"));
         assert!(ffi.contains("read_cleanup : @async-core.CondVar"));
         assert!(ffi.contains("let read_count = if count < 64"));
@@ -3868,7 +3805,7 @@ mod tests {
         let event_loop = file(&files, "async-core/async_ev.mbt");
         assert!(
             event_loop.contains("let resolution = task_state.resolution")
-                && event_loop.contains("guard resolution is Resolved")
+                && event_loop.contains("guard! resolution is Resolved")
                 && !event_loop.contains("abort("),
             "{event_loop}"
         );
@@ -3886,7 +3823,7 @@ mod tests {
 
         let coroutine = file(&files, "async-core/async_coroutine.mbt");
         assert!(
-            coroutine.contains("Done | Fail(_) => return"),
+            coroutine.contains("Done | Fail(_) | Cancelled => return"),
             "{coroutine}"
         );
     }

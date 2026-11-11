@@ -1,0 +1,24 @@
+package my:inline;
+
+interface a {
+  a: func();
+}
+
+interface b {
+  b: func();
+}
+
+world test {
+    export a;
+    export b;
+}
+
+world runner-dep {
+    import b;
+}
+
+world runner {
+    import a;
+
+    export run: func();
+}

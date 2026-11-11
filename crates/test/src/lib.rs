@@ -17,6 +17,7 @@ mod config;
 mod cpp;
 mod csharp;
 mod custom;
+mod d;
 mod go;
 mod moonbit;
 mod runner;
@@ -229,6 +230,7 @@ enum Language {
     Csharp,
     MoonBit,
     Go,
+    D,
     Custom(custom::Language),
 }
 
@@ -451,6 +453,7 @@ impl Runner {
             "cs" => Language::Csharp,
             "mbt" => Language::MoonBit,
             "go" => Language::Go,
+            "d" => Language::D,
             other => Language::Custom(custom::Language::lookup(self, other)?),
         };
 
@@ -1049,7 +1052,7 @@ impl Runner {
 
     /// Helper to execute an external process and generate a helpful error
     /// message on failure.
-    fn run_command(&self, cmd: &mut Command) -> Result<()> {
+    fn run_command(&self, cmd: &mut Command) -> Result<String> {
         if self.opts.inherit_stderr {
             cmd.stderr(Stdio::inherit());
         }
@@ -1057,7 +1060,7 @@ impl Runner {
             .output()
             .with_context(|| format!("failed to spawn {cmd:?}"))?;
         if output.status.success() {
-            return Ok(());
+            return Ok(String::from_utf8_lossy(&output.stdout).into());
         }
 
         let mut error = format!(
@@ -1084,21 +1087,51 @@ status: {}",
         bail!("{error}")
     }
 
-    /// Converts the WASIp1 module at `p1` to a component using the information
-    /// stored within `compile`.
+    /// Converts the list of dynamic libraries in `dylibs` into a component and places it
+    /// in the destination specified by `compile`.
+    ///
+    /// This is similar to `convert_core_module_to_component` except uses a
+    /// `wit_component::Linker` instead of a `wit_component::ComponentEncoder`.
+    fn link_dylibs_to_component(&self, dylibs: &[PathBuf], compile: &Compile<'_>) -> Result<()> {
+        let mut linker = wit_component::Linker::default();
+        for dylib in dylibs {
+            let dylib_bytes =
+                fs::read(dylib).with_context(|| format!("failed to read dylib file {dylib:?}"))?;
+            let name = dylib
+                .file_name()
+                .and_then(|s| s.to_str())
+                .context("non-utf-8 dylib filename")?;
+            linker
+                .library(name, &dylib_bytes, false)
+                .with_context(|| format!("failed to register {name}"))?;
+        }
+        let component = linker.encode().context("failed to link")?;
+        write_if_different(compile.output, component)?;
+        Ok(())
+    }
+
+    /// Converts the core module at `path` (wasip1 or otherwise) to a component
+    /// using the information stored within `compile`. Can handle both wasip1
+    /// modules and modules built with components in mind (e.g. those built
+    /// with --skip-wit-component in wasm-component-ld).
     ///
     /// Stores the output at `compile.output`.
-    fn convert_p1_to_component(&self, p1: &Path, compile: &Compile<'_>) -> Result<()> {
+    fn convert_core_module_to_component(&self, path: &Path, compile: &Compile<'_>) -> Result<()> {
         let mut resolve = wit_parser::Resolve::default();
         let (pkg, _) = resolve
             .push_path(&compile.component.bindgen.wit_path)
             .context("failed to load WIT")?;
         let world = resolve.select_world(&[pkg], Some(&compile.component.bindgen.world))?;
-        let mut module = fs::read(&p1).context("failed to read wasm file")?;
+        let mut module = fs::read(&path).context("failed to read wasm file")?;
 
         if !has_component_type_sections(&module) {
-            let encoded =
-                wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
+            let encoded = wit_component::metadata::encode(
+                &resolve,
+                world,
+                StringEncoding::UTF8,
+                None,
+                false,
+            )?;
             let section = wasm_encoder::CustomSection {
                 name: Cow::Borrowed("component-type"),
                 data: Cow::Borrowed(&encoded),
@@ -1256,7 +1289,8 @@ trait LanguageMethods {
             cmd.arg(arg);
         }
 
-        runner.run_command(&mut cmd)
+        runner.run_command(&mut cmd)?;
+        Ok(())
     }
 
     /// Returns the default set of arguments that will be passed to
@@ -1322,6 +1356,7 @@ impl Language {
         Language::Csharp,
         Language::MoonBit,
         Language::Go,
+        Language::D,
     ];
 
     fn obj(&self) -> &dyn LanguageMethods {
@@ -1333,6 +1368,7 @@ impl Language {
             Language::Csharp => &csharp::Csharp,
             Language::MoonBit => &moonbit::MoonBit,
             Language::Go => &go::Go,
+            Language::D => &d::D,
             Language::Custom(custom) => custom,
         }
     }

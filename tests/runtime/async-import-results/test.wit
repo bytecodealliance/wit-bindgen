@@ -1,0 +1,28 @@
+//@ async = true
+package my:test;
+
+interface i {
+  record point {
+    x: u32,
+    y: u32,
+    label: string,
+  }
+
+  // Each returns after yielding, so the caller sees the call pending and reads the result from
+  // its return buffer later.
+  echo: async func(s: string) -> string;
+  make-point: async func(x: u32, y: u32) -> point;
+
+  // Writes the strings it was given to the returned stream.
+  words: async func(all: list<string>) -> stream<string>;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

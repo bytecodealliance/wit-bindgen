@@ -318,7 +318,25 @@ interface may provide it explicitly without weakening the ordinary local types.
 The runtime is audited against `moonbitlang/async` main at commit `18533c8d`.
 The continuation primitive, cancellation races, shielding, wake behavior,
 fairness, `Task`, `TaskGroup`, `Semaphore`, `Mutex`, and `CondVar` semantics are
-kept aligned.
+aligned with that baseline.
+
+The cancellation primitives and their callers also follow upstream's
+[`cancel`/`nocancel` migration](https://github.com/moonbitlang/async/commit/19f57c5988e0387f6a79d5a60852ee64fd4d33e6),
+checked at upstream commit `a4cbfabbcdf4fa70ef28ad7ccc388082d92371de`:
+
+- cancellation bypasses ordinary `catch` and runs `defer`/`errdefer`;
+- `handle_cancellation` observes cancellation without clearing the task's
+  cancelled state;
+- waiting for a cancelled task raises the ordinary `TaskCancelled` error;
+- `protect_from_cancel` is `nocancel` and finishes normally; pending
+  cancellation is delivered at the next unshielded cancellation point;
+- task-group defer callbacks must be `nocancel`.
+
+Component cleanup must finish before propagating cancellation. Generated
+future/stream reads and subtask cancellation wait for terminal events before
+releasing canonical buffers and handles. An already completed endpoint copy
+still takes precedence over simultaneous task cancellation, so ownership of
+transferred values is preserved.
 
 Intentional differences are limited to the component environment:
 
@@ -342,9 +360,7 @@ Implemented and covered by composed runtime tests:
   payload cleanup;
 - concurrent component-task isolation;
 - `wasi:cli@0.3.0` stream output;
-- `wasi:http@0.3.0` body, trailers, and post-response background work;
-- deletion guards proving endpoint-free sync generation is unchanged without
-  async support.
+- `wasi:http@0.3.0` body, trailers, and post-response background work.
 
 Known limits:
 

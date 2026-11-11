@@ -97,7 +97,7 @@ type BoxFuture<'a> = Pin<Box<dyn Future<Output = ()> + 'a>>;
 #[cfg(feature = "async-spawn")]
 mod spawn;
 #[cfg(feature = "async-spawn")]
-pub use spawn::spawn_local;
+pub use spawn::{JoinHandle, spawn_local};
 #[cfg(not(feature = "async-spawn"))]
 mod spawn_disabled;
 #[cfg(not(feature = "async-spawn"))]
@@ -123,6 +123,7 @@ struct TaskState<'a> {
     inter_task_wakeup: inter_task_wakeup::State,
 }
 
+#[derive(Default)]
 struct SharedTaskState {
     /// One of `SLEEP_STATE_*` indicating the current status.
     sleep_state: AtomicU32,
@@ -157,14 +158,9 @@ struct CabiWaitable {
 
 unsafe impl Send for CabiWaitable {}
 
-impl TaskState<'_> {
-    fn new(future: BoxFuture<'_>) -> TaskState<'_> {
-        let shared = Arc::new(SharedTaskState {
-            sleep_state: AtomicU32::new(0),
-            inter_task_stream: Default::default(),
-            waitables: Default::default(),
-            waitable_set: Default::default(),
-        });
+impl<'a> TaskState<'a> {
+    fn new(future: impl Future<Output = ()> + 'a) -> TaskState<'a> {
+        let shared = Arc::new(SharedTaskState::default());
         TaskState {
             waker: shared.clone().into(),
             shared,
@@ -187,14 +183,14 @@ impl TaskState<'_> {
             EVENT_STREAM_WRITE => rtdebug!("EVENT_STREAM_WRITE({event1:#x}, {event2:#x})"),
             EVENT_FUTURE_READ => rtdebug!("EVENT_FUTURE_READ({event1:#x}, {event2:#x})"),
             EVENT_FUTURE_WRITE => rtdebug!("EVENT_FUTURE_WRITE({event1:#x}, {event2:#x})"),
+
+            // Delegate cancellation to the set of spawned tasks that this
+            // component-model task is maintaining. The cancel here is a signal
+            // for the "root computation", but everything else spawned, if any,
+            // gets to continue along its merry way.
             EVENT_CANCEL => {
                 rtdebug!("EVENT_CANCEL");
-
-                // Cancellation is mapped to destruction in Rust, so return a
-                // code/bool indicating we're done. The caller will then
-                // appropriately deallocate this `TaskState` which will
-                // transitively run all destructors.
-                return CallbackCode::Exit;
+                self.with_p3_task_set(|me| me.tasks.cancel_root());
             }
             _ => unreachable!(),
         }
@@ -213,7 +209,7 @@ impl TaskState<'_> {
             // `waker.sleep_state` above to ensure that if a waker is woken it
             // won't actually signal our inter-task stream since we're already
             // in the process of handling the future.
-            if event0 != EVENT_NONE {
+            if event0 != EVENT_NONE && event0 != EVENT_CANCEL {
                 me.deliver_waitable_event(event1, event2)
             }
 
@@ -325,12 +321,12 @@ impl TaskState<'_> {
         // The `ptr` field of `wasip3_task` is to `SharedTaskState` which is
         // what's cloned/handed out/etc.
         let shared_raw: *const SharedTaskState = &*self.shared;
-        let mut wasip3_task = cabi::wasip3_task_v2 {
+        let mut wasip3_task = cabi::wasip3_task_v3 {
             v1: cabi::wasip3_task {
                 ptr: shared_raw.cast_mut().cast(),
-                version: cabi::WASIP3_TASK_V2,
-                waitable_register: SharedTaskState::CABI_VTABLE.waitable_register,
-                waitable_unregister: SharedTaskState::CABI_VTABLE.waitable_unregister,
+                version: cabi::WASIP3_TASK_V3,
+                waitable_register: SharedTaskState::CABI_VTABLE.v2.waitable_register,
+                waitable_unregister: SharedTaskState::CABI_VTABLE.v2.waitable_unregister,
             },
             vtable: &SharedTaskState::CABI_VTABLE,
         };
@@ -339,7 +335,7 @@ impl TaskState<'_> {
         // structure, and then cast its raw pointer to the "smaller" historical
         // version, ensuring the final pointer has provenace over the entire
         // structure.
-        let wasip3_task: *mut cabi::wasip3_task_v2 = &mut wasip3_task;
+        let wasip3_task: *mut cabi::wasip3_task_v3 = &mut wasip3_task;
         let prev = unsafe { cabi::wasip3_task_set(wasip3_task.cast::<cabi::wasip3_task>()) };
         let _reset = ResetTask(prev);
 
@@ -349,6 +345,13 @@ impl TaskState<'_> {
 
 impl Drop for TaskState<'_> {
     fn drop(&mut self) {
+        // No further wakeup notifications are needed once destruction starts.
+        // Destructors may wake other futures in this task, so suppress those
+        // notifications before cancelling the inter-task stream read.
+        self.shared
+            .sleep_state
+            .store(SLEEP_STATE_WOKEN, Ordering::Relaxed);
+
         // If there's an active read of the inter-task stream, go ahead and
         // cancel it, since we're about to drop the stream anyway.
         self.cancel_inter_task_stream_read();
@@ -367,11 +370,17 @@ impl Drop for TaskState<'_> {
 }
 
 impl SharedTaskState {
-    const CABI_VTABLE: cabi::wasip3_task_vtable = cabi::wasip3_task_vtable {
-        waitable_register: Self::cabi_waitable_register,
-        waitable_unregister: Self::cabi_waitable_unregister,
-        drop: Self::cabi_drop,
-        clone: Self::cabi_clone,
+    const CABI_VTABLE: cabi::wasip3_task_vtable_v3 = cabi::wasip3_task_vtable_v3 {
+        v2: cabi::wasip3_task_vtable {
+            waitable_register: Self::cabi_waitable_register,
+            waitable_unregister: Self::cabi_waitable_unregister,
+            drop: Self::cabi_drop,
+            clone: Self::cabi_clone,
+        },
+        #[cfg(feature = "async-spawn")]
+        rust_spawn: Some(Self::cabi_rust_spawn),
+        #[cfg(not(feature = "async-spawn"))]
+        rust_spawn: None,
     };
 
     /// Adds the `waitable` provided to this task's waitable set.
@@ -439,11 +448,17 @@ impl SharedTaskState {
         let mut me = unsafe { Self::cabi_to_self(ptr) };
         unsafe { ManuallyDrop::drop(&mut me) }
     }
+
+    #[cfg(feature = "async-spawn")]
+    unsafe fn cabi_rust_spawn(_ptr: *mut c_void, task: Box<dyn Future<Output = ()>>) {
+        spawn::push(Pin::from(task))
+    }
 }
 
 /// Status for "this task is actively being polled"
 const SLEEP_STATE_POLLING: u32 = 0;
-/// Status for "this task has a wakeup scheduled, no more action need be taken".
+/// Status for "no further wakeup notification is needed", either because the
+/// task has already been woken or because it is being destroyed.
 const SLEEP_STATE_WOKEN: u32 = 1;
 /// Status for "this task is not being polled and has not been woken"
 ///
@@ -537,6 +552,52 @@ impl ReturnCode {
     }
 }
 
+#[cfg(not(target_env = "p3"))]
+mod task_state {
+    pub fn get() -> *mut u8 {
+        extern_wasm! {
+            #[link(wasm_import_module = "$root")]
+            unsafe extern "C" {
+                #[link_name = "[context-get-0]"]
+                fn get() -> *mut u8;
+            }
+        }
+
+        unsafe { get() }
+    }
+
+    pub unsafe fn set(value: *mut u8) {
+        extern_wasm! {
+            #[link(wasm_import_module = "$root")]
+            unsafe extern "C" {
+                #[link_name = "[context-set-0]"]
+                fn set(value: *mut u8);
+            }
+        }
+
+        unsafe { set(value) }
+    }
+}
+
+// TODO: in the future once wasi-sdk-35 is released with
+// WebAssembly/wasi-libc#884 this `task_state` module can unconditionally work
+// with `__wasilibc_task_context_{get,set}`. Until that time though detecting
+// wasi-sdk-35 is done with with a weak symbol import which is not possible to
+// write on stable Rust right now.
+#[cfg(target_env = "p3")]
+mod wasip3_context;
+#[cfg(target_env = "p3")]
+mod task_state {
+
+    pub fn get() -> *mut u8 {
+        unsafe { super::wasip3_context::get() }
+    }
+
+    pub unsafe fn set(value: *mut u8) {
+        unsafe { super::wasip3_context::set(value) }
+    }
+}
+
 /// Starts execution of the `task` provided, an asynchronous computation.
 ///
 /// This is used for async-lifted exports at their definition site. The
@@ -548,7 +609,7 @@ impl ReturnCode {
 pub fn start_task(task: impl Future<Output = ()> + 'static) -> i32 {
     // Allocate a new `TaskState` which will track all state necessary for
     // our exported task.
-    let state = Box::into_raw(Box::new(TaskState::new(Box::pin(task))));
+    let state = Box::into_raw(Box::new(TaskState::new(task)));
 
     // Store our `TaskState` into our context-local-storage slot and then
     // pretend we got EVENT_NONE to kick off everything.
@@ -557,8 +618,8 @@ pub fn start_task(task: impl Future<Output = ()> + 'static) -> i32 {
     // task, and then `callback` is only invoked when context-local storage is
     // valid.
     unsafe {
-        assert!(context_get().is_null());
-        context_set(state.cast());
+        assert!(task_state::get().is_null());
+        task_state::set(state.cast());
         callback(EVENT_NONE, 0, 0) as i32
     }
 }
@@ -574,10 +635,10 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
     // Acquire our context-local state, assert it's not-null, and then reset
     // the state to null while we're running to help prevent any unintended
     // usage.
-    let state = context_get().cast::<TaskState<'static>>();
+    let state = task_state::get().cast::<TaskState<'static>>();
     assert!(!state.is_null());
     unsafe {
-        context_set(ptr::null_mut());
+        task_state::set(ptr::null_mut());
     }
 
     // Use `state` to run the `callback` function in the context of our event
@@ -589,7 +650,7 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
         if rc == CallbackCode::Exit {
             drop(Box::from_raw(state));
         } else {
-            context_set(state.cast());
+            task_state::set(state.cast());
         }
         rtdebug!(" => (cb) {rc:?}");
         rc.encode()
@@ -600,12 +661,11 @@ pub unsafe fn callback(event0: u32, event1: u32, event2: u32) -> u32 {
 ///
 /// This uses `waitable-set.wait` to poll for progress on any in-progress calls
 /// to async-lowered imports as necessary.
-// TODO: refactor so `'static` bounds aren't necessary
-pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
+pub fn block_on<T>(future: impl Future<Output = T>) -> T {
     let mut result = None;
-    let mut state = TaskState::new(Box::pin(async {
+    let mut state = TaskState::new(async {
         result = Some(future.await);
-    }));
+    });
     let mut event = (EVENT_NONE, 0, 0);
     loop {
         match state.callback(event.0, event.1, event.2) {
@@ -613,9 +673,12 @@ pub fn block_on<T: 'static>(future: impl Future<Output = T>) -> T {
                 drop(state);
                 break result.unwrap();
             }
+            // When yielding there's not much else to do here other than just go
+            // back and poll again -- the `callback` function will already poll
+            // the waitable set if applicable so just turn the loop and deliver
+            // an `EVENT_NONE` event.
             CallbackCode::Yield => {
-                let set = state.shared.waitable_set.try_lock().unwrap();
-                event = set.as_ref().unwrap().poll()
+                event = (EVENT_NONE, 0, 0);
             }
             CallbackCode::Wait(_) => {
                 let set = state.shared.waitable_set.try_lock().unwrap();
@@ -721,30 +784,6 @@ pub fn backpressure_dec() {
     }
 
     unsafe { backpressure_dec() }
-}
-
-fn context_get() -> *mut u8 {
-    extern_wasm! {
-        #[link(wasm_import_module = "$root")]
-        unsafe extern "C" {
-            #[link_name = "[context-get-0]"]
-            fn get() -> *mut u8;
-        }
-    }
-
-    unsafe { get() }
-}
-
-unsafe fn context_set(value: *mut u8) {
-    extern_wasm! {
-        #[link(wasm_import_module = "$root")]
-        unsafe extern "C" {
-            #[link_name = "[context-set-0]"]
-            fn set(value: *mut u8);
-        }
-    }
-
-    unsafe { set(value) }
 }
 
 #[doc(hidden)]

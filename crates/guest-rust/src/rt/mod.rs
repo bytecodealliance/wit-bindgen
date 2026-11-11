@@ -111,7 +111,7 @@ impl<K: core::hash::Hash + Eq, V> WitMap<K, V> for std::collections::HashMap<K, 
 }
 
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
-#[cfg(target_env = "p1")]
+#[cfg(any(not(target_family = "wasm"), target_env = "p1", target_env = ""))]
 mod wit_bindgen_cabi_realloc;
 
 /// This function is called from generated bindings and will be deleted by
@@ -122,7 +122,7 @@ mod wit_bindgen_cabi_realloc;
 ///
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
 pub fn maybe_link_cabi_realloc() {
-    #[cfg(target_env = "p1")]
+    #[cfg(all(target_family = "wasm", any(target_env = "p1", target_env = "")))]
     {
         unsafe extern "C" {
             fn cabi_realloc(
@@ -153,7 +153,7 @@ pub fn maybe_link_cabi_realloc() {
 /// `cabi_realloc` module above. It's otherwise never explicitly called.
 ///
 /// For more information about this see `./ci/rebuild-libwit-bindgen-cabi.sh`.
-#[cfg(target_env = "p1")]
+#[cfg(any(not(target_family = "wasm"), target_env = "p1", target_env = ""))]
 pub unsafe fn cabi_realloc(
     old_ptr: *mut u8,
     old_len: usize,
@@ -200,20 +200,24 @@ pub unsafe fn cabi_realloc(
 /// `cabi_realloc`, which is a *core* export func, but should not execute ctors.
 #[cfg(target_arch = "wasm32")]
 pub fn run_ctors_once() {
-    static mut RUN: bool = false;
-    unsafe {
-        if !RUN {
-            // This function is synthesized by `wasm-ld` to run all static
-            // constructors. wasm-ld will either provide an implementation
-            // of this symbol, or synthesize a wrapper around each
-            // exported function to (unconditionally) run ctors. By using
-            // this function, the linked module is opting into "manually"
-            // running ctors.
-            unsafe extern "C" {
-                fn __wasm_call_ctors();
+    #[cfg(not(wasi_has_initialize))]
+    {
+        static mut RUN: bool = false;
+
+        unsafe {
+            if !RUN {
+                // This function is synthesized by `wasm-ld` to run all static
+                // constructors. wasm-ld will either provide an implementation
+                // of this symbol, or synthesize a wrapper around each
+                // exported function to (unconditionally) run ctors. By using
+                // this function, the linked module is opting into "manually"
+                // running ctors.
+                unsafe extern "C" {
+                    fn __wasm_call_ctors();
+                }
+                __wasm_call_ctors();
+                RUN = true;
             }
-            __wasm_call_ctors();
-            RUN = true;
         }
     }
 }

@@ -3,7 +3,7 @@
 
 ///|
 pub fn take_basic(s : String) -> Unit {
-  guard s == "latin utf16"
+  guard! s == "latin utf16"
 
 }
 

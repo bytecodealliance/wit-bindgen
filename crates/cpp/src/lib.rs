@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{Result, bail};
 use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use indexmap::{IndexMap, IndexSet};
 use std::{
@@ -331,11 +331,11 @@ impl Cpp {
         name: Option<&'a WorldKey>,
         in_guest_import: bool,
         wasm_import_module: Option<String>,
-    ) -> CppInterfaceGenerator<'a> {
+    ) -> Result<CppInterfaceGenerator<'a>> {
         let mut sizes = SizeAlign::default();
-        sizes.fill(resolve);
+        sizes.fill(resolve)?;
 
-        CppInterfaceGenerator {
+        Ok(CppInterfaceGenerator {
             _src: Source::default(),
             r#gen: self,
             resolve,
@@ -344,7 +344,7 @@ impl Cpp {
             sizes,
             in_guest_import,
             wasm_import_module,
-        }
+        })
     }
 
     fn clang_format(code: &mut String) {
@@ -549,7 +549,7 @@ impl WorldGenerator for Cpp {
                 let store = self.start_new_file(None);
                 let wasm_import_module = resolve.name_world_key(name);
                 let binding = Some(name);
-                let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module));
+                let mut r#gen = self.interface(resolve, binding, true, Some(wasm_import_module))?;
                 r#gen.interface = Some(id);
                 let namespace = namespace(resolve, &TypeOwner::Interface(id), false, &*r#gen.r#gen);
                 let docs = resolve.interfaces[id].docs.contents.as_deref();
@@ -560,7 +560,10 @@ impl WorldGenerator for Cpp {
                 r#gen.types(id);
 
                 for (_name, func) in resolve.interfaces[id].functions.iter() {
-                    if matches!(func.kind, FunctionKind::Freestanding) {
+                    if matches!(
+                        func.kind,
+                        FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+                    ) {
                         r#gen.r#gen.h_src.change_namespace(&namespace);
                         r#gen.generate_function(
                             func,
@@ -605,7 +608,7 @@ impl WorldGenerator for Cpp {
         self.update_instance_name(resolve, name, id);
         let wasm_import_module = resolve.name_world_key(name);
         let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding, false, Some(wasm_import_module));
+        let mut r#gen = self.interface(resolve, binding, false, Some(wasm_import_module))?;
         r#gen.interface = Some(id);
         let namespace = namespace(resolve, &TypeOwner::Interface(id), true, &*r#gen.r#gen);
         let docs = resolve.interfaces[id].docs.contents.as_deref();
@@ -616,7 +619,10 @@ impl WorldGenerator for Cpp {
         r#gen.types(id);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
+            if matches!(
+                func.kind,
+                FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+            ) {
                 r#gen.r#gen.h_src.change_namespace(&namespace);
                 r#gen.generate_function(func, &TypeOwner::Interface(id), AbiVariant::GuestExport);
             }
@@ -632,19 +638,24 @@ impl WorldGenerator for Cpp {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = WorldKey::Name("$root".to_string()); //WorldKey::Name(resolve.worlds[world].name.clone());
         let wasm_import_module = resolve.name_world_key(&name);
         let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding.as_ref(), true, Some(wasm_import_module));
+        let mut r#gen =
+            self.interface(resolve, binding.as_ref(), true, Some(wasm_import_module))?;
         let namespace = namespace(resolve, &TypeOwner::World(world), false, &*r#gen.r#gen);
 
         for (_name, func) in funcs.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
+            if matches!(
+                func.kind,
+                FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+            ) {
                 r#gen.r#gen.h_src.change_namespace(&namespace);
                 r#gen.generate_function(func, &TypeOwner::World(world), AbiVariant::GuestImport);
             }
         }
+        Ok(())
     }
 
     fn export_funcs(
@@ -656,11 +667,14 @@ impl WorldGenerator for Cpp {
     ) -> anyhow::Result<()> {
         let name = WorldKey::Name(resolve.worlds[world].name.clone());
         let binding = Some(name);
-        let mut r#gen = self.interface(resolve, binding.as_ref(), false, None);
+        let mut r#gen = self.interface(resolve, binding.as_ref(), false, None)?;
         let namespace = namespace(resolve, &TypeOwner::World(world), true, &*r#gen.r#gen);
 
         for (_name, func) in funcs.iter() {
-            if matches!(func.kind, FunctionKind::Freestanding) {
+            if matches!(
+                func.kind,
+                FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+            ) {
                 r#gen.r#gen.h_src.change_namespace(&namespace);
                 r#gen.generate_function(func, &TypeOwner::World(world), AbiVariant::GuestExport);
             }
@@ -674,11 +688,12 @@ impl WorldGenerator for Cpp {
         _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
-        let mut r#gen = self.interface(resolve, None, true, Some("$root".to_string()));
+    ) -> Result<()> {
+        let mut r#gen = self.interface(resolve, None, true, Some("$root".to_string()))?;
         for (name, id) in types.iter() {
             r#gen.define_type(name, *id);
         }
+        Ok(())
     }
 
     fn finish(
@@ -941,8 +956,14 @@ impl CppInterfaceGenerator<'_> {
     ) -> (Vec<String>, String) {
         let (object, owner) = match &func.kind {
             FunctionKind::Freestanding => None,
+            FunctionKind::Getter => None,
+            FunctionKind::Setter => None,
             FunctionKind::Method(i) => Some(i),
+            FunctionKind::MethodGetter(i) => Some(i),
+            FunctionKind::MethodSetter(i) => Some(i),
             FunctionKind::Static(i) => Some(i),
+            FunctionKind::StaticGetter(i) => Some(i),
+            FunctionKind::StaticSetter(i) => Some(i),
             FunctionKind::Constructor(i) => Some(i),
             FunctionKind::AsyncFreestanding => todo!(),
             FunctionKind::AsyncMethod(_id) => todo!(),
@@ -960,7 +981,10 @@ impl CppInterfaceGenerator<'_> {
         ));
         let mut namespace = namespace(self.resolve, &owner, guest_export, &*self.r#gen);
         let is_drop = is_special_method(func);
-        let func_name_h = if !matches!(&func.kind, FunctionKind::Freestanding) {
+        let func_name_h = if !matches!(
+            &func.kind,
+            FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+        ) {
             namespace.push(object.clone());
             if let FunctionKind::Constructor(_i) = &func.kind {
                 // Fallible constructors return result<T, E> and are static factory methods
@@ -987,11 +1011,18 @@ impl CppInterfaceGenerator<'_> {
                     SpecialMethod::ResourceNew => "ResourceNew".to_string(),
                     SpecialMethod::ResourceRep => "ResourceRep".to_string(),
                     SpecialMethod::Allocate => "New".to_string(),
-                    SpecialMethod::None => func.item_name().to_pascal_case(),
+                    SpecialMethod::None => match &func.kind {
+                        FunctionKind::MethodSetter(_) | FunctionKind::StaticSetter(_) => {
+                            format!("set-{}", func.item_name()).to_pascal_case()
+                        }
+                        _ => func.item_name().to_pascal_case(),
+                    },
                 }
             }
+        } else if let FunctionKind::Setter = &func.kind {
+            format!("set-{}", func.item_name()).to_pascal_case()
         } else {
-            func.name.to_pascal_case()
+            func.item_name().to_pascal_case()
         };
         (namespace, func_name_h)
     }
@@ -1149,7 +1180,10 @@ impl CppInterfaceGenerator<'_> {
                 res.post_return = true;
             }
         }
-        if (matches!(func.kind, FunctionKind::Static(_)) || is_fallible_constructor)
+        if (matches!(
+            func.kind,
+            FunctionKind::Static(_) | FunctionKind::StaticGetter(_) | FunctionKind::StaticSetter(_)
+        ) || is_fallible_constructor)
             && !(matches!(&is_drop, SpecialMethod::ResourceDrop)
                 && matches!(abi_variant, AbiVariant::GuestImport))
         {
@@ -1164,9 +1198,13 @@ impl CppInterfaceGenerator<'_> {
         {
             if i == 0
                 && name == "self"
-                && (matches!(&func.kind, FunctionKind::Method(_))
-                    || (matches!(&is_drop, SpecialMethod::ResourceDrop)
-                        && matches!(abi_variant, AbiVariant::GuestImport)))
+                && (matches!(
+                    &func.kind,
+                    FunctionKind::Method(_)
+                        | FunctionKind::MethodGetter(_)
+                        | FunctionKind::MethodSetter(_)
+                ) || (matches!(&is_drop, SpecialMethod::ResourceDrop)
+                    && matches!(abi_variant, AbiVariant::GuestImport)))
             {
                 res.implicit_self = true;
                 continue;
@@ -1187,7 +1225,11 @@ impl CppInterfaceGenerator<'_> {
         }
         // default to non-const when exporting a method
         let import = matches!(abi_variant, AbiVariant::GuestImport);
-        if matches!(func.kind, FunctionKind::Method(_)) && import {
+        if matches!(
+            func.kind,
+            FunctionKind::Method(_) | FunctionKind::MethodGetter(_) | FunctionKind::MethodSetter(_)
+        ) && import
+        {
             res.const_member = true;
         }
         res
@@ -1415,7 +1457,10 @@ impl CppInterfaceGenerator<'_> {
                 SpecialMethod::Allocate => unreachable!(),
                 SpecialMethod::None => {
                     // normal methods
-                    let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
+                    let namespace = if matches!(
+                        func.kind,
+                        FunctionKind::Freestanding | FunctionKind::Getter | FunctionKind::Setter
+                    ) {
                         namespace(
                             self.resolve,
                             owner,
@@ -1425,9 +1470,15 @@ impl CppInterfaceGenerator<'_> {
                     } else {
                         let owner = &self.resolve.types[match &func.kind {
                             FunctionKind::Static(id) => *id,
+                            FunctionKind::StaticGetter(id) => *id,
+                            FunctionKind::StaticSetter(id) => *id,
                             FunctionKind::Constructor(id) => *id,
                             FunctionKind::Method(id) => *id,
+                            FunctionKind::MethodGetter(id) => *id,
+                            FunctionKind::MethodSetter(id) => *id,
                             FunctionKind::Freestanding => unreachable!(),
+                            FunctionKind::Getter => unreachable!(),
+                            FunctionKind::Setter => unreachable!(),
                             FunctionKind::AsyncFreestanding => todo!(),
                             FunctionKind::AsyncMethod(_id) => todo!(),
                             FunctionKind::AsyncStatic(_id) => todo!(),
@@ -2001,8 +2052,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             for func in funcs {
                 if match &func.kind {
                     FunctionKind::Freestanding => false,
+                    FunctionKind::Getter => false,
+                    FunctionKind::Setter => false,
                     FunctionKind::Method(mid) => *mid == id,
+                    FunctionKind::MethodGetter(mid) => *mid == id,
+                    FunctionKind::MethodSetter(mid) => *mid == id,
                     FunctionKind::Static(mid) => *mid == id,
+                    FunctionKind::StaticGetter(mid) => *mid == id,
+                    FunctionKind::StaticSetter(mid) => *mid == id,
                     FunctionKind::Constructor(mid) => *mid == id,
                     FunctionKind::AsyncFreestanding => todo!(),
                     FunctionKind::AsyncMethod(_id) => todo!(),
@@ -2192,7 +2249,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let mut all_types = String::new();
             for case in variant.cases.iter() {
                 Self::docs(&mut self.r#gen.h_src.src, &case.docs);
-                let case_pascal = to_c_ident(&case.name).to_pascal_case();
+                let mut case_pascal = to_c_ident(&case.name).to_pascal_case();
+                if case_pascal == pascal {
+                    case_pascal.push('_');
+                }
                 if !all_types.is_empty() {
                     all_types += ", ";
                 }
@@ -3110,14 +3170,23 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.r#gen
                         .type_name(&Type::Id(*var_ty), &self.namespace, Flavor::InStruct);
 
+                let var_pascal = self.r#gen.resolve.types[*var_ty]
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .to_pascal_case();
+
                 uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
                 for (i, ((case, (block, block_results)), payload)) in
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {}: {{", i);
                     if case.ty.is_some() {
-                        let case =
-                            format!("{elem_ns}::{}", to_c_ident(&case.name).to_pascal_case());
+                        let mut case_pascal = to_c_ident(&case.name).to_pascal_case();
+                        if case_pascal == var_pascal {
+                            case_pascal.push('_');
+                        }
+                        let case = format!("{elem_ns}::{case_pascal}");
                         uwriteln!(
                             self.src,
                             "auto& {} = std::get<{case}>({}.variants).value;",
@@ -3141,6 +3210,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
+                let var_pascal = self.r#gen.resolve.types[*ty]
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .to_pascal_case();
                 let ty = self
                     .r#gen
                     .type_name(&Type::Id(*ty), &self.namespace, Flavor::InStruct);
@@ -3156,7 +3230,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    let tp = to_c_ident(&case.name).to_pascal_case();
+                    let mut tp = to_c_ident(&case.name).to_pascal_case();
+                    if tp == var_pascal {
+                        tp.push('_');
+                    }
                     uwriteln!(self.src, "case {i}: {{ {block}");
                     uwriteln!(
                         self.src,
@@ -3418,7 +3495,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 // dbg!(func);
                 self.let_results(if func.result.is_some() { 1 } else { 0 }, results);
                 let (namespace, func_name_h) = self.r#gen.func_namespace_name(func, true, true);
-                if matches!(func.kind, FunctionKind::Method(_)) {
+                if matches!(
+                    func.kind,
+                    FunctionKind::Method(_)
+                        | FunctionKind::MethodGetter(_)
+                        | FunctionKind::MethodSetter(_)
+                ) {
                     let this = operands.remove(0);
                     uwrite!(self.src, "({this}).get().");
                 } else {

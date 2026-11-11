@@ -3,7 +3,7 @@
 
 ///|
 pub fn named_roundtrip(a : Map[UInt, String]) -> Map[String, UInt] {
-  let result : Map[String, UInt] = {}
+  let result : Map[String, UInt] = Map([])
   a.each(fn(id, name) { result[name] = id })
   result
 }
@@ -30,7 +30,7 @@ pub fn record_roundtrip(a : LabeledEntry) -> LabeledEntry {
 
 ///|
 pub fn inline_roundtrip(a : Map[UInt, String]) -> Map[String, UInt] {
-  let result : Map[String, UInt] = {}
+  let result : Map[String, UInt] = Map([])
   a.each(fn(k, v) { result[v] = k })
   result
 }
@@ -42,7 +42,7 @@ pub fn large_roundtrip(a : Map[UInt, String]) -> Map[UInt, String] {
 
 ///|
 pub fn multi_param_roundtrip(a : Map[UInt, String], b : Map[String, FixedArray[Byte]]) -> (Map[String, UInt], Map[String, FixedArray[Byte]]) {
-  let ids : Map[String, UInt] = {}
+  let ids : Map[String, UInt] = Map([])
   a.each(fn(id, name) { ids[name] = id })
   (ids, b)
 }

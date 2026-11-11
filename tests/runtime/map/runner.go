@@ -136,11 +136,11 @@ func testNestedRoundtrip() {
 func testVariantRoundtrip() {
 	m := test.NamesById{1: "one"}
 	asMap := test.VariantRoundtrip(test.MakeMapOrStringAsMap(m))
-	assertEqual(asMap.Tag(), test.MapOrStringAsMap)
+	assertEqual(asMap.Tag(), test.MapOrString_AsMap)
 	assertEqual(asMap.AsMap()[1], "one")
 
 	asStr := test.VariantRoundtrip(test.MakeMapOrStringAsString("hello"))
-	assertEqual(asStr.Tag(), test.MapOrStringAsString)
+	assertEqual(asStr.Tag(), test.MapOrString_AsString)
 	assertEqual(asStr.AsString(), "hello")
 }
 

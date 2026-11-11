@@ -14,6 +14,8 @@ mod path;
 pub use path::name_package_module;
 mod async_;
 pub use async_::AsyncFilterSet;
+mod chainable_method;
+pub use chainable_method::{ChainableMethodFilterSet, ChainingMode};
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Direction {
@@ -49,14 +51,14 @@ pub trait WorldGenerator {
             }
         }
         if !types.is_empty() {
-            self.import_types(resolve, id, &types, files);
+            self.import_types(resolve, id, &types, files)?;
         }
         if !funcs.is_empty() {
-            self.import_funcs(resolve, id, &funcs, files);
+            self.import_funcs(resolve, id, &funcs, files)?;
         }
         funcs.clear();
 
-        self.finish_imports(resolve, id, files);
+        self.finish_imports(resolve, id, files)?;
 
         // First generate bindings for any freestanding functions, if any. If
         // these refer to types defined in the world they need to refer to the
@@ -91,8 +93,14 @@ pub trait WorldGenerator {
         true
     }
 
-    fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish_imports(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        files: &mut Files,
+    ) -> Result<()> {
         let _ = (resolve, world, files);
+        Ok(())
     }
 
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) -> Result<()> {
@@ -127,7 +135,7 @@ pub trait WorldGenerator {
         world: WorldId,
         funcs: &[(&str, &Function)],
         files: &mut Files,
-    );
+    ) -> Result<()>;
     fn export_funcs(
         &mut self,
         resolve: &Resolve,
@@ -141,7 +149,7 @@ pub trait WorldGenerator {
         world: WorldId,
         types: &[(&str, TypeId)],
         files: &mut Files,
-    );
+    ) -> Result<()>;
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()>;
 }
 

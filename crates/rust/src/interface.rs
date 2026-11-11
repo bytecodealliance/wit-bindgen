@@ -6,12 +6,14 @@ use crate::{
 };
 use anyhow::Result;
 use heck::*;
-use std::collections::{BTreeMap, BTreeSet};
+use indexmap::IndexSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{
-    AnonymousTypeGenerator, Source, TypeInfo, dealias, uwrite, uwriteln, wit_parser::*,
+    AnonymousTypeGenerator, ChainingMode, Source, TypeInfo, dealias, uwrite, uwriteln,
+    wit_parser::*,
 };
 
 pub struct InterfaceGenerator<'a> {
@@ -25,7 +27,6 @@ pub struct InterfaceGenerator<'a> {
     pub return_pointer_area_size: ArchitectureSize,
     pub return_pointer_area_align: Alignment,
     pub(super) needs_runtime_module: bool,
-    pub(super) needs_wit_map: bool,
 }
 
 /// A description of the "mode" in which a type is printed.
@@ -175,12 +176,16 @@ impl<'i> InterfaceGenerator<'i> {
             let prev = mem::take(&mut self.src);
             let mut sig = FnSig {
                 async_,
-                use_item_name: true,
                 private: true,
                 ..Default::default()
             };
-            sig.update_for_func(&func);
-            self.print_signature(func, true, &sig);
+
+            let should_return_self =
+                self.r#gen
+                    .should_return_self(self.resolve, interface.map(|p| p.1), func, false);
+
+            sig.update_for_func(&func, should_return_self);
+            self.print_signature(func, true, &sig, should_return_self);
             self.src.push_str(";\n");
             let trait_method = mem::replace(&mut self.src, prev);
             methods.push(trait_method);
@@ -442,12 +447,7 @@ macro_rules! {macro_name} {{
         if self.needs_runtime_module {
             let root = self.path_to_root();
             if !root.is_empty() {
-                let wit_map_use = if self.needs_wit_map {
-                    format!("use {root}_rt::WitMap;\n")
-                } else {
-                    String::new()
-                };
-                return format!("use {root}_rt;\n{wit_map_use}{src}");
+                return format!("use {root}_rt;\n{src}");
             }
         }
         src
@@ -677,6 +677,18 @@ macro_rules! {macro_name} {{
             PayloadFor::Future => "",
             PayloadFor::Stream => ", _: usize",
         };
+        // On wasm the VTABLE stores the address of a local wrapper rather than
+        // the canonical import directly (see the wrapper functions below). The
+        // wrappers need *named* extra params to forward, where the extern block
+        // and native stubs only need the type.
+        let start_extra_named = match payload_for {
+            PayloadFor::Future => "",
+            PayloadFor::Stream => ", _extra: usize",
+        };
+        let start_extra_arg = match payload_for {
+            PayloadFor::Future => "",
+            PayloadFor::Stream => ", _extra",
+        };
         let mut lift_fn = format!("unsafe fn lift(ptr: *mut u8) -> {name} {{ {lift} }}");
         let mut lower_fn = format!("unsafe fn lower(value: {name}, ptr: *mut u8) {{ {lower} }}");
         let mut dealloc_lists_fn =
@@ -726,24 +738,48 @@ pub mod vtable{ordinal} {{
     #[cfg(not(target_arch = "wasm32"))]
     unsafe extern "C" fn start_write(_: u32, _: *const u8{start_extra}) -> u32 {{ unreachable!() }}
 
+    // Work around a behavior of LLD where in a shared library when an address
+    // is taken of an imported function that only shows up as a `GOT.func`
+    // import which means there's not actual import for wit-component to
+    // generate bindings for. This is worked around with local Rust functions
+    // that simply delegate to the imports. Seems to work for now even though
+    // it seems like optimizations should defeat this, but it's not all that
+    // much more indirection and in theory gets things working for now.
     #[cfg(target_arch = "wasm32")]
-    #[link(wasm_import_module = "{module}")]
-    unsafe extern "C" {{
-        #[link_name = "[{import_prefix}-new-{index}]{func_name}"]
-        fn new() -> u64;
-        #[link_name = "[{import_prefix}-cancel-write-{index}]{func_name}"]
-        fn cancel_write(_: u32) -> u32;
-        #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
-        fn cancel_read(_: u32) -> u32;
-        #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
-        fn drop_writable(_: u32);
-        #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
-        fn drop_readable(_: u32);
-        #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
-        fn start_read(_: u32, _: *mut u8{start_extra}) -> u32;
-        #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
-        fn start_write(_: u32, _: *const u8{start_extra}) -> u32;
+    mod imports {{
+        #[link(wasm_import_module = "{module}")]
+        unsafe extern "C" {{
+            #[link_name = "[{import_prefix}-new-{index}]{func_name}"]
+            pub(super) fn new() -> u64;
+            #[link_name = "[{import_prefix}-cancel-write-{index}]{func_name}"]
+            pub(super) fn cancel_write(_: u32) -> u32;
+            #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
+            pub(super) fn cancel_read(_: u32) -> u32;
+            #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
+            pub(super) fn drop_writable(_: u32);
+            #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
+            pub(super) fn drop_readable(_: u32);
+            #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
+            pub(super) fn start_read(_: u32, _: *mut u8{start_extra}) -> u32;
+            #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
+            pub(super) fn start_write(_: u32, _: *const u8{start_extra}) -> u32;
+        }}
     }}
+
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn new() -> u64 {{ unsafe {{ imports::new() }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn cancel_write(handle: u32) -> u32 {{ unsafe {{ imports::cancel_write(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn cancel_read(handle: u32) -> u32 {{ unsafe {{ imports::cancel_read(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn drop_writable(handle: u32) {{ unsafe {{ imports::drop_writable(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn drop_readable(handle: u32) {{ unsafe {{ imports::drop_readable(handle) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn start_read(handle: u32, ptr: *mut u8{start_extra_named}) -> u32 {{ unsafe {{ imports::start_read(handle, ptr{start_extra_arg}) }} }}
+    #[cfg(target_arch = "wasm32")]
+    unsafe extern "C" fn start_write(handle: u32, ptr: *const u8{start_extra_named}) -> u32 {{ unsafe {{ imports::start_write(handle, ptr{start_extra_arg}) }} }}
 
     {lift_fn}
     {lower_fn}
@@ -791,22 +827,36 @@ pub mod vtable{ordinal} {{
             async_,
             ..Default::default()
         };
+
+        let should_return_self = self
+            .r#gen
+            .should_return_self(self.resolve, interface, func, true);
+
         if let Some(id) = func.kind.resource() {
             let name = self.resolve.types[id].name.as_ref().unwrap();
             let name = to_upper_camel_case(name);
             uwriteln!(self.src, "impl {name} {{");
-            sig.use_item_name = true;
-            sig.update_for_func(&func);
+            sig.update_for_func(&func, should_return_self);
         }
         self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
-        let params = self.print_signature(func, async_, &sig);
+        let params = self.print_signature(func, async_, &sig, should_return_self);
         self.src.push_str("{\n");
         self.src.push_str("unsafe {\n");
 
         if async_ {
-            self.generate_guest_import_body_async(&self.wasm_import_module, func, params);
+            self.generate_guest_import_body_async(
+                &self.wasm_import_module,
+                func,
+                params,
+                should_return_self,
+            );
         } else {
-            self.generate_guest_import_body_sync(&self.wasm_import_module, func, params);
+            self.generate_guest_import_body_sync(
+                &self.wasm_import_module,
+                func,
+                params,
+                should_return_self,
+            );
         }
 
         self.src.push_str("}\n");
@@ -818,7 +868,7 @@ pub mod vtable{ordinal} {{
     }
 
     fn lower_to_memory(&mut self, address: &str, value: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         abi::lower_to_memory(f.r#gen.resolve, &mut f, address.into(), value.into(), ty);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -830,7 +880,7 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         abi::deallocate_lists_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
@@ -842,13 +892,13 @@ pub mod vtable{ordinal} {{
         indirect: bool,
         module: &str,
     ) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         abi::deallocate_lists_and_own_in_types(f.r#gen.resolve, types, operands, indirect, &mut f);
         format!("unsafe {{ {} }}", String::from(f.src))
     }
 
     fn lift_from_memory(&mut self, address: &str, ty: &Type, module: &str) -> String {
-        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+        let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
         let result = abi::lift_from_memory(f.r#gen.resolve, &mut f, address.into(), ty);
         format!("unsafe {{ {}\n{result} }}", String::from(f.src))
     }
@@ -858,14 +908,9 @@ pub mod vtable{ordinal} {{
         module: &str,
         func: &Function,
         params: Vec<String>,
+        should_return_self: Option<ChainingMode>,
     ) {
-        let mut f = FunctionBindgen::new(
-            self,
-            params,
-            module,
-            false,
-            self.r#gen.should_return_self(func),
-        );
+        let mut f = FunctionBindgen::new(self, params, module, false, should_return_self);
         abi::call(
             f.r#gen.resolve,
             AbiVariant::GuestImport,
@@ -906,6 +951,7 @@ pub mod vtable{ordinal} {{
         module: &str,
         func: &Function,
         mut params: Vec<String>,
+        should_return_self: Option<ChainingMode>,
     ) {
         let param_tys = func
             .params
@@ -1088,7 +1134,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             }
             lowers.push("ParamsLower(_ptr,)".to_string());
         } else {
-            let mut f = FunctionBindgen::new(self, Vec::new(), module, true, false);
+            let mut f = FunctionBindgen::new(self, Vec::new(), module, true, None);
             let mut results = Vec::new();
             for (i, Param { ty, .. }) in func.params.iter().enumerate() {
                 let name = format!("_lower{i}");
@@ -1136,7 +1182,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.src,
             "_MySubtask {{ _unused: core::marker::PhantomData }}.call(({})).await{}",
             params.join(" "),
-            if self.r#gen.should_return_self(func) {
+            if should_return_self.is_some() {
                 ";\nself"
             } else {
                 ""
@@ -1182,7 +1228,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             );
         }
 
-        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
+        let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, None);
         let variant = if async_ {
             AbiVariant::GuestExportAsync
         } else {
@@ -1252,7 +1298,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             let params = self.print_post_return_sig(func);
             self.src.push_str("{ unsafe {\n");
 
-            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, false);
+            let mut f = FunctionBindgen::new(self, params, self.wasm_import_module, false, None);
             abi::post_return(f.r#gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
@@ -1433,13 +1479,17 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 .is_async(self.resolve, interface.map(|p| p.1), func, false);
             let mut sig = FnSig {
                 async_,
-                use_item_name: true,
                 private: true,
                 ..Default::default()
             };
-            sig.update_for_func(&func);
+
+            let should_return_self =
+                self.r#gen
+                    .should_return_self(self.resolve, interface.map(|p| p.1), func, false);
+
+            sig.update_for_func(&func, should_return_self);
             self.src.push_str("#[allow(unused_variables)]\n");
-            self.print_signature(func, true, &sig);
+            self.print_signature(func, true, &sig, should_return_self);
             self.src.push_str("{ unreachable!() }\n");
         }
 
@@ -1497,8 +1547,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         // }
     }
 
-    fn print_signature(&mut self, func: &Function, params_owned: bool, sig: &FnSig) -> Vec<String> {
-        let params = self.print_docs_and_params(func, params_owned, sig);
+    fn print_signature(
+        &mut self,
+        func: &Function,
+        params_owned: bool,
+        sig: &FnSig,
+        should_return_self: Option<ChainingMode>,
+    ) -> Vec<String> {
+        let params = self.print_docs_and_params(func, params_owned, sig, should_return_self);
         self.push_str(" -> ");
         if let FunctionKind::Constructor(resource_id) = &func.kind {
             match classify_constructor_return_type(&self.resolve, *resource_id, &func.result) {
@@ -1512,11 +1568,11 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 }
             }
         } else {
-            if self.r#gen.should_return_self(func) {
-                self.push_str("&Self");
-            } else {
-                self.print_result_type(&func.result);
-            }
+            match should_return_self {
+                Some(ChainingMode::Owning) => self.push_str("Self"),
+                Some(ChainingMode::Borrowing) => self.push_str("&Self"),
+                None => self.print_result_type(&func.result),
+            };
         }
         params
     }
@@ -1526,6 +1582,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         func: &Function,
         params_owned: bool,
         sig: &FnSig,
+        should_return_self: Option<ChainingMode>,
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -1546,16 +1603,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.push_str("async ");
         }
         self.push_str("fn ");
-        let func_name = if sig.use_item_name {
-            if let FunctionKind::Constructor(_) = &func.kind {
-                "new"
-            } else {
-                func.item_name()
-            }
-        } else {
-            func.item_name()
+        let func_name = match &func.kind {
+            FunctionKind::Constructor(_) => "new".to_string(),
+            FunctionKind::Setter
+            | FunctionKind::MethodSetter(_)
+            | FunctionKind::StaticSetter(_) => format!("set-{}", func.item_name()),
+            _ => func.item_name().to_owned(),
         };
-        self.push_str(&to_rust_ident(func_name));
+        self.push_str(&to_rust_ident(&func_name));
         if let Some(generics) = &sig.generics {
             self.push_str(generics);
         }
@@ -1573,7 +1628,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         ) in func.params.iter().enumerate()
         {
             if i == 0 && sig.self_is_first_param {
-                params.push("self".to_string());
+                params.push(
+                    match should_return_self {
+                        Some(ChainingMode::Owning) => "&self",
+                        _ => "self",
+                    }
+                    .to_string(),
+                );
                 continue;
             }
             let name = to_rust_ident(name);
@@ -2086,6 +2147,46 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         result
     }
 
+    /// Matching attributes, deduped in configured order. Selectors that matched
+    /// are recorded in `used` so `finish` can report the ones that did not.
+    fn matching_attrs(
+        entries: &[(String, String)],
+        used: &mut HashSet<String>,
+        matches: impl Fn(&str) -> bool,
+    ) -> Vec<String> {
+        let mut attrs = IndexSet::new();
+        for (sel, attr) in entries.iter().filter(|(sel, _)| matches(sel)) {
+            attrs.insert(attr.clone());
+            used.insert(sel.clone());
+        }
+        attrs.into_iter().collect()
+    }
+
+    fn additional_type_attrs(&mut self, type_name: &str) -> Vec<String> {
+        Self::matching_attrs(
+            &self.r#gen.opts.additional_type_attributes,
+            &mut self.r#gen.used_type_attr_selectors,
+            |sel| sel == type_name,
+        )
+    }
+
+    /// `member` is a record field or an enum/variant case, selected by
+    /// `<type-name>.<member>`. Member names contain no `.`, so the last one
+    /// separates the two halves.
+    fn additional_member_attrs(&mut self, type_name: &str, member: &str) -> Vec<String> {
+        Self::matching_attrs(
+            &self.r#gen.opts.additional_member_attributes,
+            &mut self.r#gen.used_member_attr_selectors,
+            |sel| sel.rsplit_once('.') == Some((type_name, member)),
+        )
+    }
+
+    fn push_attrs(&mut self, attrs: &[String]) {
+        for attr in attrs {
+            uwriteln!(self.src, "{attr}");
+        }
+    }
+
     fn print_typedef_record(&mut self, id: TypeId, record: &Record, docs: &Docs) {
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and we have a stable order
@@ -2095,6 +2196,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .additional_derive_attributes
             .iter()
             .cloned()
+            .collect();
+        // Computed once, then emitted on every ownership mode below.
+        let type_name = full_wit_type_name(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&type_name);
+        let field_attrs: Vec<Vec<String>> = record
+            .fields
+            .iter()
+            .map(|f| self.additional_member_attrs(&type_name, &f.name))
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
@@ -2118,11 +2227,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
                 self.push_str(")]\n")
             }
+            self.push_attrs(&injected_attrs);
             self.push_str(&format!("pub struct {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" {\n");
-            for field in record.fields.iter() {
+            for (field, attrs) in record.fields.iter().zip(&field_attrs) {
                 self.rustdoc(&field.docs);
+                self.push_attrs(attrs);
                 self.push_str("pub ");
                 self.push_str(&to_rust_ident(&field.name));
                 self.push_str(": ");
@@ -2185,7 +2296,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             variant
                 .cases
                 .iter()
-                .map(|c| (c.name.to_upper_camel_case(), &c.docs, c.ty.as_ref())),
+                .map(|c| (c.name.clone(), &c.docs, c.ty.as_ref())),
             docs,
         );
     }
@@ -2206,6 +2317,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             .additional_derive_attributes
             .iter()
             .cloned()
+            .collect();
+        let type_name = full_wit_type_name(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&type_name);
+        let case_attrs: Vec<Vec<String>> = cases
+            .clone()
+            .into_iter()
+            .map(|(case_name, _, _)| self.additional_member_attrs(&type_name, &case_name))
             .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
@@ -2228,12 +2346,14 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
                 self.push_str(")]\n")
             }
+            self.push_attrs(&injected_attrs);
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(mode.lifetime);
             self.push_str(" {\n");
-            for (case_name, docs, payload) in cases.clone() {
+            for ((case_name, docs, payload), attrs) in cases.clone().into_iter().zip(&case_attrs) {
                 self.rustdoc(docs);
-                self.push_str(&case_name);
+                self.push_attrs(attrs);
+                self.push_str(&case_name.to_upper_camel_case());
                 if let Some(ty) = payload {
                     self.push_str("(");
                     let mode = self.filter_mode(ty, mode);
@@ -2250,7 +2370,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
                 cases
                     .clone()
                     .into_iter()
-                    .map(|(name, _docs, ty)| (name, ty)),
+                    .map(|(name, _docs, ty)| (name.to_upper_camel_case(), ty)),
             );
 
             if info.error {
@@ -2324,7 +2444,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.rustdoc(docs);
             self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
-            self.push_str("= Option<");
+            self.push_str("= ::core::option::Option<");
             self.print_ty(payload, mode);
             self.push_str(">;\n");
         }
@@ -2335,7 +2455,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             self.rustdoc(docs);
             self.push_str(&format!("pub type {name}"));
             self.print_generics(mode.lifetime);
-            self.push_str("= Result<");
+            self.push_str("= ::core::result::Result<");
             self.print_optional_ty(result.ok.as_ref(), mode);
             self.push_str(",");
             self.print_optional_ty(result.err.as_ref(), mode);
@@ -2343,24 +2463,13 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         }
     }
 
-    fn print_typedef_enum(
-        &mut self,
-        id: TypeId,
-        name: &str,
-        enum_: &Enum,
-        docs: &Docs,
-        attrs: &[String],
-        case_attr: Box<dyn Fn(&EnumCase) -> String>,
-    ) where
-        Self: Sized,
-    {
+    fn print_typedef_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let info = self.info(id);
 
         let name = to_upper_camel_case(name);
         self.rustdoc(docs);
-        for attr in attrs {
-            self.push_str(&format!("{attr}\n"));
-        }
+        let type_name = full_wit_type_name(self.resolve, id);
+        let injected_attrs = self.additional_type_attrs(&type_name);
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
         self.push_str(")]\n");
@@ -2382,10 +2491,12 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         self.push_str("#[derive(");
         self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
         self.push_str(")]\n");
+        self.push_attrs(&injected_attrs);
         self.push_str(&format!("pub enum {name} {{\n"));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
-            self.push_str(&case_attr(case));
+            let case_attrs = self.additional_member_attrs(&type_name, &case.name);
+            self.push_attrs(&case_attrs);
             self.push_str(&case.name.to_upper_camel_case());
             self.push_str(",\n");
         }
@@ -2967,7 +3078,7 @@ impl<'a> {camel}Borrow<'a>{{
     }
 
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_typedef_enum(id, name, enum_, docs, &[], Box::new(|_| String::new()));
+        self.print_typedef_enum(id, name, enum_, docs);
 
         let name = to_upper_camel_case(name);
         let mut cases = String::new();
@@ -3144,14 +3255,14 @@ impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<
     }
 
     fn anonymous_type_option(&mut self, _id: TypeId, t: &Type, _docs: &Docs) {
-        self.interface.push_str("Option<");
+        self.interface.push_str("::core::option::Option<");
         let mode = self.interface.filter_mode_preserve_top(t, self.mode);
         self.interface.print_ty(t, mode);
         self.interface.push_str(">");
     }
 
     fn anonymous_type_result(&mut self, _id: TypeId, r: &Result_, _docs: &Docs) {
-        self.interface.push_str("Result<");
+        self.interface.push_str("::core::result::Result<");
         self.interface.print_optional_ty(r.ok.as_ref(), self.mode);
         self.interface.push_str(",");
         self.interface.print_optional_ty(r.err.as_ref(), self.mode);

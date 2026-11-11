@@ -92,20 +92,22 @@ impl ToCSharpIdent for str {
     }
 
     fn to_csharp_ident(&self) -> String {
+        let ident = self.to_lower_camel_case();
         // Escape C# keywords
-        if Self::csharp_keywords().contains(&self) {
-            format!("@{self}")
+        if Self::csharp_keywords().contains(&ident.as_str()) {
+            format!("@{ident}")
         } else {
-            self.to_lower_camel_case()
+            ident
         }
     }
 
     fn to_csharp_ident_upper(&self) -> String {
+        let ident = self.to_upper_camel_case();
         // Escape C# keywords
-        if Self::csharp_keywords().contains(&self) {
-            format!("@{self}")
+        if Self::csharp_keywords().contains(&ident.as_str()) {
+            format!("@{ident}")
         } else {
-            self.to_upper_camel_case()
+            ident
         }
     }
 }

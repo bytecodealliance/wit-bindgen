@@ -1,0 +1,784 @@
+import core.attribute : mustuse;
+import ldc.attributes : llvmAttr;
+
+alias wasmImport(string mod, string name) = AliasSeq!(
+    llvmAttr("wasm-import-module", mod),
+    llvmAttr("wasm-import-name", name)
+);
+
+enum wasmExport(string name) = llvmAttr("wasm-export-name", name);
+
+struct witInterface { string name; }
+struct witExport { string name; }
+
+/// Thin CABI compliant wrapper over `T[]`
+struct WitList(T) {
+@safe @nogc pure nothrow pragma(inline, true):
+    T* ptr;
+    size_t length;
+
+    this(inout T[] slice) inout @trusted {
+        ptr = slice.ptr;
+        length = slice.length;
+    }
+
+    void opAssign(T[] slice) @trusted {
+        ptr = slice.ptr;
+        length = slice.length;
+    }
+
+    alias asSlice this;
+    inout(T)[] asSlice() @trusted inout {
+        return (ptr && length) ? ptr[0..length] : null;
+    }
+
+    bool opEquals(in T[] other) const => this[] == other;
+    size_t toHash() const => this[].hashOf;
+}
+pragma(inline, true) auto witList(T)(inout T[] slice) => inout WitList!T(slice);
+
+// WIT ABI for string matches List,
+// except list<char> in WIT is actually List!(dchar)
+//
+// We assume UTF-8 data (as D native strings are UTF-8)
+alias WitString = WitList!(char);
+
+// TODO: split this file up and give Tuple a full port of the Phobos version?
+/// adapted from Phobos std.typecons.Tuple
+/// No support for naming members.
+struct Tuple(Types...) if (is(Types)) {
+    Types expand;
+    alias expand this;
+}
+
+inout(Tuple!Types) tuple(Types...)(inout Types vals) => inout Tuple!Types(vals);
+
+mixin template WitFlags(T) if (__traits(isUnsigned, T)) {
+    private alias F = typeof(this);
+
+    T bits;
+
+    @safe nothrow @nogc pure pragma(inline, true):
+
+    static typeof(this) opIndex(size_t i)
+    in(i < T.sizeof*8) => F(cast(T)(1 << i));
+
+    auto opUnary(string op : "~")() const => F(~bits);
+
+    auto ref opOpAssign(string op)(F rhs)
+    if (op == "|" || op == "&" || op == "^")
+    {
+        mixin("bits "~op~"= rhs.bits;");
+        return this;
+    }
+
+    auto opBinary(string op)(F flags) const
+    if (op == "|" || op == "&" || op == "^")
+    {
+        F result = this;
+        result.opOpAssign!op(flags);
+        return result;
+    }
+
+    typeof(this) witClone() const { return this; }
+}
+
+
+mixin template WitVariant(T...) {
+    public alias Types = T;
+    
+private:
+    static assert(is(typeof(this).Tag));
+    static assert(is(Tag U == enum) && __traits(isIntegral, U));
+
+    static assert(__traits(allMembers, Tag).length == Types.length);
+    static foreach (i, M; __traits(allMembers, Tag)) {
+        static assert(i == __traits(getMember, Tag, M));
+    }
+
+    union Storage {
+        template ReplacedTypes() {
+            alias ReplacedTypes = AliasSeq!();
+
+            static foreach (T; Types) {
+                static if (is(T == void))
+                    ReplacedTypes = AliasSeq!(ReplacedTypes, void[0]);
+                else
+                    ReplacedTypes = AliasSeq!(ReplacedTypes, T);
+            }
+        }
+
+        ubyte __zeroinit = 0;
+        ReplacedTypes!() members;
+    }
+
+    Tag _tag;
+    Storage _storage;
+
+
+    @disable this();
+    
+    pragma(inline, true) 
+    this(Tag tag, inout Storage storage = Storage.init) inout @nogc nothrow @trusted {
+      _tag = tag;
+      _storage = storage;
+    }
+
+public:
+    pragma(inline, true) 
+    static auto _create(Tag tag)() if (is(Types[tag] == void)) {
+        return typeof(this)(tag);
+    }
+
+    pragma(inline, true) 
+    static auto _create(Tag tag)(inout Types[tag] val) if (!is(Types[tag] == void)) {
+        Storage storage = Storage.init;
+        storage.tupleof[tag+1] = cast(Types[tag])val;
+        return inout typeof(this)(tag, cast(inout(Storage))storage);
+    }
+    
+    pragma(inline, true) 
+    ref auto _get(Tag tag)() inout return if (!is(Types[tag] == void))
+    in (_tag == tag) do { return cast(inout)_storage.tupleof[tag+1]; }
+}
+
+/// Based on Rust's Option
+struct Option(T) {
+private:
+    bool _present = false;
+    T _value;
+
+    pragma(inline, true) 
+    this(bool present, inout T value) inout @safe @nogc nothrow {
+        _present = present;
+        _value = value;
+    }
+public:
+    pragma(inline, true) 
+    static inout(Option) makeSome(inout T value) @safe @nogc nothrow {
+        return inout Option(true, value);
+    }
+
+    pragma(inline, true) 
+    static Option makeNone() @safe @nogc nothrow {
+        return Option(false, T.init);
+    }
+
+    pragma(inline, true) 
+    bool isSome() const @safe @nogc nothrow => _present;
+    alias isSome this; // implicit conversion to bool
+
+    pragma(inline, true) 
+    bool isNone() const @safe @nogc nothrow => !_present;
+
+    pragma(inline, true) 
+    ref inout(T) unwrap() inout @trusted @nogc nothrow return
+    in (_present) do { return _value; }
+
+    pragma(inline, true) 
+    T unwrapOr(T fallback) @trusted @nogc nothrow => _present ? _value : fallback;
+
+    T unwrapOrElse(D)(scope D fallback)
+    if (is(D R == return) && is(R : T) && is(D == __parameters))
+    { return _present ? _value : fallback(); }
+
+    bool opEquals(in Option rhs) const {
+        if (isSome != rhs.isSome) return false;
+
+        if (isSome) return unwrap == rhs.unwrap;
+        else return true;
+    }
+
+    size_t toHash() const @safe pure nothrow
+    {
+        if (isSome) return this.unwrap.hashOf(true.hashOf);
+        return false.hashOf;
+    }
+}
+
+pragma(inline, true) 
+auto some(T)(inout T value) @safe @nogc nothrow {
+    return Option!T.makeSome(value);
+}
+
+pragma(inline, true) 
+auto none(T)() @safe @nogc nothrow {
+    return Option!T.makeNone;
+}
+
+/// Based on Rust's Result
+@mustuse
+struct Result(T = void, E = void) {
+private:
+    bool _hasError;
+    union Storage {
+        ubyte __zeroinit = 0;
+        static if (!is(T == void)) {
+            T value;
+        }
+        static if (!is(E == void)) {
+            E error;
+        }
+    }
+    Storage _storage;
+
+    this(bool hasError, inout(Storage) storage) inout @safe @nogc nothrow {
+        _hasError = hasError;
+        _storage = storage;
+    }
+
+public:
+    static if (is(T == void)) {
+        pragma(inline, true) 
+        static Result makeOk() @safe @nogc nothrow => Result(false, Storage.init);
+    } else {
+        pragma(inline, true) 
+        static inout(Result) makeOk(inout(T) value) @trusted @nogc nothrow {
+            Storage newStorage = Storage.init;
+            newStorage.value = cast(T)value;
+
+            return inout Result(false, cast(inout Storage)newStorage);
+        }
+    }
+
+    static if (is(E == void)) {
+        pragma(inline, true) 
+        static Result makeErr() @safe @nogc nothrow => Result(true, Storage.init);
+    } else {
+        pragma(inline, true) 
+        static inout(Result) makeErr(inout(E) error) @trusted @nogc nothrow {
+            Storage newStorage = Storage.init;
+            newStorage.error = cast(E)error;
+
+            return inout Result(true, cast(inout Storage)newStorage);
+        }
+    }
+
+    pragma(inline, true) 
+    bool isOk() const @safe @nogc nothrow => !_hasError;
+
+    pragma(inline, true) 
+    bool isErr() const @safe @nogc nothrow => _hasError;
+    alias isErr this; // implicit conversion to bool
+
+    static if (!is(T == void)) {
+        pragma(inline, true) 
+        ref inout(T) unwrap() inout @trusted @nogc nothrow return
+        in (isOk) do { return _storage.value; }
+
+        pragma(inline, true) 
+        T unwrapOr(T fallback) @trusted @nogc nothrow => isOk ? _storage.value : fallback;
+
+        T unwrapOrElse(D)(scope D fallback)
+        if (is(D R == return) && is(R : T) && is(D == __parameters))
+        { return isOk ? _storage.value : fallback(); }
+    }
+
+    static if (!is(E == void)) {
+        pragma(inline, true) 
+        ref inout(E) unwrapErr() inout @trusted @nogc nothrow return
+        in (isErr) do { return _storage.error; }
+    }
+
+    bool opEquals(in Result rhs) const {
+        if (isErr != rhs.isErr) return false;
+
+        if (isErr) {
+            static if (!is(E == void)) return unwrapErr == rhs.unwrapErr;
+            else return true;
+        }
+
+        static if (!is(T == void)) return unwrap == rhs.unwrap;
+        else return true;
+    }
+
+    size_t toHash() const @safe pure nothrow
+    {
+        if (isErr) {
+            static if (!is(E == void)) return this.unwrapErr.hashOf(true.hashOf);
+            return true.hashOf;
+        }
+
+        static if (!is(T == void)) return this.unwrap.hashOf(false.hashOf);
+        else return false.hashOf;
+    }
+}
+
+pragma(inline, true) 
+auto ok(E, T)(inout T value) @safe @nogc nothrow {
+    return Result!(T, E).makeOk(value);
+}
+pragma(inline, true) 
+auto ok(E)() @safe @nogc nothrow {
+    return Result!(void, E).makeOk();
+}
+
+pragma(inline, true) 
+auto err(T, E)(inout E value) @safe @nogc nothrow {
+    return Result!(T, E).makeErr(value);
+}
+pragma(inline, true) 
+auto err(T)() @safe @nogc nothrow {
+    return Result!(T, void).makeErr();
+}
+
+pragma(inline, true) 
+void witFree(T)(scope ref T val) if (__traits(isArithmetic, T)) {
+    // no-op
+}
+pragma(inline, true) 
+void witDrop(T)(scope ref T val) if (__traits(isArithmetic, T)) {
+    // no-op
+}
+pragma(inline, true) 
+T witClone(T)(in T val) if (__traits(isArithmetic, T)) {
+    return val;
+}
+
+pragma(inline, true) 
+void witFree(T : Option!U, U)(scope ref T val) {
+    static if (!is(U == void)) if (val.isSome) val.unwrap.witFree;
+}
+pragma(inline, true)
+void witDrop(T : Option!U, U)(scope ref T val) {
+    static if (!is(U == void)) if (val.isSome) val.unwrap.witDrop;
+}
+pragma(inline, true) 
+T witClone(T : Option!U, U)(in T val) {
+    if (val.isSome) {
+        static if (!is(U == void)) {
+            return T.makeSome(val.unwrap.witClone);
+        } else {
+            return T.makeSome;
+        }
+    } else {
+        return T.makeNone;
+    }
+}
+
+pragma(inline, true) 
+void witFree(T : Result!(U, V), U, V)(scope ref T val) {
+    if (val.isErr) {
+        static if (!is(V == void)) val.unwrapErr.witFree;
+    } else {
+        static if (!is(U == void)) val.unwrap.witFree;
+    }
+}
+pragma(inline, true) 
+void witDrop(T : Result!(U, V), U, V)(scope ref T val) {
+    if (val.isErr) {
+        static if (!is(V == void)) val.unwrapErr.witDrop;
+    } else {
+        static if (!is(U == void)) val.unwrap.witDrop;
+    }
+}
+pragma(inline, true) 
+T witClone(T : Result!(U, V), U, V)(in T val) {
+    if (val.isErr) {
+        static if (!is(V == void)) {
+            return T.makeErr(val.unwrapErr.witClone);
+        } else {
+            return T.makeErr;
+        }
+    } else {
+        static if (!is(U == void)) {
+            return T.makeOk(val.unwrap.witClone);
+        } else {
+            return T.makeOk;
+        }
+    }
+}
+
+pragma(inline, true) 
+void witFree(T : WitList!U, U)(scope ref T val) {
+    foreach (ref e; val) {
+        e.witFree;
+    }
+    if (val.ptr && val.length) free(val.ptr);
+    val = null;
+}
+pragma(inline, true) 
+void witDrop(T : WitList!U, U)(scope ref T val) {
+    foreach (ref e; val) {
+        e.witDrop;
+    }
+    val = null;
+}
+T witClone(T : WitList!U, U)(in T val) @trusted {
+    if (val.ptr == null || val.length == 0) return T(null);
+
+    auto clone = mallocSlice!U(val.length);
+
+    foreach (i, ref e; clone) {
+        e = val[i].witClone;
+    }
+
+    return clone.witList;
+}
+
+pragma(inline, true) 
+void witFree(T : Tuple!U, U...)(scope ref T val) {
+    static foreach (F; T.tupleof) {
+        __traits(child, val, F).witFree;
+    }
+}
+pragma(inline, true) 
+void witDrop(T : Tuple!U, U...)(scope ref T val) {
+    static foreach (F; T.tupleof) {
+        __traits(child, val, F).witDrop;
+    }
+}
+pragma(inline, true) 
+T witClone(T : Tuple!U, U...)(in T val) {
+    T clone = void;
+    static foreach (F; T.tupleof) {
+        __traits(child, clone, F) = __traits(child, val, F).witClone;
+    }
+    return clone;
+}
+
+
+pragma(inline, true) 
+void witFree(T, size_t L)(scope ref T[L] val) {
+    foreach (ref e; val) {
+        e.witFree;
+    }
+}
+pragma(inline, true) 
+void witDrop(T, size_t L)(scope ref T[L] val) {
+    foreach (ref e; val) {
+        e.witDrop;
+    }
+}
+pragma(inline, true) 
+T[L] witClone(T, size_t L)(in T[L] val) {
+    T[L] clone;
+    foreach (i, ref e; clone) {
+        e = val[i].witClone;
+    }
+    return clone;
+}
+
+package:
+
+extern(C) @nogc nothrow {
+    void*    malloc(size_t size);
+    void*    realloc(void* ptr, size_t newSize);
+    void     free(void* ptr);
+    noreturn abort();
+}
+
+// from https://github.com/Inochi2D/numem/blob/main/source/numem/casting.d
+// Copyright © 2023-2025, Kitsunebi Games
+// Copyright © 2023-2025, Inochi2D Project
+// License:   $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
+// Authors:   Luna Nielsen
+pragma(inline, true)
+auto ref T reinterpretCast(T, U)(auto ref U from) @trusted if (T.sizeof == U.sizeof) {
+    union tmp { U from; T to; }
+    return tmp(from).to;
+}
+
+pragma(inline, true)
+T[] mallocSlice(T)(size_t count) @nogc nothrow {
+    if (count == 0) return [];
+    auto ptr = malloc(count*T.sizeof);
+    if (ptr is null) return [];
+
+    return (cast(T*)ptr)[0..count];
+}
+
+// from std.meta
+alias AliasSeq(T...) = T;
+
+template witInterfaceOf(alias Symbol) {
+    alias udas = AliasSeq!();
+    static foreach (uda; __traits(getAttributes, Symbol)) {
+        static if (!is(uda) && is(typeof(uda) == witInterface)) {
+            udas = AliasSeq!(udas, uda);
+        }
+    }
+
+    static assert(
+        udas.length <= 1,
+        "There must be at most one `@witInterface` attached. Found multiple on `",
+        __traits(fullyQualifiedName, Symbol), "`.",
+    );
+
+    static if (udas.length) {
+        enum string witInterfaceOf = udas[0].name;
+    } else {
+        enum string witInterfaceOf = "";
+    }
+}
+
+alias toKebabCase = (string s) { // lambda to satisfy `betterC` (use of GC)
+    if (s.length == 0) return "";
+    
+    char[] buf;
+    foreach (i, c; s) {
+        if (i > 0 && c >= 'A' && c <= 'Z') {
+            char prev = s[i - 1];
+            char next = ((i + 1) < s.length) ? s[i + 1] : '\0';
+            if (
+                (prev >= 'a' && prev <= 'z') || 
+                (
+                    next != '\0' &&
+                    prev >= 'A' && prev <= 'Z' &&
+                    !(next >= 'A' && next <= 'Z')
+                )
+            ) {
+                buf ~= '-';
+            }
+        }
+        buf ~= (c >= 'A' && c <= 'Z') ? (c + 32) : c;
+    }
+    return cast(string)buf;
+};
+
+template witNameOf(alias Symbol) {
+    alias udas = AliasSeq!();
+    static foreach (uda; __traits(getAttributes, Symbol)) {
+        static if ((!is(uda) && is(typeof(uda) == witExport)) || is(uda == witExport)) {
+            udas = AliasSeq!(udas, uda);
+        }
+    }
+
+    static assert(
+        udas.length <= 1,
+        "There must be at most one `@witExport` attached. Found multiple on `",
+        __traits(fullyQualifiedName, Symbol), "`.",
+    );
+
+    static if (udas.length) {
+        static if (is(udas[0])) {
+            enum string witNameOf = toKebabCase(__traits(identifier, Symbol));
+        } else {
+            static assert(
+                udas[0].name.length,
+                "Specifying an empty name for `@witExport(...)` is not allowed. Found empty on `",
+                __traits(fullyQualifiedName, Symbol), "`. Omit the parenthesis and parameter",
+                " (i.e. use as `@witExport`) or specify non-empty name.",
+            );
+            enum string witNameOf = udas[0].name;
+        }
+    } else {
+        enum string witNameOf = "";
+    }
+}
+
+template witNameInResourceOf(T, alias Func) {
+    enum resName = witNameOf!T;
+    enum name = witNameOf!Func;
+    
+    static if (name == "[constructor]") {
+        enum witNameInResourceOf = "[constructor]" ~ resName;
+    } else {
+        enum witNameInResourceOf = (__traits(isStaticFunction, Func) ? "[static]" : "[method]") ~ resName ~ "." ~ name;
+    }
+}
+
+template findWitExportFunc(string mod, string name, Sig, Impl...) {
+    static foreach(Func; Impl) {
+        static if (witNameOf!Func == name && witInterfaceOf!Func == mod) {
+            static assert(
+                !is(Func) &&
+                (is(typeof(Func) == function)),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+                "must be a function or method."
+            );
+
+            static assert(
+                !is(typeof(findWitExportFunc) == void) || __traits(isSame, findWitExportFunc, Func),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportFunc),
+                "` and `", __traits(fullyQualifiedName, Func), "`."
+            );
+            alias findWitExportFunc = Func;
+        }
+    }
+
+    static assert(
+        !is(typeof(findWitExportFunc) == void),
+        "Could not find implementation for '", mod, "#", name, "'"
+    );
+
+    static assert(
+         __traits(isStaticFunction, findWitExportFunc),
+         "The implementation of '", mod, "#", name, "' ",
+         "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+         "must be static.",
+    );
+    
+    static assert(
+        is(typeof(&findWitExportFunc) : Sig),
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportFunc), "` ",
+        "must conform to the necessary signature. ",
+        "Found `", typeof(&findWitExportFunc), "`",
+        ", but expected `", Sig, "`"
+    );
+}
+
+template findWitExportMethod(T, string name, Sig, bool isStatic) {
+    alias Impl = witExportsIn!T;
+
+    enum mod = witInterfaceOf!T;
+    
+    static foreach(Func; Impl) {
+        static if (witNameInResourceOf!(T, Func) == name) {
+            static assert(
+                !is(Func) &&
+                (is(typeof(Func) == function)),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+                "must be a function or method."
+            );
+
+            static assert(
+                !is(typeof(findWitExportMethod) == void) || __traits(isSame, findWitExportMethod, Func),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportMethod),
+                "` and `", __traits(fullyQualifiedName, Func), "`."
+            );
+            alias findWitExportMethod = Func;
+        }
+    }
+
+    static assert(
+        !is(typeof(findWitExportMethod) == void),
+        "Could not find implementation for '", mod, "#", name, "'"
+    );
+
+    static assert(
+        __traits(isStaticFunction, findWitExportMethod) == isStatic,
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+        "must " ~ (isSttic ? "be static" : "have implicit `this`") ~ ".",
+    );
+    
+    static assert(
+        is(typeof(&findWitExportMethod) : Sig),
+        "The implementation of '", mod, "#", name, "' ",
+        "`", __traits(fullyQualifiedName, findWitExportMethod), "` ",
+        "must conform to the necessary signature. ",
+        "Found `", typeof(&findWitExportMethod), "`",
+        ", but expected `", Sig, "`"
+    );
+}
+
+template findWitExportResource(string mod, string name, Impl...) {
+    static foreach(Resource; Impl) {
+        static if (witNameOf!Resource == name && witInterfaceOf!Resource == mod) {
+            static assert(
+                is(Resource == struct),
+                "The implementation of '", mod, "#", name, "' ",
+                "`", __traits(fullyQualifiedName, findWitExportResource), "` ",
+                "must be a struct."
+            );
+
+            static assert(
+                !is(typeof(findWitExportResource) == void) || __traits(isSame, findWitExportResource, Resource),
+                "There must be only one implementation of '", mod, "#", name, "'. ",
+                "Found at least `", __traits(fullyQualifiedName, findWitExportResource),
+                "` and `", __traits(fullyQualifiedName, Resource), "`."
+            );
+            alias findWitExportResource = Resource;
+        }
+    }
+
+    static assert(
+        !is(typeof(findWitExportResource) == void),
+        "Could not find implementation for '", mod, "#", name, "'"
+    );
+}
+
+public template witExportsIn(T) {
+    alias witExportsIn = AliasSeq!();
+
+    static foreach(member; __traits(allMembers, T)) {
+        witExportsIn = AliasSeq!(witExportsIn, findWitExports!(__traits(getOverloads, T, member)));
+    }
+}
+
+public template findWitExports(Exports...) {
+    alias findWitExports = AliasSeq!();
+
+    static foreach (elem; Exports) {
+        static foreach(uda; __traits(getAttributes, elem)) {
+            static if ((!is(uda) && is(typeof(uda) == witExport)) || is(uda == witExport)) {
+                findWitExports = AliasSeq!(findWitExports, elem);
+            }
+        }
+    }
+}
+
+struct DeallocateBuffer {
+    @nogc nothrow:
+    struct Page {
+        void*[32] slots;
+        static assert(slots.length < 256);
+
+        ubyte cursor;
+        Page* next;
+    }
+
+    Page first;
+    Page* head;
+
+    @disable this(this);
+
+    private void allocNewPage() {
+        Page* page = cast(Page*)malloc(Page.sizeof);
+        if (page is null) abort();
+
+        *page = Page.init;
+        page.next = head;
+        head = page;
+    }
+
+    void opOpAssign(string op: "~")(void* ptr) {
+        import core.builtins : unlikely;
+
+        if (unlikely(ptr is null)) return;
+        if (/*unlikely?*/(head is null)) head = &first;
+
+        if (head.cursor >= head.slots.length) allocNewPage();
+
+        head.slots[head.cursor++] = ptr;
+    }
+
+    void purge() {
+        auto page = head;
+        while (page) {
+            foreach (ptr; page.slots[0..page.cursor]) free(ptr);
+
+            auto next = page.next;
+            if (page != &first) free(page);
+            page = next;
+        }
+
+        first = Page.init;
+        head = null;
+    }
+
+    ~this() {
+        purge();
+    }
+}
+
+version (CRuntime_WASI) {
+    version (WASIp1) {}
+    else version = LibcDefinesCABIRealloc;
+}
+
+version (LibcDefinesCABIRealloc) {}
+else
+@wasmExport!("cabi_realloc")
+void* cabi_realloc(void *ptr, size_t oldSize, size_t alignment, size_t newSize) {
+    if (newSize == 0) return cast(void*)alignment;
+    void *ret = realloc(ptr, newSize);
+    if (!ret) abort();
+    return ret;
+}

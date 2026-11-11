@@ -26,7 +26,7 @@ func Run() {
 
 	assertEqual(test.FListInVariant3(Some[string]("input3")).Some(), "output3")
 
-	assertEqual(test.ErrnoResult().Err(), test.MyErrnoB)
+	assertEqual(test.ErrnoResult().Err(), test.MyErrno_B)
 	test.ErrnoResult().Ok()
 
 	{
@@ -42,7 +42,7 @@ func Run() {
 				Ok[Unit, Unit](Unit{}),
 				Err[Unit, Unit](Unit{}),
 			},
-			[]test.MyErrno{test.MyErrnoSuccess, test.MyErrnoA},
+			[]test.MyErrno{test.MyErrno_Success, test.MyErrno_A},
 		)
 		assert(slices.Equal(a, []bool{false, true}))
 		assert(slices.Equal(b, []Result[Unit, Unit]{
@@ -50,7 +50,7 @@ func Run() {
 			Ok[Unit, Unit](Unit{}),
 		},
 		))
-		assert(slices.Equal(c, []test.MyErrno{test.MyErrnoA, test.MyErrnoB}))
+		assert(slices.Equal(c, []test.MyErrno{test.MyErrno_A, test.MyErrno_B}))
 	}
 }
 

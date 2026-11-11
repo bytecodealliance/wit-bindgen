@@ -13,6 +13,10 @@ export!(Component);
 
 impl Guest for Component {
     async fn run() {
+        let value = String::from("borrowed");
+        let borrowed = block_on(async { value.as_str() });
+        assert_eq!(borrowed, "borrowed");
+
         let (writer, reader) = wit_stream::new::<u8>();
         let reader = a::b::i::launder(reader);
         let noop_cx = &mut Context::from_waker(Waker::noop());

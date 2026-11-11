@@ -13,11 +13,18 @@
 // limitations under the License.
 
 ///|
+priv enum SuspendResult {
+  Continue
+  Cancelled
+}
+
+///|
 priv enum State {
   Done
   Fail(Error)
+  Cancelled
   Running
-  Suspend(ok_cont~ : (Unit) -> Unit, err_cont~ : (Error) -> Unit)
+  Suspend((SuspendResult) -> Unit)
 }
 
 ///|
@@ -39,7 +46,7 @@ impl Eq for Coroutine with fn equal(c1, c2) {
 
 ///|
 impl Hash for Coroutine with fn hash_combine(self, hasher) {
-  self.coro_id.hash_combine(hasher)
+  Hash::hash_combine(self.coro_id, hasher)
 }
 
 ///|
@@ -58,19 +65,16 @@ pub fn is_being_cancelled() -> Bool {
 }
 
 ///|
-pub fn check_cancellation() -> Unit raise {
+pub async fn check_cancellation() -> Unit noraise {
   if is_being_cancelled() {
-    raise Cancelled::Cancelled
+    raise_cancellation_signal()
   }
 }
 
 ///|
-pub(all) suberror Cancelled derive(Debug)
-
-///|
 fn Coroutine::cancel(self : Coroutine) -> Unit {
   match self.state {
-    Done | Fail(_) => return
+    Done | Fail(_) | Cancelled => return
     Running | Suspend(_) => ()
   }
   self.cancelled = true
@@ -80,19 +84,27 @@ fn Coroutine::cancel(self : Coroutine) -> Unit {
 }
 
 ///|
-async fn suspend() -> Unit {
-  guard scheduler.curr_coro is Some(coro)
+async fn suspend_check_cancel() -> SuspendResult noraise {
+  guard! scheduler.curr_coro is Some(coro)
   if coro.cancelled && !coro.shielded {
-    raise Cancelled::Cancelled
+    return Cancelled
   }
   coro.lane.blocking += 1
   defer {
     coro.lane.blocking -= 1
   }
-  async_suspend(fn(ok_cont, err_cont) {
-    guard coro.state is Running
-    coro.state = Suspend(ok_cont~, err_cont~)
+  async_suspend(fn(cont) {
+    guard! coro.state is Running
+    coro.state = Suspend(cont)
   })
+}
+
+///|
+async fn suspend() -> Unit noraise {
+  match suspend_check_cancel() {
+    Continue => ()
+    Cancelled => raise_cancellation_signal()
+  }
 }
 
 ///|
@@ -105,7 +117,7 @@ fn spawn_owned(
   let coro = {
     state: Running,
     ready: true,
-    shielded: true,
+    shielded: false,
     downstream: Set([]),
     coro_id: scheduler.coro_id,
     lane,
@@ -114,11 +126,13 @@ fn spawn_owned(
   }
   fn run(_) {
     run_async(() => {
-      coro.shielded = false
-      try f() catch {
+      // Even a task cancelled before its first turn enters its body, so entry
+      // defers run. Cancellation is delivered at its first suspension/check.
+      try capture_cancellation(f, handler=() => coro.state = Cancelled) catch {
         err => coro.state = Fail(err)
       } noraise {
-        _ => coro.state = Done
+        _ if coro.state is Running => coro.state = Done
+        _ => ()
       }
       for coro in coro.downstream {
         coro.wake()
@@ -127,7 +141,7 @@ fn spawn_owned(
     })
   }
 
-  coro.state = Suspend(ok_cont=run, err_cont=_ => ())
+  coro.state = Suspend(run)
   enqueue(coro)
   coro
 }
@@ -145,60 +159,60 @@ fn spawn(f : async () -> Unit) -> Coroutine {
 }
 
 ///|
-fn Coroutine::unwrap(self : Coroutine) -> Unit raise {
+fn Coroutine::unwrap(self : Coroutine) -> SuspendResult raise {
   match self.state {
-    Done => ()
+    Done => Continue
+    Cancelled => Cancelled
     Fail(err) => raise err
     Running | Suspend(_) => panic()
   }
 }
 
 ///|
-async fn Coroutine::wait(target : Coroutine) -> Unit {
-  guard scheduler.curr_coro is Some(coro)
-  guard !physical_equal(coro, target)
+async fn Coroutine::wait(target : Coroutine) -> SuspendResult {
+  guard! scheduler.curr_coro is Some(coro)
+  guard! !physical_equal(coro, target)
   match target.state {
-    Done => return
+    Done => return Continue
+    Cancelled => return Cancelled
     Fail(err) => raise err
     Running | Suspend(_) => ()
   }
   target.downstream.add(coro)
-  try suspend() catch {
-    err => {
-      target.downstream.remove(coro)
-      raise err
-    }
-  } noraise {
-    _ => target.unwrap()
-  }
+  defer target.downstream.remove(coro)
+  suspend()
+  target.unwrap()
 }
 
 ///|
 fn Coroutine::check_error(coro : Coroutine) -> Unit raise {
   match coro.state {
     Fail(err) => raise err
-    Done | Running | Suspend(_) => ()
+    Done | Cancelled | Running | Suspend(_) => ()
   }
 }
 
 ///|
-pub async fn[X] protect_from_cancel(
-  f : async () -> X,
-  resume_on_cancel? : Bool = false,
-) -> X {
-  guard scheduler.curr_coro is Some(coro)
-  if coro.shielded {
-    // already in a shield, do nothing
-    f()
-  } else {
-    coro.shielded = true
-    defer {
-      coro.shielded = false
+pub async fn[X] protect_from_cancel(f : async () -> X) -> X nocancel {
+  guard! scheduler.curr_coro is Some(coro)
+  // The shield prevents delivery; capture_cancellation expresses that invariant
+  // in the effect type without changing normal error propagation.
+  capture_cancellation(handler=() => panic(), () => {
+    if coro.shielded {
+      f()
+    } else {
+      coro.shielded = true
+      defer {
+        coro.shielded = false
+      }
+      f()
     }
-    let result = f()
-    if !resume_on_cancel && coro.cancelled {
-      raise Cancelled::Cancelled
-    }
-    result
-  }
+  })
+}
+
+///|
+/// Observe cancellation without clearing the task's sticky cancelled state.
+/// Returns None on cancellation, Some on success, and propagates normal errors.
+pub async fn[X] handle_cancellation(f : async () -> X) -> X? {
+  capture_cancellation(handler=() => None, () => Some(f()))
 }

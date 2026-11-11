@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use heck::ToSnakeCase;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,8 +28,8 @@ pub struct Rust;
 
 #[derive(Default)]
 pub struct State {
-    wit_bindgen_rlib: PathBuf,
-    futures_rlib: PathBuf,
+    wit_bindgen_files: Vec<String>,
+    futures_files: Vec<String>,
     wit_bindgen_deps: Vec<PathBuf>,
 }
 
@@ -39,10 +40,39 @@ struct RustConfig {
     /// Space-separated list or array of compiler flags to pass.
     #[serde(default)]
     rustflags: StringList,
+
     /// List of path to rust files to build as external crates and link to the
     /// main crate.
     #[serde(default)]
     externs: Vec<String>,
+
+    /// Whether or not to link the main crate as a shared library.
+    ///
+    /// This is implied if `extern_dylibs` is specified.
+    #[serde(default)]
+    link_shared: bool,
+
+    /// Paths to Rust files to build as dynamic libraries. If non-empty the
+    /// main file is also built as a dynamic library.
+    #[serde(default)]
+    extern_dylibs: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "reason", rename_all = "kebab-case")]
+enum CargoMessage {
+    CompilerArtifact {
+        target: CargoTarget,
+        filenames: Vec<String>,
+    },
+    BuildScriptExecuted {
+        linked_paths: Vec<String>,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+struct CargoTarget {
+    name: String,
 }
 
 impl LanguageMethods for Rust {
@@ -68,11 +98,6 @@ impl LanguageMethods for Rust {
             return true;
         }
 
-        // Named fixed-length lists don't work with async yet.
-        if name == "named-fixed-length-list.wit-async" {
-            return true;
-        }
-
         false
     }
 
@@ -83,7 +108,7 @@ impl LanguageMethods for Rust {
                 "borrowed-duplicate",
                 &["--ownership=borrowing-duplicate-if-necessary"],
             ),
-            ("async", &["--async=all"]),
+            ("sync", &["--sync=all"]),
             ("no-std", &["--std-feature"]),
             ("merge-equal", &["--merge-structurally-equal-types"]),
             ("hashmap", &["--map-type=std::collections::HashMap"]),
@@ -136,36 +161,61 @@ path = 'lib.rs'
         super::write_if_different(&wit_bindgen.join("lib.rs"), "")?;
 
         println!("Building `wit-bindgen` from crates.io...");
-        runner.run_command(
+        let json = runner.run_command(
             Command::new("cargo")
                 .current_dir(&wit_bindgen)
                 .arg("build")
                 .arg("-pwit-bindgen")
                 .arg("-pfutures")
                 .arg("--target")
-                .arg(&opts.rust_target),
+                .arg(&opts.rust_target)
+                .arg("--message-format=json"),
         )?;
+        let mut wit_bindgen_files = None;
+        let mut futures_files = None;
+        let mut wit_bindgen_deps = Vec::new();
+        let mut deps_seen = HashSet::new();
 
-        let target_out_dir = wit_bindgen
-            .join("target")
-            .join(&opts.rust_target)
-            .join("debug");
-        let host_out_dir = wit_bindgen.join("target/debug");
-        let wit_bindgen_rlib = target_out_dir.join("libwit_bindgen.rlib");
-        let futures_rlib = target_out_dir.join("libfutures.rlib");
-        assert!(wit_bindgen_rlib.exists());
-        assert!(futures_rlib.exists());
+        for line in json.lines() {
+            let Ok(msg) = serde_json::from_str(line) else {
+                continue;
+            };
+            match msg {
+                CargoMessage::CompilerArtifact { target, filenames } => {
+                    if target.name == "futures" {
+                        futures_files = Some(filenames.clone());
+                    } else if target.name == "wit_bindgen" {
+                        wit_bindgen_files = Some(filenames.clone());
+                    }
+                    for file in &filenames {
+                        let dir = Path::new(file).parent().unwrap();
+                        if deps_seen.insert(dir.to_path_buf()) {
+                            wit_bindgen_deps.push(dir.to_path_buf());
+                        }
+                    }
+                }
+                CargoMessage::BuildScriptExecuted { linked_paths } => {
+                    for path in linked_paths {
+                        let path = PathBuf::from(path);
+                        if deps_seen.insert(path.clone()) {
+                            wit_bindgen_deps.push(path);
+                        }
+                    }
+                }
+            }
+        }
 
         runner.rust_state = Some(State {
-            wit_bindgen_rlib,
-            futures_rlib,
-            wit_bindgen_deps: vec![target_out_dir.join("deps"), host_out_dir.join("deps")],
+            wit_bindgen_files: wit_bindgen_files.unwrap().into(),
+            futures_files: futures_files.unwrap().into(),
+            wit_bindgen_deps,
         });
         Ok(())
     }
 
     fn compile(&self, runner: &Runner, compile: &Compile) -> Result<()> {
         let config = compile.component.deserialize_lang_config::<RustConfig>()?;
+        let link_shared = config.link_shared || !config.extern_dylibs.is_empty();
 
         // If this rust target doesn't natively produce a component then place
         // the compiler output in a temporary location which is componentized
@@ -174,7 +224,15 @@ path = 'lib.rs'
 
         // Compile all extern crates, if any
         let mut externs = Vec::new();
+        let mut dylibs = Vec::new();
         let manifest_dir = compile.component.path.parent().unwrap();
+
+        let wasi_sdk_path = if link_shared {
+            let path = runner.opts.c.wasi_sdk_path.as_ref();
+            Some(path.ok_or_else(|| anyhow::anyhow!("need a wasi-sdk-path"))?)
+        } else {
+            None
+        };
 
         let rustc = |path: &Path, output: &Path| {
             // Compile the main crate, passing `--extern` for all upstream crates.
@@ -186,7 +244,27 @@ path = 'lib.rs'
             for flag in Vec::from(config.rustflags.clone()) {
                 cmd.arg(flag);
             }
+            if link_shared {
+                cmd.arg("-Clink-arg=-shared");
+                cmd.arg("-Clink-self-contained=n");
+                cmd.arg(&format!(
+                    "-Clinker={}/bin/clang",
+                    wasi_sdk_path.unwrap().display()
+                ));
+                cmd.arg("-L").arg(&compile.artifacts_dir);
+            }
             cmd
+        };
+
+        let compile_cdylib = |cmd: &mut Command| {
+            cmd.arg("--crate-type=cdylib");
+            if runner.produces_component() {
+                if link_shared {
+                    cmd.arg("-Clink-arg=-Wl,--skip-wit-component");
+                } else {
+                    cmd.arg("-Clink-arg=--skip-wit-component");
+                }
+            }
         };
 
         for file in config.externs.iter() {
@@ -195,6 +273,16 @@ path = 'lib.rs'
             let output = compile.artifacts_dir.join(format!("lib{stem}.rlib"));
             runner.run_command(rustc(&file, &output).arg("--crate-type=rlib"))?;
             externs.push((stem.to_string(), output));
+        }
+
+        for file in config.extern_dylibs.iter() {
+            let file = manifest_dir.join(file);
+            let stem = file.file_stem().unwrap().to_str().unwrap();
+            let output = compile.artifacts_dir.join(format!("lib{stem}.so"));
+            let mut cmd = rustc(&file, &output);
+            compile_cdylib(&mut cmd);
+            runner.run_command(&mut cmd)?;
+            dylibs.push(output);
         }
 
         // Compile the main crate, passing `--extern` for all upstream crates.
@@ -210,15 +298,27 @@ path = 'lib.rs'
             let arg = format!("--extern={name}={}", path.display());
             cmd.arg(arg);
         }
-        cmd.arg("--crate-type=cdylib");
-        if runner.produces_component() {
-            cmd.arg("-Clink-arg=--skip-wit-component");
-        }
+        compile_cdylib(&mut cmd);
         runner.run_command(&mut cmd)?;
 
-        runner
-            .convert_p1_to_component(&output, compile)
-            .with_context(|| format!("failed to convert {output:?}"))?;
+        if link_shared {
+            let libc_so = wasi_sdk_path.unwrap().join(&format!(
+                "share/wasi-sysroot/lib/{}/libc.so",
+                runner.opts.rust.rust_target,
+            ));
+            if !libc_so.is_file() {
+                anyhow::bail!("libc.so not found at {libc_so:?}");
+            }
+            dylibs.insert(0, libc_so);
+            dylibs.push(output.clone());
+            runner
+                .link_dylibs_to_component(&dylibs, compile)
+                .with_context(|| format!("failed to link {output:?}"))?;
+        } else {
+            runner
+                .convert_core_module_to_component(&output, compile)
+                .with_context(|| format!("failed to convert {output:?}"))?;
+        }
 
         Ok(())
     }
@@ -283,20 +383,25 @@ impl Runner {
             Edition::E2021 => "--edition=2021",
             Edition::E2024 => "--edition=2024",
         })
-        .arg(&format!(
-            "--extern=wit_bindgen={}",
-            state.wit_bindgen_rlib.display()
-        ))
-        .arg(&format!(
-            "--extern=futures={}",
-            state.futures_rlib.display()
-        ))
         .arg("--target")
         .arg(&opts.rust_target)
         .arg("-Dwarnings")
         .arg("-Cdebuginfo=1");
         for dep in state.wit_bindgen_deps.iter() {
-            cmd.arg(&format!("-Ldependency={}", dep.display()));
+            let dep = dep.display();
+            if dep.to_string().contains('=') {
+                cmd.arg(&format!("-L{dep}"));
+            } else {
+                cmd.arg(&format!("-Ldependency={dep}"));
+            }
+        }
+        for (name, files) in [
+            ("wit_bindgen", &state.wit_bindgen_files),
+            ("futures", &state.futures_files),
+        ] {
+            for file in files {
+                cmd.arg(&format!("--extern={name}={file}",));
+            }
         }
         cmd
     }

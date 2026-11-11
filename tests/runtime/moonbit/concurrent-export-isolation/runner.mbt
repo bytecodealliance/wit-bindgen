@@ -1,7 +1,16 @@
 //@ wasmtime-flags = '-Wcomponent-model-async'
 //@ [lang]
 //@ path = 'gen/world/runner/stub.mbt'
-//@ pkg_config = """{ "warn-list": "-44", "supported-targets": "+wasm", "import": [{ "path": "test/moonbit-concurrent-export-isolation/async-core", "alias": "async-core" }, { "path": "test/moonbit-concurrent-export-isolation/interface/test/moonbit-concurrent-export-isolation/operations", "alias": "operations" }] }"""
+//@ pkg_config = '''
+//@ import {
+//@   "test/moonbit-concurrent-export-isolation/async-core" @async-core,
+//@   "test/moonbit-concurrent-export-isolation/interface/test/moonbit-concurrent-export-isolation/operations" @operations,
+//@ }
+//@
+//@ warnings = "-44"
+//@
+//@ supported_targets = "wasm"
+//@ '''
 
 ///|
 pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
@@ -26,7 +35,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
     async fn() -> Unit {
       @operations.wait_for_gate(
         @async-core.Future::from(async fn() {
-          guard gate.read(1) is Some(signal) && signal.length() == 1
+          guard! gate.read(1) is Some(signal) && signal.length() == 1
         }),
       )
     },

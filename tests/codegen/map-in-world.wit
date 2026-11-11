@@ -1,0 +1,6 @@
+package foo:foo;
+
+world map-in-world {
+  import take-map: func(a: map<string, u32>);
+  export return-map: func() -> map<string, u32>;
+}

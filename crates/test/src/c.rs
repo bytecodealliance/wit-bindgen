@@ -64,7 +64,7 @@ impl LanguageMethods for C {
         &[
             ("no-sig-flattening", &["--no-sig-flattening"]),
             ("autodrop", &["--autodrop-borrows=yes"]),
-            ("async", &["--async=all"]),
+            ("sync", &["--sync=all"]),
         ]
     }
 
@@ -158,7 +158,7 @@ fn compile(runner: &Runner, compile: &Compile<'_>, compiler: PathBuf) -> Result<
     runner.run_command(&mut cmd)?;
 
     runner
-        .convert_p1_to_component(&output, compile)
+        .convert_core_module_to_component(&output, compile)
         .with_context(|| format!("failed to convert {output:?}"))?;
     Ok(())
 }
@@ -187,5 +187,6 @@ fn verify(runner: &Runner, verify: &Verify<'_>, compiler: PathBuf) -> Result<()>
     .arg("-c")
     .arg("-o")
     .arg(verify.artifacts_dir.join("tmp.o"));
-    runner.run_command(&mut cmd)
+    runner.run_command(&mut cmd)?;
+    Ok(())
 }

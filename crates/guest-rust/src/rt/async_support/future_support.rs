@@ -323,6 +323,12 @@ impl<T> FutureWriter<T> {
         }
     }
 
+    /// Returns the index of the component-model handle that this future is
+    /// using.
+    pub fn handle(&self) -> u32 {
+        self.raw.handle()
+    }
+
     /// Write the specified `value` to this `future`.
     ///
     /// This method is equivalent to an `async fn` which sends the `value` into
@@ -486,6 +492,12 @@ pub struct RawFutureWriter<O: FutureOps> {
 impl<O: FutureOps> RawFutureWriter<O> {
     unsafe fn new(handle: u32, ops: O) -> Self {
         Self { handle, ops }
+    }
+
+    /// Returns the index of the component-model handle that this future is
+    /// using.
+    pub fn handle(&self) -> u32 {
+        self.handle
     }
 
     /// Same as [`FutureWriter::write`], but the raw version.
@@ -819,7 +831,9 @@ impl<O: FutureOps> RawFutureReader<O> {
         ret
     }
 
-    fn handle(&self) -> u32 {
+    /// Returns the index of the component-model handle that this future is
+    /// using.
+    pub fn handle(&self) -> u32 {
         self.opt_handle().unwrap()
     }
 

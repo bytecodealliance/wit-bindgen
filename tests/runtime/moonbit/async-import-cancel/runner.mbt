@@ -1,7 +1,15 @@
 //@ wasmtime-flags = '-Wcomponent-model-async'
 //@ [lang]
 //@ path = 'gen/world/runner/stub.mbt'
-//@ pkg_config = """{ "supported-targets": "+wasm", "import": [{ "path": "test/async-import-cancel/async-core", "alias": "async-core" }, { "path": "test/async-import-cancel/interface/test/async-import-cancel/pending", "alias": "pending" }, { "path": "test/async-import-cancel/interface/test/async-import-cancel/gate-control", "alias": "gate-control" }] }"""
+//@ pkg_config = '''
+//@ import {
+//@   "test/async-import-cancel/async-core" @async-core,
+//@   "test/async-import-cancel/interface/test/async-import-cancel/pending" @pending,
+//@   "test/async-import-cancel/interface/test/async-import-cancel/gate-control" @gate-control,
+//@ }
+//@
+//@ supported_targets = "wasm"
+//@ '''
 
 ///|
 async fn settle_leaf_counts(expected_drops : UInt) -> Unit {
@@ -28,7 +36,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   let leaf = @pending.Leaf::leaf()
   let future_producer_ran = Ref(false)
   let future = @async-core.Future::from(
-    async fn() {
+    fn() {
       future_producer_ran.val = true
       leaf
     },
@@ -231,7 +239,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   }
   future_cancel.cancel()
   let future_was_cancelled = try future_cancel.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
@@ -274,7 +282,7 @@ pub async fn run(background_group : @async-core.TaskGroup[Unit]) -> Unit {
   }
   stream_cancel.cancel()
   let stream_was_cancelled = try stream_cancel.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false

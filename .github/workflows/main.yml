@@ -60,14 +60,14 @@ jobs:
 
     env: ${{ matrix.env }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: true
     - run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add $CARGO_BUILD_TARGET
     - run: ./ci/build-release-artifacts.sh
     - run: ./ci/build-tarballs.sh "${{ matrix.build }}"
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: bins-${{ matrix.build }}
         path: dist
@@ -79,14 +79,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, csharp, cpp, go]
+        lang: [c, rust, csharp, cpp, go, d]
         exclude:
           # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
             lang: csharp
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: true
     - name: Install Rust
@@ -99,9 +99,9 @@ jobs:
     - uses: ./.github/actions/install-wasi-sdk
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
-        dotnet-version: '9.x'
+        dotnet-version: '10.x'
       if: matrix.lang == 'csharp'
 
     # As of this writing async tests require [a patched build of
@@ -110,16 +110,22 @@ jobs:
     # macOS/Windows to also get coverage for test-without-a-patched-toolchain.
     - name: Install Patched Go
       run: |
-        curl -OL https://github.com/dicej/go/releases/download/go1.25.5-wasi-on-idle/go-linux-amd64-bootstrap.tbz
+        curl -OL https://github.com/dicej/go/releases/download/go1.27.1-wasi-on-idle/go-linux-amd64-bootstrap.tbz
         tar xf go-linux-amd64-bootstrap.tbz
         echo "$(pwd)/go-linux-amd64-bootstrap/bin" >> $GITHUB_PATH
       if: matrix.lang == 'go' && matrix.os == 'ubuntu-latest'
 
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
-        go-version: 1.25.4
+        go-version: 1.27.1
       if: matrix.lang == 'go' && matrix.os != 'ubuntu-latest'
+
+    - name: Setup D
+      uses: dlang-community/setup-dlang@v2
+      with:
+        compiler: ldc-1.42
+      if: matrix.lang == 'd'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo
@@ -148,54 +154,22 @@ jobs:
           --artifacts target/artifacts \
           --rust-wit-bindgen-path ./crates/guest-rust
 
-  # While threading is off-by-default and toolchains are percolating this is a
-  # separate job to get configured slightly differently.
-  threading:
-    name: Test WASIp3 Threading (allowed to fail)
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-
-    - name: Install Rust
-      run: rustup update stable --no-self-update && rustup default stable
-    - run: rustup target add wasm32-wasip2
-
-    - uses: ./.github/actions/install-wasi-sdk
-
-    # The threading builtins are encoded with a canonical-function opcode
-    # newer than any released wasmtime understands (46.0.1 and 47.0.2 both
-    # reject it with "invalid leading byte (0x2d) for canonical function"),
-    # so this job runs wasmtime's `dev` build instead of the pinned release.
-    # This can go back to the shared pin once a release parses the encoding.
-    - name: Install wasmtime dev build
-      run: |
-        curl --retry 5 --retry-all-errors -L -o wasmtime-dev.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/dev/wasmtime-dev-x86_64-linux.tar.xz
-        tar xJf wasmtime-dev.tar.xz
-        echo "`pwd`/wasmtime-dev-x86_64-linux" >> $GITHUB_PATH
-      working-directory: ${{ runner.temp }}
-
-    - run: |
-        cargo run test --languages rust,c,go tests/threading \
-          --artifacts target/artifacts \
-          --rust-wit-bindgen-path ./crates/guest-rust
-
   test_unit:
     name: Crate Unit Tests
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: true
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasip1
-    - run: cargo test
+    - run: cargo test --locked
     - run: cargo test -p wit-bindgen-core
     - run: cargo test -p wit-bindgen
     - run: cargo test -p wit-bindgen --all-features
     - run: cargo test -p wit-bindgen-rust
+    - run: cargo test -p wit-bindgen-markdown
     - run: cargo test --workspace --exclude 'wit-bindgen*'
     - run: rustup update nightly-2025-11-10 --no-self-update
     - run: rustup default nightly-2025-11-10
@@ -207,7 +181,7 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
     - name: Install wasm32-unknown-unknown target
@@ -258,7 +232,7 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Install Rust
       run: rustup update stable && rustup default stable && rustup component add rustfmt
     - name: Format source code
@@ -268,19 +242,16 @@ jobs:
     name: Verify MSRV
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    # Verify MSRV for the whole workspace
+    - uses: actions/checkout@v7
     - run: rustup update 1.88.0 && rustup default 1.88.0
     - run: cargo check
-    # Verify the tighter MSRV of the `wit-bindgen` crate.
-    - run: rustup update 1.85.0 && rustup default 1.85.0
     - run: cargo check -p wit-bindgen --all-features
 
   verify-publish:
     if: github.repository_owner == 'bytecodealliance'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: true
     - run: rustup update stable && rustup default stable
@@ -318,7 +289,7 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: rustup update stable --no-self-update && rustup default stable
       - run: rustup component add clippy
       - run: cargo clippy --workspace --all-targets -- -D warnings

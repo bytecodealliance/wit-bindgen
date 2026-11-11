@@ -239,7 +239,7 @@ pub async fn local_future_drop_cleanup(
   })
   f.drop()
   let unstarted_cleanup_ran = Ref(false)
-  let started = @async-core.Future::from(async fn() { 42 }, on_unstarted_drop=fn() {
+  let started = @async-core.Future::from(fn() { 42 }, on_unstarted_drop=fn() {
     unstarted_cleanup_ran.val = true
   })
   guard started.get() == 42 else {
@@ -273,7 +273,7 @@ pub async fn local_lazy_future_drop_resource_cleanup(
   let producer_ran = Ref(false)
   let thing = @leaf-interface.LeafThing::leaf_thing("lazy-future-cleanup")
   let future = @async-core.Future::from(
-    async fn() {
+    fn() {
       producer_ran.val = true
       thing
     },
@@ -417,7 +417,7 @@ pub async fn cancel_future_read(
   }
   reader.cancel()
   try reader.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
@@ -451,7 +451,7 @@ pub async fn cancel_stream_read(
   }
   reader.cancel()
   try reader.wait() catch {
-    @async-core.Cancelled::Cancelled => true
+    @async-core.TaskCancelled::TaskCancelled => true
     _ => false
   } noraise {
     _ => false
@@ -553,7 +553,9 @@ pub async fn local_stream_cancelled_waiters(
   background_group : @async-core.TaskGroup[Unit],
 ) -> Bool {
   let pre_start_cleanup = Ref(false)
-  let (never, never_sink) = @async-core.Stream::new(capacity=0)
+  let (never, never_sink) : (@async-core.Stream[Unit], _) = @async-core.Stream::new(
+    capacity=0,
+  )
   let pre_start = background_group.spawn(async fn() -> Unit {
     defer {
       pre_start_cleanup.val = true

@@ -4,6 +4,9 @@ authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [lib]
 proc-macro = true
 doctest = false

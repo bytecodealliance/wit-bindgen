@@ -1,0 +1,19 @@
+//@ async = true
+package my:test;
+
+interface i {
+  // `result` without payloads, which the C# generator once declared as `Task<void>`.
+  unit-ok: async func() -> result;
+  unit-err: async func() -> result<_, string>;
+  halve: async func(x: u32) -> result<u32, string>;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

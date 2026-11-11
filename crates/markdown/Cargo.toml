@@ -5,7 +5,6 @@ edition = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 rust-version = { workspace = true }
-homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
 Markdown generator for WIT and the component model, typically used
 through the `wit-bindgen-cli` crate.

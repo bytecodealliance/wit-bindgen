@@ -1,0 +1,24 @@
+package test:resource-own-roundtrip;
+
+// Own handles of an exported resource that are handed out and then passed
+// back in. Passing two at once means the incoming handles cannot both reuse
+// the slots handed out earlier, so the callee must drop the handles it
+// actually received.
+interface to-test {
+  resource thing {
+    constructor(v: u32);
+  }
+
+  consume-both: func(a: thing, b: thing) -> u32;
+  num-dropped: func() -> u32;
+}
+
+world test {
+  export to-test;
+}
+
+world runner {
+  import to-test;
+
+  export run: func();
+}

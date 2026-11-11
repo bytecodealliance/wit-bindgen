@@ -16,7 +16,7 @@ func Run() {
 
 	{
 		val := test.EnumError(0.0)
-		assertEqual(val.Err(), test.EA)
+		assertEqual(val.Err(), test.E_A)
 
 		val = test.EnumError(1.0)
 		assertEqual(val.Ok(), 1.0)
@@ -40,11 +40,11 @@ func Run() {
 
 		a = test.VariantError(1.0)
 		b = a.Err()
-		assertEqual(b.E1(), test.EB)
+		assertEqual(b.E1(), test.E_B)
 
 		a = test.VariantError(2.0)
 		b = a.Err()
-		assertEqual(b.E1(), test.EC)
+		assertEqual(b.E1(), test.E_C)
 	}
 
 	{

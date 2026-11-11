@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    AsyncFilterSet, Files, InterfaceGenerator as _, Source, Types, WorldGenerator, dealias,
-    name_package_module, uwrite, uwriteln, wit_parser::*,
+    AsyncFilterSet, ChainableMethodFilterSet, ChainingMode, Files, InterfaceGenerator as _, Source,
+    Types, WorldGenerator, dealias, name_package_module, uwrite, uwriteln, wit_parser::*,
 };
 
 mod bindgen;
@@ -42,6 +42,9 @@ pub struct RustWasm {
     // Track which interfaces and types are generated. Remapped interfaces and types provided via `with`
     // are required to be used.
     generated_types: HashSet<String>,
+    // Attribute selectors that matched something, so `finish` can reject the rest.
+    used_type_attr_selectors: HashSet<String>,
+    used_member_attr_selectors: HashSet<String>,
     world: Option<WorldId>,
 
     rt_module: IndexSet<RuntimeItem>,
@@ -113,7 +116,6 @@ enum RuntimeItem {
     AsF64,
     ResourceType,
     BoxType,
-    WitMapTrait,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -137,6 +139,19 @@ fn parse_with(s: &str) -> Result<(String, WithOption), String> {
         other => WithOption::Path(other.to_string()),
     };
     Ok((k.to_string(), v))
+}
+
+// Split on the first `=` only, so the attribute may itself contain `=`.
+#[cfg(feature = "clap")]
+fn parse_attribute(s: &str) -> Result<(String, String), String> {
+    let (sel, attr) = s
+        .split_once('=')
+        .ok_or_else(|| format!("expected string of form `<selector>=<attribute>`; got `{s}`"))?;
+    // An empty attribute would mark the selector used and escape the unused check.
+    if attr.trim().is_empty() {
+        return Err(format!("attribute must not be empty; got `{s}`"));
+    }
+    Ok((sel.to_string(), attr.to_string()))
 }
 
 #[derive(Default, Debug, Clone)]
@@ -234,6 +249,34 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long, value_name = "NAME"))]
     pub additional_derive_ignore: Vec<String>,
 
+    /// Extra attributes to emit on specific generated types, rather than on all
+    /// types like `additional_derive_attributes`.
+    ///
+    /// Each entry pairs a selector with an attribute. A selector is a type's
+    /// fully qualified name, written as in `with`, so `my:pkg/types/point`,
+    /// carrying `@version` when the package is versioned. A selector matching
+    /// nothing is an error, as with `with`.
+    ///
+    /// Only records, variants, and enums are covered. Attributes are emitted
+    /// verbatim on every form of the type, including the borrowed form under
+    /// `ownership: Borrowing`, so an owned-only derive fails to compile there.
+    ///
+    /// In a CLI, this flag can be specified multiple times as
+    /// `selector=attribute`.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "SELECTOR=ATTR", value_parser = parse_attribute))]
+    pub additional_type_attributes: Vec<(String, String)>,
+
+    /// Extra attributes to emit on specific generated record fields and
+    /// enum/variant cases.
+    ///
+    /// As `additional_type_attributes`, except the selector is a type's fully
+    /// qualified name, a `.`, and the member name.
+    ///
+    /// In a CLI, this flag can be specified multiple times as
+    /// `selector=attribute`.
+    #[cfg_attr(feature = "clap", arg(long, value_name = "SELECTOR=ATTR", value_parser = parse_attribute))]
+    pub additional_member_attributes: Vec<(String, String)>,
+
     /// Remapping of wit import interface and type names to Rust module names
     /// and types.
     ///
@@ -301,9 +344,9 @@ pub struct Opts {
     )]
     pub merge_structurally_equal_types: Option<Option<bool>>,
 
-    /// If true, methods normally returning `()` instead return `&Self`. This applies to both imported and exported methods.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub enable_method_chaining: bool,
+    #[cfg_attr(feature = "clap", clap(flatten))]
+    #[cfg_attr(feature = "serde", serde(flatten))]
+    pub chainable_methods: ChainableMethodFilterSet,
 }
 
 impl Opts {
@@ -364,11 +407,11 @@ impl RustWasm {
         wasm_import_module: &'a str,
         resolve: &'a Resolve,
         in_import: bool,
-    ) -> InterfaceGenerator<'a> {
+    ) -> Result<InterfaceGenerator<'a>> {
         let mut sizes = SizeAlign::default();
-        sizes.fill(resolve);
+        sizes.fill(resolve)?;
 
-        InterfaceGenerator {
+        Ok(InterfaceGenerator {
             identifier,
             wasm_import_module,
             src: Source::default(),
@@ -379,8 +422,7 @@ impl RustWasm {
             return_pointer_area_size: Default::default(),
             return_pointer_area_align: Default::default(),
             needs_runtime_module: false,
-            needs_wit_map: false,
-        }
+        })
     }
 
     fn emit_modules(&mut self, modules: Vec<(String, Vec<String>)>) {
@@ -711,11 +753,6 @@ pub fn run_ctors_once() {{
                 self.emit_runtime_as_trait("f64", &["f64"]);
             }
 
-            RuntimeItem::WitMapTrait => {
-                let rt = self.runtime_path().to_string();
-                uwriteln!(self.src, "pub use {rt}::WitMap;");
-            }
-
             RuntimeItem::ResourceType => {
                 self.src.push_str(
                     r#"
@@ -990,6 +1027,7 @@ macro_rules! __export_{world_name}_impl {{
             world_id,
             wit_component::StringEncoding::UTF8,
             Some(&producers),
+            false,
         )
         .unwrap();
 
@@ -1061,10 +1099,17 @@ macro_rules! __export_{world_name}_impl {{
             .is_async(resolve, interface, func, is_import)
     }
 
-    fn should_return_self(&self, func: &Function) -> bool {
-        self.opts.enable_method_chaining
-            && func.result.is_none()
-            && matches!(&func.kind, FunctionKind::Method(_))
+    fn should_return_self(
+        &mut self,
+        resolve: &Resolve,
+        interface: Option<&WorldKey>,
+        func: &Function,
+        is_import: bool,
+    ) -> Option<ChainingMode> {
+        return self
+            .opts
+            .chainable_methods
+            .should_be_chainable(resolve, interface, func, is_import);
     }
 }
 
@@ -1128,6 +1173,18 @@ impl WorldGenerator for RustWasm {
                 self.opts.additional_derive_ignore
             );
         }
+        for (selector, attr) in self.opts.additional_type_attributes.iter() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional type attribute {selector:?} = {attr:?}"
+            );
+        }
+        for (selector, attr) in self.opts.additional_member_attributes.iter() {
+            uwriteln!(
+                self.src_preamble,
+                "//   * additional member attribute {selector:?} = {attr:?}"
+            );
+        }
         for (k, v) in self.opts.with.iter() {
             uwriteln!(self.src_preamble, "//   * with {k:?} = {v}");
         }
@@ -1169,7 +1226,10 @@ impl WorldGenerator for RustWasm {
             );
         }
         for opt in self.opts.async_.debug_opts() {
-            uwriteln!(self.src_preamble, "//   * async: {opt}");
+            uwriteln!(self.src_preamble, "//   * sync: {opt}");
+        }
+        for opt in self.opts.chainable_methods.debug_opts() {
+            uwriteln!(self.src_preamble, "//   * chainable-methods: {opt}");
         }
         self.types.analyze(resolve);
         self.types.collect_equal_types(resolve, world, &|a| {
@@ -1277,7 +1337,7 @@ impl WorldGenerator for RustWasm {
             &wasm_import_module,
             resolve,
             true,
-        );
+        )?;
         let (snake, module_path) = r#gen.start_append_submodule(name);
         if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
@@ -1302,15 +1362,16 @@ impl WorldGenerator for RustWasm {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         self.import_funcs_called = true;
 
-        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true)?;
 
         r#gen.generate_imports(funcs.iter().map(|(_, func)| *func), None);
 
         let src = r#gen.finish();
         self.src.push_str(&src);
+        Ok(())
     }
 
     fn export_interface(
@@ -1333,7 +1394,7 @@ impl WorldGenerator for RustWasm {
             &wasm_import_module,
             resolve,
             false,
-        );
+        )?;
         let (snake, module_path) = r#gen.start_append_submodule(name);
         if r#gen.r#gen.interface_names[&id].remapped {
             return Ok(());
@@ -1359,7 +1420,7 @@ impl WorldGenerator for RustWasm {
                 &wasm_import_module,
                 resolve,
                 false,
-            );
+            )?;
             r#gen.generate_stub(Some((id, name)), resolve.interfaces[id].functions.values());
             let stub = r#gen.finish();
             self.src.push_str(&stub);
@@ -1374,7 +1435,8 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) -> Result<()> {
-        let mut r#gen = self.interface(Identifier::World(world), "[export]$root", resolve, false);
+        let mut r#gen =
+            self.interface(Identifier::World(world), "[export]$root", resolve, false)?;
         let macro_name = r#gen.generate_exports(None, funcs.iter().map(|f| f.1))?;
         let src = r#gen.finish();
         self.src.push_str(&src);
@@ -1382,7 +1444,7 @@ impl WorldGenerator for RustWasm {
 
         if self.opts.stubs {
             let mut r#gen =
-                self.interface(Identifier::World(world), "[export]$root", resolve, false);
+                self.interface(Identifier::World(world), "[export]$root", resolve, false)?;
             r#gen.generate_stub(None, funcs.iter().map(|f| f.1));
             let stub = r#gen.finish();
             self.src.push_str(&stub);
@@ -1396,7 +1458,7 @@ impl WorldGenerator for RustWasm {
         world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let mut to_define = Vec::new();
         for (name, ty_id) in types {
             let full_name = full_wit_type_name(resolve, *ty_id);
@@ -1410,21 +1472,28 @@ impl WorldGenerator for RustWasm {
             }
             self.generated_types.insert(full_name);
         }
-        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true);
+        let mut r#gen = self.interface(Identifier::World(world), "$root", resolve, true)?;
         for (name, ty) in to_define {
             r#gen.define_type(name, *ty);
         }
         let src = r#gen.finish();
         self.src.push_str(&src);
+        Ok(())
     }
 
-    fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+    fn finish_imports(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        files: &mut Files,
+    ) -> Result<()> {
         if !self.import_funcs_called {
             // We call `import_funcs` even if the world doesn't import any
             // functions since one of the side effects of that method is to
             // generate `struct`s for any imported resources.
-            self.import_funcs(resolve, world, &[], files);
+            self.import_funcs(resolve, world, &[], files)?;
         }
+        Ok(())
     }
 
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) -> Result<()> {
@@ -1534,9 +1603,33 @@ impl WorldGenerator for RustWasm {
             bail!("unused remappings provided via `with`: {unused_keys:?}");
         }
 
+        let mut unused_selectors = self
+            .opts
+            .additional_type_attributes
+            .iter()
+            .map(|(sel, _)| sel)
+            .filter(|sel| !self.used_type_attr_selectors.contains(*sel))
+            .chain(
+                self.opts
+                    .additional_member_attributes
+                    .iter()
+                    .map(|(sel, _)| sel)
+                    .filter(|sel| !self.used_member_attr_selectors.contains(*sel)),
+            )
+            .collect::<Vec<_>>();
+        unused_selectors.sort();
+        unused_selectors.dedup();
+        if !unused_selectors.is_empty() {
+            bail!(
+                "unused selectors provided via `additional_type_attributes` / \
+                 `additional_member_attributes`: {unused_selectors:?}"
+            );
+        }
+
         // Error about unused async configuration to help catch configuration
         // errors.
         self.opts.async_.ensure_all_used()?;
+        self.opts.chainable_methods.ensure_all_used()?;
 
         Ok(())
     }
@@ -1679,16 +1772,25 @@ struct FnSig {
     async_: bool,
     unsafe_: bool,
     private: bool,
-    use_item_name: bool,
     generics: Option<String>,
     self_arg: Option<String>,
     self_is_first_param: bool,
 }
 
 impl FnSig {
-    fn update_for_func(&mut self, func: &Function) {
-        if let FunctionKind::Method(_) | FunctionKind::AsyncMethod(_) = &func.kind {
-            self.self_arg = Some("&self".into());
+    fn update_for_func(&mut self, func: &Function, return_self: Option<ChainingMode>) {
+        if let FunctionKind::Method(_)
+        | FunctionKind::AsyncMethod(_)
+        | FunctionKind::MethodGetter(_)
+        | FunctionKind::MethodSetter(_) = &func.kind
+        {
+            self.self_arg = Some(
+                match return_self {
+                    Some(ChainingMode::Owning) => "self",
+                    _ => "&self",
+                }
+                .into(),
+            );
             self.self_is_first_param = true;
         }
     }

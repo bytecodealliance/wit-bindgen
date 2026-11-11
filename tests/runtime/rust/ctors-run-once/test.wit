@@ -1,0 +1,14 @@
+package the:test;
+
+interface i {
+  ctor-runs: func() -> u32;
+}
+
+world runner {
+  import i;
+  export run: func();
+}
+
+world test {
+  export i;
+}

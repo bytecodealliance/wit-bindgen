@@ -11,6 +11,23 @@ export!(Component);
 
 impl Guest for Component {
     async fn run() {
+        // After the writer drops, repeated reads remain Dropped.
+        let (tx, mut rx) = wit_stream::new::<u8>();
+        drop(tx);
+        for _ in 0..2 {
+            let (result, buf) = rx.read(Vec::with_capacity(1)).await;
+            assert_eq!(result, StreamResult::Dropped);
+            assert!(buf.is_empty());
+        }
+
+        // After the reader drops, repeated writes preserve unsent values.
+        let (mut tx, rx) = wit_stream::new::<u8>();
+        drop(rx);
+        for _ in 0..2 {
+            let (result, buf) = tx.write(vec![42]).await;
+            assert_eq!(result, StreamResult::Dropped);
+            assert_eq!(buf.into_vec(), vec![42]);
+        }
         let (mut tx, rx) = wit_stream::new();
         let test = async {
             // write one item

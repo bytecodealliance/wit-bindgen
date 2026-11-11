@@ -51,7 +51,7 @@ impl LanguageMethods for Cpp {
             return false;
         }
         return match name {
-            "issue1514-6.wit" | "named-fixed-length-list.wit" => true,
+            "named-fixed-length-list.wit" => true,
             _ => false,
         } || config.async_;
     }
@@ -184,7 +184,7 @@ impl LanguageMethods for Cpp {
         runner.run_command(&mut cmd)?;
 
         runner
-            .convert_p1_to_component(&output, compile)
+            .convert_core_module_to_component(&output, compile)
             .with_context(|| format!("failed to convert {output:?}"))?;
         Ok(())
     }
@@ -217,6 +217,7 @@ impl LanguageMethods for Cpp {
         .arg("-c")
         .arg("-o")
         .arg(verify.artifacts_dir.join("tmp.o"));
-        runner.run_command(&mut cmd)
+        runner.run_command(&mut cmd)?;
+        Ok(())
     }
 }

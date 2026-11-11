@@ -24,7 +24,7 @@ pub fn[X] Sink::from_callbacks(
   cleanup : ((X) -> Unit)?,
   write_window_size : Int,
 ) -> Sink[X] {
-  guard write_window_size > 0
+  guard! write_window_size > 0
   {
     write,
     close,
@@ -52,7 +52,7 @@ pub async fn[X] Sink::write(self : Sink[X], data : ArrayView[X]) -> Int {
   // The callback may suspend, so it must not retain the caller's borrowed view.
   let buffer = FixedArray::from_array(data[:length])
   let written = (self.write)(buffer[:])
-  guard written >= 0 && written <= length
+  guard! written >= 0 && written <= length
   if !(self.is_open)() && written < length && (self.has_cleanup)() {
     self.cleanup_unaccepted(buffer[:], written)
     return length
@@ -77,7 +77,7 @@ pub async fn Sink::write_bytes(self : Sink[Byte], data : BytesView) -> Int {
   }
   let buffer = data[:length].to_fixedarray()
   let written = (self.write)(buffer[:])
-  guard written >= 0 && written <= length
+  guard! written >= 0 && written <= length
   if !(self.is_open)() && written < length && (self.has_cleanup)() {
     self.cleanup_unaccepted(buffer[:], written)
     return length
@@ -134,18 +134,16 @@ pub async fn[X] Sink::write_all(self : Sink[X], data : ArrayView[X]) -> Bool {
     if offset >= data.length() {
       return true
     }
-    let written = self.write(data[offset:]) catch {
-      err => {
-        self.cleanup_unaccepted(data, offset)
-        raise err
-      }
+    let written = {
+      errdefer self.cleanup_unaccepted(data, offset)
+      self.write(data[offset:])
     }
     offset = offset + written
     if !self.is_open() {
       self.cleanup_unaccepted(data, offset)
       return false
     }
-    guard written > 0
+    guard! written > 0
   }
 }
 
@@ -157,18 +155,16 @@ pub async fn Sink::write_all_bytes(self : Sink[Byte], data : BytesView) -> Bool 
     if offset >= data.length() {
       return true
     }
-    let written = self.write_bytes(data[offset:]) catch {
-      err => {
-        self.cleanup_unaccepted_bytes(data, offset)
-        raise err
-      }
+    let written = {
+      errdefer self.cleanup_unaccepted_bytes(data, offset)
+      self.write_bytes(data[offset:])
     }
     offset = offset + written
     if !self.is_open() {
       self.cleanup_unaccepted_bytes(data, offset)
       return false
     }
-    guard written > 0
+    guard! written > 0
   }
 }
 
@@ -221,7 +217,7 @@ fn[X] local_future_get(state : Ref[LocalFutureState[X]]) -> X raise {
       state.val.closed = true
       value
     }
-    None => raise Cancelled::Cancelled
+    None => raise FutureReadError::Dropped
   }
 }
 
@@ -445,12 +441,13 @@ async fn[X] stream_pipe_write(
     coro: Some(current_coroutine()),
   }
   pipe.val.writers.push_back(writer)
-  suspend() catch {
-    _ if writer.coro is None => return writer.accepted
-    err => {
+  match suspend_check_cancel() {
+    Continue => ()
+    Cancelled if writer.coro is None => return writer.accepted
+    Cancelled => {
       writer.coro = None
       writer.value = None
-      raise err
+      raise_cancellation_signal()
     }
   }
   writer.value = None
@@ -512,14 +509,12 @@ async fn[X] stream_pipe_read(
       coro: Some(current_coroutine()),
     }
     pipe.val.readers.push_back(reader)
-    suspend() catch {
-      err => {
-        reader.coro = None
-        match reader.value {
-          Some(value) => return Some(value)
-          None if reader.ended => return None
-          None => raise err
-        }
+    if suspend_check_cancel() is Cancelled {
+      reader.coro = None
+      match reader.value {
+        Some(value) => return Some(value)
+        None if reader.ended => return None
+        None => raise_cancellation_signal()
       }
     }
     match reader.value {
@@ -614,7 +609,7 @@ pub async fn[X] Future::get(self : Future[X]) -> X {
           state.val.on_unstarted_drop = None
           producer()
         }
-        None => raise Cancelled::Cancelled
+        None => raise FutureReadError::Dropped
       }
     Promised(cell) => promised_future_get(cell)
   }
@@ -792,15 +787,10 @@ fn[X] materialize_stream_producer(
           state.val.on_unstarted_drop = None
           let sink = stream_pipe_sink(pipe)
           spawn_stream_producer(async fn() {
+            defer stream_pipe_close_writer(pipe)
             producer(sink) catch {
-              _ => {
-                sink.close() catch {
-                  _ => ()
-                }
-                return
-              }
+              _ => ()
             }
-            sink.close()
           })
         }
         None => stream_pipe_close_writer(pipe)

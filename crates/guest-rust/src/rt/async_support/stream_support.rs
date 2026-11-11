@@ -402,7 +402,10 @@ where
     ) -> Result<Self::Result, Self::InProgress> {
         match ReturnCode::decode(code) {
             ReturnCode::Blocked => Err(buf),
-            ReturnCode::Dropped(0) => Ok((StreamResult::Dropped, buf)),
+            ReturnCode::Dropped(0) => {
+                self.writer.done = true;
+                Ok((StreamResult::Dropped, buf))
+            }
             ReturnCode::Cancelled(0) => Ok((StreamResult::Cancelled, buf)),
             code @ (ReturnCode::Completed(amt)
             | ReturnCode::Dropped(amt)
@@ -648,7 +651,10 @@ unsafe impl<'a, O: StreamOps> WaitableOp for StreamReadOp<'a, O> {
             ReturnCode::Blocked => Err((buf, cleanup)),
 
             // Note that the `cleanup`, if any, is discarded here.
-            ReturnCode::Dropped(0) => Ok((StreamResult::Dropped, buf)),
+            ReturnCode::Dropped(0) => {
+                self.reader.done = true;
+                Ok((StreamResult::Dropped, buf))
+            }
 
             // When an in-progress read is successfully cancelled then the
             // allocation that was being read into, if any, is just discarded.

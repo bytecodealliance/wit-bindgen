@@ -96,6 +96,14 @@ impl CSProjectLLVMBuilder {
         <ItemGroup>
             <CustomLinkerArg Include=\"-Wl,--component-type,{camel}_component_type.wit\" />
         </ItemGroup>
+
+        <!-- wasi-sdk 34's wasm-ld puts the stack first by default, which requires the data to start
+             above the stack, but the ILCompiler sets a global base of 1024. Raising the global base
+             to the stack size links, but breaks the runtime's exception unwinding, so put the stack
+             after the data instead. -->
+        <ItemGroup>
+            <CustomLinkerArg Include=\"-Wl,--no-stack-first\" />
+        </ItemGroup>
         "
         );
 
@@ -104,6 +112,12 @@ impl CSProjectLLVMBuilder {
                 "windows" => "win",
                 "linux" => std::env::consts::OS,
                 other => todo!("OS {} not supported", other),
+            };
+            // The ILCompiler runs on the host. Windows on Arm uses the x64 package (see the
+            // `_hostArchitecture` workaround in the test runner).
+            let arch = match (os, std::env::consts::ARCH) {
+                ("linux", "aarch64") => "arm64",
+                _ => "x64",
             };
 
             // Share nuget packages between codegen and runtime tests.
@@ -117,7 +131,7 @@ impl CSProjectLLVMBuilder {
                     r#"
         <ItemGroup>
             <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-            <PackageReference Include="runtime.{os}-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+            <PackageReference Include="runtime.{os}-{arch}.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
         </ItemGroup>"#),
             );
 

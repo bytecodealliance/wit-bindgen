@@ -242,7 +242,7 @@ By using [`cargo expand`](https://github.com/dtolnay/cargo-expand) or `cargo
 doc` you can also explore the generated code. If there's a bug in `wit-bindgen`
 and the generated bindings do not compile or if there's an error in the
 generated code (which is probably also a bug in `wit-bindgen`), you can use
-`WIT_BINDGEN_DEBUG=1` as an environment variable to help debug this.
+`WIT_BINDGEN_DEBUG=/some/dir` as an environment variable to help debug this.
 
 This project can then be built with:
 
@@ -407,7 +407,10 @@ wasm-tools component new target/gen.wasm -o target/gen.component.wasm
 You may use `--gen-dir` to specify which package should be responsible for the exportation. The default is `gen` as mentioned above.
 This can be useful having one project that exports multiple worlds.
 
-When using `wit-bindgen moonbit`, you may use `--derive-show` or `--derive-eq` to derive `Show` or `Eq` traits for all types.
+Generated projects use `moon.mod` and `moon.pkg`, with WebAssembly export names
+specified by `#export_name` annotations in the export package.
+
+When using `wit-bindgen moonbit`, you may use `--derive-debug` or `--derive-eq` to generate `#derive(Debug)` or `#derive(Eq)` annotations for types without future or stream fields.
 You may also use `--derive-error`, which will make types containing `Error` as error types in MoonBit.
 
 #### MoonBit ABI compatibility
@@ -424,7 +427,7 @@ toolchain are mixed with new bindings, components may still compile but fail at
 runtime with corrupted strings/bytes or traps.
 
 You will find the files to be modified with the name `**/stub.mbt`.
-To avoid touching the files during regeneration (including `moon.pkg.json` or `moon.mod.json`) you may use `--ignore-stub`.
+To avoid touching the files during regeneration (including `moon.pkg` or `moon.mod`) you may use `--ignore-stub`.
 
 /!\ MoonBit is still evolving, so please check out the [Weekly Updates](https://www.moonbitlang.com/weekly-updates/) for any breaking changes or deprecations.
 

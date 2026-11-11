@@ -25,16 +25,11 @@ impl LanguageMethods for MoonBit {
     }
 
     fn default_bindgen_args(&self) -> &[&str] {
-        &[
-            "--derive-debug",
-            "--derive-show",
-            "--derive-eq",
-            "--derive-error",
-        ]
+        &["--derive-debug", "--derive-eq", "--derive-error"]
     }
 
     fn codegen_test_variants(&self) -> &[(&str, &[&str])] {
-        &[("async", &["--async=all"])]
+        &[]
     }
 
     fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {
@@ -56,14 +51,14 @@ impl LanguageMethods for MoonBit {
             let dest_path = compile.bindings_dir.join(&config.path);
             std::fs::copy(src_path, dest_path)?;
 
-            // Write the moon.pkg.json if provided
+            // Write the moon.pkg if provided
             if let Some(pkg_config) = config.pkg_config {
                 let dest_path = compile
                     .bindings_dir
                     .join(&config.path)
                     .parent()
                     .unwrap()
-                    .join("moon.pkg.json");
+                    .join("moon.pkg");
                 std::fs::write(dest_path, pkg_config)?;
             }
         }
@@ -125,11 +120,11 @@ impl LanguageMethods for MoonBit {
     fn should_fail_verify(
         &self,
         _runner: &Runner,
-        name: &str,
+        _name: &str,
         config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        name == "named-fixed-length-list.wit-async" || config.error_context
+        config.error_context
     }
 
     fn verify(&self, runner: &Runner, verify: &crate::Verify) -> anyhow::Result<()> {

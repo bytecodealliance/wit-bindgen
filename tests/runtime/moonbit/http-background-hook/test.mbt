@@ -1,7 +1,15 @@
 //@ wasmtime-flags = '-Wcomponent-model-async -S p3 -S http'
 //@ [lang]
 //@ path = 'gen/interface/wasi/http/handler/stub.mbt'
-//@ pkg_config = """{ "supported-targets": "+wasm", "import": [{ "path": "moonbitlang/core/buffer", "alias": "buffer" }, { "path": "example/background-hook/async-core", "alias": "async-core" }, { "path": "example/background-hook/interface/wasi/http/types", "alias": "types" }] }"""
+//@ pkg_config = '''
+//@ import {
+//@   "moonbitlang/core/buffer" @buffer,
+//@   "example/background-hook/async-core" @async-core,
+//@   "example/background-hook/interface/wasi/http/types" @types,
+//@ }
+//@
+//@ supported_targets = "wasm"
+//@ '''
 
 ///|
 pub async fn handle(

@@ -1,0 +1,20 @@
+//@ async = true
+package test:rust-spawn-and-await;
+
+interface i {
+  start: async func();
+  await-task: async func() -> option<u32>;
+  cancel-task: async func() -> option<u32>;
+  resolve: async func();
+  await-resolve: async func();
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

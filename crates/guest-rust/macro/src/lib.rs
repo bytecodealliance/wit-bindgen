@@ -1,14 +1,14 @@
 use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{Token, braced, token};
-use wit_bindgen_core::AsyncFilterSet;
 use wit_bindgen_core::WorldGenerator;
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, WorldId};
+use wit_bindgen_core::{AsyncFilterSet, ChainableMethodFilterSet};
 use wit_bindgen_rust::{Opts, Ownership, WithOption};
 
 #[proc_macro]
@@ -19,10 +19,31 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .into()
 }
 
-fn anyhow_to_syn(span: Span, err: anyhow::Error) -> Error {
+fn render_error(
+    err: &(dyn std::error::Error + 'static),
+    sourcemap: &Option<&wit_bindgen_core::wit_parser::SourceMap>,
+) -> String {
+    if let Some(sourcemap) = sourcemap {
+        if let Some(e) = err.downcast_ref::<wit_bindgen_core::wit_parser::ParseError>() {
+            return e.render(sourcemap);
+        }
+        if let Some(e) = err.downcast_ref::<wit_bindgen_core::wit_parser::ResolveError>() {
+            return e.render(sourcemap);
+        }
+    }
+
+    err.to_string()
+}
+
+fn anyhow_to_syn(
+    span: Span,
+    err: anyhow::Error,
+    sourcemap: Option<&wit_bindgen_core::wit_parser::SourceMap>,
+) -> Error {
     let err = attach_with_context(err);
-    let mut msg = err.to_string();
+    let mut msg = render_error(err.as_ref(), &sourcemap);
     for cause in err.chain().skip(1) {
+        let cause = render_error(cause, &sourcemap);
         msg.push_str(&format!("\n\nCaused by:\n  {cause}"));
     }
     Error::new(span, msg)
@@ -47,7 +68,7 @@ struct Config {
     resolve: Resolve,
     world: WorldId,
     files: Vec<PathBuf>,
-    debug: bool,
+    debug: Option<syn::LitStr>,
 }
 
 /// The source of the wit package definition
@@ -65,8 +86,9 @@ impl Parse for Config {
         let mut world = None;
         let mut source = None;
         let mut features = Vec::new();
-        let mut async_configured = false;
-        let mut debug = false;
+        let mut sync_configured = false;
+        let mut method_chaining_configured = false;
+        let mut debug = None;
 
         if input.peek(token::Brace) {
             let content;
@@ -127,7 +149,18 @@ impl Parse for Config {
                         opts.additional_derive_ignore =
                             list.into_iter().map(|i| i.value()).collect()
                     }
-                    Opt::With(with) => opts.with.extend(with),
+                    Opt::AdditionalTypeAttributes(list) => opts.additional_type_attributes = list,
+                    Opt::AdditionalMemberAttributes(list) => {
+                        opts.additional_member_attributes = list
+                    }
+                    Opt::With(with) => {
+                        // `HashMap` iteration order is non-deterministic, which can cause
+                        // non-determinism in crates that invoke the macro. Sort by key so the
+                        // output is stable.
+                        let mut with: Vec<_> = with.into_iter().collect();
+                        with.sort_by(|a, b| a.0.cmp(&b.0));
+                        opts.with.extend(with)
+                    }
                     Opt::GenerateAll => {
                         opts.generate_all = true;
                     }
@@ -155,18 +188,25 @@ impl Parse for Config {
                     Opt::DisableCustomSectionLinkHelpers(disable) => {
                         opts.disable_custom_section_link_helpers = disable.value();
                     }
-                    Opt::Debug(enable) => {
-                        debug = enable.value();
+                    Opt::Debug(dir) => {
+                        debug = Some(dir);
                     }
-                    Opt::Async(val, span) => {
-                        if async_configured {
-                            return Err(Error::new(span, "cannot specify second async config"));
+                    Opt::Sync(val, span) => {
+                        if sync_configured {
+                            return Err(Error::new(span, "cannot specify second sync config"));
                         }
-                        async_configured = true;
+                        sync_configured = true;
                         opts.async_ = val;
                     }
-                    Opt::EnableMethodChaining(enable) => {
-                        opts.enable_method_chaining = enable.value();
+                    Opt::ChainableMethods(val, span) => {
+                        if method_chaining_configured {
+                            return Err(Error::new(
+                                span,
+                                "cannot specify second method chaining config",
+                            ));
+                        }
+                        method_chaining_configured = true;
+                        opts.chainable_methods = val;
                     }
                     Opt::MergeStructurallyEqualTypes(enable) => {
                         opts.merge_structurally_equal_types = Some(Some(enable.value()))
@@ -181,11 +221,10 @@ impl Parse for Config {
                 )]));
             }
         }
-        let (resolve, main_packages, files) =
-            parse_source(&source, &features).map_err(|err| anyhow_to_syn(call_site, err))?;
+        let (resolve, main_packages, files) = parse_source(&source, &features)?;
         let world = resolve
             .select_world(&main_packages, world.as_deref())
-            .map_err(|e| anyhow_to_syn(call_site, e))?;
+            .map_err(|e| anyhow_to_syn(call_site, e, None))?;
         Ok(Config {
             opts,
             resolve,
@@ -200,80 +239,128 @@ impl Parse for Config {
 fn parse_source(
     source: &Option<Source>,
     features: &[String],
-) -> anyhow::Result<(Resolve, Vec<PackageId>, Vec<PathBuf>)> {
+) -> syn::Result<(Resolve, Vec<PackageId>, Vec<PathBuf>)> {
     let mut resolve = Resolve::default();
     resolve.features.extend(features.iter().cloned());
     let mut files = Vec::new();
     let mut pkgs = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let mut parse = |paths: &[PathBuf]| -> anyhow::Result<()> {
-        for path in paths {
-            let p = root.join(path);
-            // Try to normalize the path to make the error message more understandable when
-            // the path is not correct. Fallback to the original path if normalization fails
-            // (probably return an error somewhere else).
-            let normalized_path = match std::fs::canonicalize(&p) {
-                Ok(p) => p,
-                Err(_) => p.to_path_buf(),
-            };
-            let (pkg, sources) = resolve.push_path(normalized_path)?;
-            pkgs.push(pkg);
-            files.extend(sources.paths().map(|p| p.to_owned()));
-        }
-        Ok(())
-    };
-    let default = root.join("wit");
-    match source {
-        Some(Source::Inline(s, path)) => {
-            match path {
-                Some(p) => parse(p)?,
-                // If no `path` is explicitly specified still parse the default
-                // `wit` directory if it exists. Don't require its existence,
-                // however, as `inline` can be used in lieu of a folder. Test
-                // whether it exists and only if there is it parsed.
-                None => {
-                    if default.exists() {
-                        parse(&[default])?;
+
+    let mut try_parse = || -> anyhow::Result<()> {
+        let mut parse = |paths: &[PathBuf]| -> anyhow::Result<()> {
+            for path in paths {
+                let p = root.join(path);
+                // Try to normalize the path to make the error message more understandable when
+                // the path is not correct. Fallback to the original path if normalization fails
+                // (probably return an error somewhere else).
+                let normalized_path = match std::fs::canonicalize(&p) {
+                    Ok(p) => p,
+                    Err(_) => p.to_path_buf(),
+                };
+                let (pkg, sources) = resolve.push_path(normalized_path)?;
+                pkgs.push(pkg);
+                files.extend(sources.paths().map(|p| p.to_owned()));
+            }
+            Ok(())
+        };
+        let default = root.join("wit");
+
+        match source {
+            Some(Source::Inline(s, path)) => {
+                match path {
+                    Some(p) => parse(p)?,
+                    // If no `path` is explicitly specified still parse the default
+                    // `wit` directory if it exists. Don't require its existence,
+                    // however, as `inline` can be used in lieu of a folder. Test
+                    // whether it exists and only if there is it parsed.
+                    None => {
+                        if default.exists() {
+                            parse(&[default])?;
+                        }
                     }
                 }
+                pkgs.clear();
+                pkgs.push(resolve.push_str("macro-input", s)?);
+                Ok(())
             }
-            pkgs.clear();
-            pkgs.push(resolve.push_str("macro-input", s)?);
+            Some(Source::Paths(p)) => parse(p),
+            None => parse(&[default]),
         }
-        Some(Source::Paths(p)) => parse(p)?,
-        None => parse(&[default])?,
     };
+
+    try_parse().map_err(|e| anyhow_to_syn(Span::call_site(), e, Some(&resolve.source_map)))?;
 
     Ok((resolve, pkgs, files))
 }
 
 impl Config {
+    fn debug_output_dir(&self) -> Result<Option<PathBuf>> {
+        let dir = match (&self.debug, std::env::var_os("WIT_BINDGEN_DEBUG")) {
+            (Some(dir), _) => {
+                let value = dir.value();
+                if value.is_empty() {
+                    return Err(Error::new(dir.span(), "`debug` directory cannot be empty"));
+                }
+                PathBuf::from(value)
+            }
+            (None, Some(env)) => {
+                // Historically `WIT_BINDGEN_DEBUG=1` was the documented way to
+                // turn this on, so reject that (and `0`, which previously
+                // still enabled debug output) rather than silently writing
+                // to a directory named `1` or `0`.
+                if env.is_empty() || env == "1" || env == "0" {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        format!(
+                            "`WIT_BINDGEN_DEBUG={}` is no longer supported; set it to \
+                             a directory to write generated code to instead, for example \
+                             `WIT_BINDGEN_DEBUG=/tmp/wit-bindgen-debug`",
+                            env.display(),
+                        ),
+                    ));
+                }
+                PathBuf::from(env)
+            }
+            (None, None) => return Ok(None),
+        };
+        let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+        Ok(Some(root.join(dir)))
+    }
+
     fn expand(mut self) -> Result<TokenStream> {
+        let debug_output_dir = self.debug_output_dir()?;
         let mut files = Default::default();
         let mut generator = self.opts.build();
         generator
             .generate(&mut self.resolve, self.world, &mut files)
-            .map_err(|e| anyhow_to_syn(Span::call_site(), e))?;
+            .map_err(|e| anyhow_to_syn(Span::call_site(), e, None))?;
         let (_, src) = files.iter().next().unwrap();
         let mut src = std::str::from_utf8(src).unwrap().to_string();
 
-        // If a magical `WIT_BINDGEN_DEBUG` environment variable is set then
-        // place a formatted version of the expanded code into a file. This file
-        // will then show up in rustc error messages for any codegen issues and can
-        // be inspected manually.
-        if std::env::var("WIT_BINDGEN_DEBUG").is_ok() || self.debug {
+        // If debugging is set then place a formatted version of the expanded
+        // code into a file in that directory. This file will then show up in
+        // rustc error messages for any codegen issues and can be inspected
+        // manually.
+        if let Some(root) = debug_output_dir {
             static INVOCATION: AtomicUsize = AtomicUsize::new(0);
-            let root = Path::new(env!("DEBUG_OUTPUT_DIR"));
             let world_name = &self.resolve.worlds[self.world].name;
             let n = INVOCATION.fetch_add(1, Relaxed);
-            let path = root.join(format!("{world_name}{n}.rs"));
+            let krate = std::env::var("CARGO_CRATE_NAME").unwrap_or_default();
+            let path = root.join(format!("{krate}-{world_name}-{n}.rs"));
 
             // optimistically format the code but don't require success
             let contents = match fmt(&src) {
                 Ok(formatted) => formatted,
                 Err(_) => src.clone(),
             };
-            std::fs::write(&path, contents.as_bytes()).unwrap();
+            std::fs::create_dir_all(&root)
+                .and_then(|()| std::fs::write(&path, contents.as_bytes()))
+                .map_err(|e| {
+                    Error::new(
+                        Span::call_site(),
+                        format!("failed to write debug output to `{}`: {e}", path.display()),
+                    )
+                })?;
 
             src = format!("include!({path:?});");
         }
@@ -312,6 +399,8 @@ mod kw {
     syn::custom_keyword!(export_prefix);
     syn::custom_keyword!(additional_derives);
     syn::custom_keyword!(additional_derives_ignore);
+    syn::custom_keyword!(additional_type_attributes);
+    syn::custom_keyword!(additional_member_attributes);
     syn::custom_keyword!(with);
     syn::custom_keyword!(generate_all);
     syn::custom_keyword!(type_section_suffix);
@@ -324,7 +413,8 @@ mod kw {
     syn::custom_keyword!(disable_custom_section_link_helpers);
     syn::custom_keyword!(imports);
     syn::custom_keyword!(debug);
-    syn::custom_keyword!(enable_method_chaining);
+    syn::custom_keyword!(chainable_methods);
+    syn::custom_keyword!(sync);
     syn::custom_keyword!(merge_structurally_equal_types);
 }
 
@@ -394,6 +484,8 @@ enum Opt {
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
     AdditionalDerivesIgnore(Vec<syn::LitStr>),
+    AdditionalTypeAttributes(Vec<(String, String)>),
+    AdditionalMemberAttributes(Vec<(String, String)>),
     With(HashMap<String, WithOption>),
     GenerateAll,
     TypeSectionSuffix(syn::LitStr),
@@ -404,9 +496,9 @@ enum Opt {
     GenerateUnusedTypes(syn::LitBool),
     Features(Vec<syn::LitStr>),
     DisableCustomSectionLinkHelpers(syn::LitBool),
-    Async(AsyncFilterSet, Span),
-    Debug(syn::LitBool),
-    EnableMethodChaining(syn::LitBool),
+    Sync(AsyncFilterSet, Span),
+    Debug(syn::LitStr),
+    ChainableMethods(ChainableMethodFilterSet, Span),
     MergeStructurallyEqualTypes(syn::LitBool),
 }
 
@@ -522,6 +614,26 @@ impl Parse for Opt {
             syn::bracketed!(contents in input);
             let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
             Ok(Opt::AdditionalDerivesIgnore(list.iter().cloned().collect()))
+        } else if l.peek(kw::additional_type_attributes) {
+            input.parse::<kw::additional_type_attributes>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            braced!(contents in input);
+            let fields: Punctuated<_, Token![,]> =
+                contents.parse_terminated(attr_map_field_parse, Token![,])?;
+            Ok(Opt::AdditionalTypeAttributes(
+                fields.into_iter().flatten().collect(),
+            ))
+        } else if l.peek(kw::additional_member_attributes) {
+            input.parse::<kw::additional_member_attributes>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            braced!(contents in input);
+            let fields: Punctuated<_, Token![,]> =
+                contents.parse_terminated(attr_map_field_parse, Token![,])?;
+            Ok(Opt::AdditionalMemberAttributes(
+                fields.into_iter().flatten().collect(),
+            ))
         } else if l.peek(kw::with) {
             input.parse::<kw::with>()?;
             input.parse::<Token![:]>()?;
@@ -572,25 +684,40 @@ impl Parse for Opt {
             input.parse::<kw::debug>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Debug(input.parse()?))
-        } else if l.peek(kw::enable_method_chaining) {
-            input.parse::<kw::enable_method_chaining>()?;
+        } else if l.peek(kw::chainable_methods) {
+            let span = input.parse::<kw::chainable_methods>()?.span;
             input.parse::<Token![:]>()?;
-            Ok(Opt::EnableMethodChaining(input.parse()?))
-        } else if l.peek(Token![async]) {
-            let span = input.parse::<Token![async]>()?.span;
+
+            let mut set = ChainableMethodFilterSet::default();
+            let contents;
+            syn::bracketed!(contents in input);
+            for val in contents.parse_terminated(|p| p.parse::<syn::LitStr>(), Token![,])? {
+                set.push(&val.value());
+            }
+            Ok(Opt::ChainableMethods(set, span))
+        } else if l.peek(kw::sync) {
+            let span = input.parse::<kw::sync>()?.span;
             input.parse::<Token![:]>()?;
+            let mut set = AsyncFilterSet::default();
             if input.peek(syn::LitBool) {
-                let enabled = input.parse::<syn::LitBool>()?.value;
-                Ok(Opt::Async(AsyncFilterSet::all(enabled), span))
+                if input.parse::<syn::LitBool>()?.value {
+                    set.push("all");
+                }
             } else {
-                let mut set = AsyncFilterSet::default();
                 let contents;
                 syn::bracketed!(contents in input);
                 for val in contents.parse_terminated(|p| p.parse::<syn::LitStr>(), Token![,])? {
                     set.push(&val.value());
                 }
-                Ok(Opt::Async(set, span))
             }
+            Ok(Opt::Sync(set, span))
+        } else if input.peek(Token![async]) {
+            let span = input.parse::<Token![async]>()?.span;
+            Err(Error::new(
+                span,
+                "the `async` option has been removed: functions that are `async` \
+                 in WIT get async bindings by default, and `sync` opts them out",
+            ))
         } else if l.peek(kw::merge_structurally_equal_types) {
             input.parse::<kw::merge_structurally_equal_types>()?;
             input.parse::<Token![:]>()?;
@@ -599,6 +726,30 @@ impl Parse for Opt {
             Err(l.error())
         }
     }
+}
+
+// Parse one `"selector": [#[attr] ...]` entry into a pair per attribute.
+fn attr_map_field_parse(input: ParseStream<'_>) -> Result<Vec<(String, String)>> {
+    let selector = input.parse::<syn::LitStr>()?;
+    input.parse::<Token![:]>()?;
+    let contents;
+    let bracket = syn::bracketed!(contents in input);
+    let attrs = contents.call(syn::Attribute::parse_outer)?;
+    if !contents.is_empty() {
+        return Err(contents.error("expected an outer attribute, `#[...]`"));
+    }
+    // An empty list would flatten away and escape the unused-selector check.
+    if attrs.is_empty() {
+        return Err(Error::new(
+            bracket.span.join(),
+            "attribute list must not be empty",
+        ));
+    }
+    let selector = selector.value();
+    Ok(attrs
+        .into_iter()
+        .map(|a| (selector.clone(), a.to_token_stream().to_string()))
+        .collect())
 }
 
 fn with_field_parse(input: ParseStream<'_>) -> Result<(String, WithOption)> {

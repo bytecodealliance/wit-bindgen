@@ -1,0 +1,217 @@
+package foo:bar;
+
+world test {
+    export reserved-function-names;
+    import resource-collisions;
+    import record-collisions;
+    import variant-collisions;
+    import enum-collisions;
+    import alias-collisions;
+    import flags-collisions;
+}
+
+interface reserved-function-names {
+    variant a {
+        tag(string),
+    }
+
+    resource b {
+        take-handle: func();
+        set-handle: func();
+        handle: func();
+        drop: func();
+        on-drop: func();
+    }
+}
+
+interface resource-collisions {
+    // Variant
+    resource a-b-c {
+        f: func();
+    }
+    variant a-b {
+        c,
+    }
+
+    // Enum
+    resource z-y-x {
+        f: func();
+    }
+    enum z-y {
+        x,
+    }
+
+    // Flags
+    resource q-r-s {
+        f: func();
+    }
+    flags q-r {
+        s,
+    }
+}
+
+interface record-collisions {
+    // Variant
+    record a-b-c {
+        foo: string,
+    }
+    variant a-b {
+        c,
+    }
+
+    // Enum
+    record z-y-x {
+        foo: string,
+    }
+    enum z-y {
+        x,
+    }
+
+    // Flags
+    record q-r-s {
+        foo: string,
+    }
+    flags q-r {
+        s,
+    }
+}
+
+interface variant-collisions {
+    // Enum
+    variant a-b-c {
+        d,
+    }
+    enum a-b {
+        c,
+    }
+
+    // Flags
+    variant z-y-x {
+        w,
+    }
+    flags z-y {
+        x,
+    }
+
+    // Record
+    variant q-r {
+        s,
+    }
+    record q-r-s {
+        foo: string,
+    }
+
+    // Resource
+    variant d-e {
+        f,
+    }
+    resource d-e-f {
+        f: func();
+    }
+
+    // Alias
+    variant h-i {
+        j,
+    }
+    type h-i-j = string;
+}
+
+interface enum-collisions {
+    // Variant
+    enum a-b {
+        c,
+    }
+    variant a-b-c {
+        d,
+    }
+
+    // Flags
+    enum x-y-z {
+        w,
+    }
+    flags x-y {
+        z,
+    }
+
+    // Record
+    enum q-r {
+        s,
+    }
+    record q-r-s {
+        foo: string
+    }
+
+    // Resource
+    enum t-u {
+        v,
+    }
+    resource t-u-v {
+        f: func();
+    }
+
+    // Alias
+    enum h-i {
+        j,
+    }
+    type h-i-j = string;
+}
+
+interface alias-collisions {
+    // Variant
+    type a-b-c = string;
+    variant a-b {
+        c(a-b-c),
+    }
+
+    // Enum
+    type z-y-x = string;
+    enum z-y {
+        x,
+    }
+
+    // Flags
+    type q-r-s = string;
+    flags q-r {
+        s,
+    }
+}
+
+interface flags-collisions {
+    // Variant
+    flags a-b-c {
+        d,
+    }
+    variant a-b {
+        c,
+    }
+
+    // Enum
+    flags d-e-f {
+        g,
+    }
+    enum d-e {
+        f,
+    }
+
+    // Record
+    flags x-y {
+        z,
+    }
+    record x-y-z {
+        foo: string,
+    }
+
+    // Resource
+    flags h-i {
+        j,
+    }
+    resource h-i-j {
+        f: func();
+    }
+
+    // Alias
+    flags l-m {
+        n,
+    }
+    type l-m-n = string;
+}

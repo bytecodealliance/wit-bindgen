@@ -66,7 +66,14 @@
 //! While doing this everything was moved into a vtable structure instead of
 //! inline in `wasip3_task` to make it easier to add more function pointers
 //! in the future if necessary.
+//!
+//! ### V3
+//!
+//! This was added 2026-09-25 in response to #1305 to get `spawn_local` working
+//! across versions of `wit-bindgen`. This added a new entry to the vtable below
+//! with a new v3 version of the structure.
 
+use alloc::boxed::Box;
 use core::ffi::c_void;
 
 extern_wasm! {
@@ -90,6 +97,7 @@ extern_wasm! {
 /// fields `ptr`, `waitable_register`, and `waitable_unregister`.
 pub const WASIP3_TASK_V1: u32 = 1;
 pub const WASIP3_TASK_V2: u32 = 2;
+pub const WASIP3_TASK_V3: u32 = 3;
 
 /// Indirect "vtable" used to connect imported functions and exported tasks.
 /// Executors (e.g. exported functions) define and manage this while imports
@@ -128,6 +136,17 @@ pub struct wasip3_task_v2 {
     /// An always-valid pointer to a list of function pointers, described
     /// below.
     pub vtable: &'static wasip3_task_vtable,
+}
+
+/// Representation when `wasip3_task::version` is `WASIP3_TASK_V3`.
+#[repr(C)]
+pub struct wasip3_task_v3 {
+    /// The original task structure.
+    pub v1: wasip3_task,
+
+    /// An always-valid pointer to a list of function pointers, described
+    /// below.
+    pub vtable: &'static wasip3_task_vtable_v3,
 }
 
 /// Function pointer operations that can operate on `wasip3_task::ptr`.
@@ -173,4 +192,21 @@ pub struct wasip3_task_vtable {
     /// This must not be called on the `ptr` value within `wasip3_task::ptr` as
     /// that's not managed with this lifetime.
     pub drop: unsafe extern "C" fn(ptr: *mut c_void),
+}
+
+/// Function pointer operations that can operate on `wasip3_task::ptr`.
+///
+/// This was introduced in the "v3" ABI and is a member of `wasip3_task_v3`.
+#[repr(C)]
+pub struct wasip3_task_vtable_v3 {
+    pub v2: wasip3_task_vtable,
+
+    /// Optionally-specified hook to spawn a rust future as a task.
+    ///
+    /// This takes the `task.ptr` field as the first argument and the
+    /// task-to-spawn as the second argument. This is Rust-specific and hence
+    /// uses the "Rust" ABI. This additionally is optionally specified because
+    /// not all versions of `wit-bindgen` have support for spawning (it's a
+    /// crate feature).
+    pub rust_spawn: Option<unsafe fn(ptr: *mut c_void, Box<dyn Future<Output = ()>>)>,
 }

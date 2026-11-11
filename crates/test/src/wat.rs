@@ -39,7 +39,7 @@ impl LanguageMethods for Wat {
 
         let p1 = compile.output.with_extension("core.wasm");
         super::write_if_different(&p1, wasm)?;
-        runner.convert_p1_to_component(&p1, compile)?;
+        runner.convert_core_module_to_component(&p1, compile)?;
         Ok(())
     }
 

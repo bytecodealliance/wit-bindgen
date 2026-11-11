@@ -112,6 +112,12 @@ impl PkgResolver {
                     func.name.split(".").last().unwrap().to_moonbit_ident()
                 )
             }
+            FunctionKind::Getter
+            | FunctionKind::Setter
+            | FunctionKind::MethodGetter(_)
+            | FunctionKind::MethodSetter(_)
+            | FunctionKind::StaticGetter(_)
+            | FunctionKind::StaticSetter(_) => todo!(),
         }
     }
 

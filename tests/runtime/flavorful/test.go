@@ -56,7 +56,7 @@ var first bool = true
 func ErrnoResult() Result[Unit, MyErrno] {
 	if first {
 		first = false
-		return Err[Unit, MyErrno](MyErrnoB)
+		return Err[Unit, MyErrno](MyErrno_B)
 	} else {
 		return Ok[Unit, MyErrno](Unit{})
 	}
@@ -92,13 +92,13 @@ func ListOfVariants(bools []bool, results []Result[Unit, Unit], enums []MyErrno)
 	if len(enums) != 2 {
 		panic("trouble")
 	}
-	if enums[0] != MyErrnoSuccess {
+	if enums[0] != MyErrno_Success {
 		panic("trouble")
 	}
-	if enums[1] != MyErrnoA {
+	if enums[1] != MyErrno_A {
 		panic("trouble")
 	}
 	return []bool{false, true},
 		[]Result[Unit, Unit]{Err[Unit, Unit](Unit{}), Ok[Unit, Unit](Unit{})},
-		[]MyErrno{MyErrnoA, MyErrnoB}
+		[]MyErrno{MyErrno_A, MyErrno_B}
 }

@@ -21,13 +21,26 @@ pub struct Task[X] {
 }
 
 ///|
+/// An observed task terminated by cancellation. This is an ordinary error in
+/// the waiter, distinct from cancellation of the waiter itself.
+#derive(Debug)
+pub suberror TaskCancelled
+
+///|
+#deprecated
+pub extend TaskCancelled with Debug::{to_repr}
+
+///|
 /// Wait for a task and retrieve its result value.
 /// If the task fails, `wait` will also fail with the same error.
 ///
-/// If the current task is cancelled, `wait` return immediately with error.
+/// If the target task was cancelled, `wait` raises `TaskCancelled`.
+/// Cancellation of the current task propagates as a cancellation signal.
 pub async fn[X] Task::wait(self : Task[X]) -> X {
-  self.coro.wait()
-  self.value.val.unwrap()
+  match self.coro.wait() {
+    Continue => self.value.val.unwrap()
+    Cancelled => raise TaskCancelled::TaskCancelled
+  }
 }
 
 ///|

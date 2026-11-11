@@ -17,6 +17,49 @@ struct ping_task {
   exports_test_future_string_writer_t writer;
 };
 
+struct pong_task {
+  test_string_t read_result;
+  exports_test_future_string_t future;
+  test_waitable_set_t set;
+};
+
+#ifdef __wasm_libcall_thread_context__
+static _Thread_local struct ping_task *current_ping = NULL;
+static _Thread_local struct pong_task *current_pong = NULL;
+
+static void set_ping_task(struct ping_task *task) {
+  current_ping = task;
+}
+
+static struct ping_task *get_ping_task(void) {
+  return current_ping;
+}
+
+static void set_pong_task(struct pong_task *task) {
+  current_pong = task;
+}
+
+static struct pong_task *get_pong_task(void) {
+  return current_pong;
+}
+#else
+static void set_ping_task(struct ping_task *task) {
+  test_context_set_0(task);
+}
+
+static struct ping_task *get_ping_task(void) {
+  return (struct ping_task*) test_context_get_0();
+}
+
+static void set_pong_task(struct pong_task *task) {
+  test_context_set_0(task);
+}
+
+static struct pong_task *get_pong_task(void) {
+  return (struct pong_task*) test_context_get_0();
+}
+#endif
+
 test_callback_code_t exports_test_ping(exports_test_future_string_t x, test_string_t *y) {
   // Initialize a new task
   struct ping_task *task = (struct ping_task*) malloc(sizeof(struct ping_task));
@@ -33,12 +76,12 @@ test_callback_code_t exports_test_ping(exports_test_future_string_t x, test_stri
 
   // Register ourselves as waiting on the future, then block our task.
   test_waitable_join(task->future, task->set);
-  test_context_set_0(task);
+  set_ping_task(task);
   return TEST_CALLBACK_CODE_WAIT(task->set);
 }
 
 test_callback_code_t exports_test_ping_callback(test_event_t *event) {
-  struct ping_task *task = (struct ping_task*) test_context_get_0();
+  struct ping_task *task = get_ping_task();
   switch (task->state) {
     case PING_S1: {
       // Assert that our future read completed and discard the read end of the
@@ -108,12 +151,6 @@ test_callback_code_t exports_test_ping_callback(test_event_t *event) {
 
 }
 
-struct pong_task {
-  test_string_t read_result;
-  exports_test_future_string_t future;
-  test_waitable_set_t set;
-};
-
 test_callback_code_t exports_test_pong(exports_test_future_string_t x) {
   struct pong_task *task = (struct pong_task*) malloc(sizeof(struct pong_task));
   assert(task != NULL);
@@ -126,12 +163,12 @@ test_callback_code_t exports_test_pong(exports_test_future_string_t x) {
   assert(status == TEST_WAITABLE_STATUS_BLOCKED);
   test_waitable_join(task->future, task->set);
 
-  test_context_set_0(task);
+  set_pong_task(task);
   return TEST_CALLBACK_CODE_WAIT(task->set);
 }
 
 test_callback_code_t exports_test_pong_callback(test_event_t *event) {
-  struct pong_task *task = (struct pong_task*) test_context_get_0();
+  struct pong_task *task = get_pong_task();
 
   // assert this event is a future read completion
   assert(event->event == TEST_EVENT_FUTURE_READ);

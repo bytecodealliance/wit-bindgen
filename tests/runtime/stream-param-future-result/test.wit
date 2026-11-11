@@ -1,0 +1,22 @@
+//@ async = true
+package my:test;
+
+interface i {
+  // Like `wasi:cli/stdout.write-via-stream`: a stream parameter and a future result. It is async
+  // so the export can keep reading after it returns the future.
+  // Futures and streams share one index space in the canonical ABI, so the stream is 0 and the
+  // future is 1 in this function's intrinsic import names.
+  //
+  // Sums the bytes read from `data` once it closes, or fails if one of them is zero.
+  consume: async func(data: stream<u8>) -> future<result<u32, string>>;
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}

@@ -60,14 +60,14 @@ fn reschedule(lane : TaskLane) -> Unit {
   for _ in 0..<count {
     guard lane.run_later.pop_front() is Some(coro) else { break }
     coro.ready = false
-    guard coro.state is Suspend(ok_cont~, err_cont~) else {  }
+    guard coro.state is Suspend(cont) else {  }
     coro.state = Running
     let last_coro = scheduler.curr_coro
     scheduler.curr_coro = Some(coro)
     if coro.cancelled && !coro.shielded {
-      err_cont(Cancelled::Cancelled)
+      cont(Cancelled)
     } else {
-      ok_cont(())
+      cont(Continue)
     }
     scheduler.curr_coro = last_coro
   }

@@ -52,3 +52,81 @@ pub enum CSharpRuntime {
     NativeAOT,
     Mono,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::csharp_ident::ToCSharpIdent;
+    use crate::interface::{
+        resource_func_name, resource_handle_property_name, resource_thandle_struct_name,
+        resource_wasm_interop_class_name, variant_accessor_name, variant_new_func_name,
+        variant_tag_const_name, variant_tag_field_name, variant_tags_class_name,
+    };
+
+    #[test]
+    fn test_csharp_ident_keywords() {
+        assert_eq!("delegate".to_csharp_ident(), "@delegate");
+        assert_eq!("DELEGATE".to_csharp_ident(), "@delegate");
+        assert_eq!("Delegate".to_csharp_ident(), "@delegate");
+        assert_eq!("class".to_csharp_ident(), "@class");
+        assert_eq!("CLASS".to_csharp_ident(), "@class");
+        assert_eq!("normal-name".to_csharp_ident(), "normalName");
+    }
+
+    #[test]
+    fn test_variant_collision_helpers() {
+        assert_eq!(variant_tag_field_name("Foo"), "Tag");
+        assert_eq!(variant_tag_field_name("Tag"), "Tag_");
+
+        assert_eq!(variant_tags_class_name("Foo"), "Tags");
+        assert_eq!(variant_tags_class_name("Tags"), "Tags_");
+
+        assert_eq!(variant_tag_const_name("Tags", "Foo"), "Foo");
+        assert_eq!(variant_tag_const_name("Tags", "Tags"), "Tags_");
+        assert_eq!(variant_tag_const_name("Tags_", "Tags"), "Tags");
+
+        assert_eq!(variant_accessor_name("Foo", "bar"), "AsBar");
+        assert_eq!(variant_accessor_name("AsBar", "bar"), "AsBar_");
+
+        let accessors = vec!["AsTag".to_string(), "AsFoo".to_string()];
+        assert_eq!(
+            variant_new_func_name("Ingredient", "Tag", &accessors),
+            "Tag_"
+        );
+        assert_eq!(
+            variant_new_func_name("Ingredient", "Tags", &accessors),
+            "Tags_"
+        );
+        assert_eq!(
+            variant_new_func_name("Ingredient", "Ingredient", &accessors),
+            "Ingredient_"
+        );
+        assert_eq!(
+            variant_new_func_name("Ingredient", "AsFoo", &accessors),
+            "AsFoo_"
+        );
+        assert_eq!(variant_new_func_name("Tag", "Tag", &accessors), "Tag__");
+        assert_eq!(variant_new_func_name("Tags", "Tags", &accessors), "Tags__");
+    }
+
+    #[test]
+    fn test_resource_collision_helpers() {
+        assert_eq!(resource_handle_property_name("Foo"), "Handle");
+        assert_eq!(resource_handle_property_name("Handle"), "Handle_");
+
+        assert_eq!(resource_thandle_struct_name("Foo"), "THandle");
+        assert_eq!(resource_thandle_struct_name("THandle"), "THandle_");
+
+        assert_eq!(resource_wasm_interop_class_name("Foo"), "WasmInterop");
+        assert_eq!(
+            resource_wasm_interop_class_name("WasmInterop"),
+            "WasmInterop_"
+        );
+
+        assert_eq!(resource_func_name("Foo", "Handle"), "Handle_");
+        assert_eq!(resource_func_name("Foo", "THandle"), "THandle_");
+        assert_eq!(resource_func_name("Foo", "WasmInterop"), "WasmInterop_");
+        assert_eq!(resource_func_name("Foo", "Dispose"), "Dispose_");
+        assert_eq!(resource_func_name("Foo", "Foo"), "Foo_");
+        assert_eq!(resource_func_name("Dispose", "Dispose"), "Dispose__");
+    }
+}
