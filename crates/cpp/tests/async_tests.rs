@@ -43,6 +43,10 @@ fn test_async_cpp_generation() {
 
     // Verify [[maybe_unused]] auto ret to prevent -Wunused-variable warnings
     assert!(cpp_src.contains("[[maybe_unused]] auto ret = "));
+
+    // Verify [callback][async-lift] export and SubtaskAwaiter suspension
+    assert!(cpp_src.contains("[callback][async-lift]run"));
+    assert!(cpp_src.contains("wit::detail::SubtaskAwaiter"));
 }
 
 #[test]
@@ -90,6 +94,7 @@ fn test_async_cpp_clang_compilation() {
         interface api {
             compute: async func(a: u32, b: u32) -> u32;
             ping: async func();
+            stream-words: async func(x: future<string>) -> stream<string>;
         }
 
         world app {

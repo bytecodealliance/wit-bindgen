@@ -1026,7 +1026,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         // from an async-lifted wasm export means we don't need to pass
         // ownership, but we pass ownership in all other cases.
         let realloc = match (variant, lift_lower, async_) {
-            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults, _)
+            (
+                AbiVariant::GuestImport | AbiVariant::GuestImportAsync,
+                LiftLower::LowerArgsLiftResults,
+                _,
+            )
             | (
                 AbiVariant::GuestExport
                 | AbiVariant::GuestExportAsync
@@ -1177,6 +1181,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // async progress.
                     if let Some(ty) = &func.result {
                         self.lift(ty)
+                    }
+                } else if variant == AbiVariant::GuestImportAsync {
+                    if let Some(ty) = &func.result {
+                        self.stack.pop().unwrap();
+                        self.lift(ty);
                     }
                 }
 
