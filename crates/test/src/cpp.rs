@@ -42,18 +42,11 @@ impl LanguageMethods for Cpp {
     fn should_fail_verify(
         &self,
         _runner: &Runner,
-        name: &str,
-        config: &crate::config::WitConfig,
+        _name: &str,
+        _config: &crate::config::WitConfig,
         _args: &[String],
     ) -> bool {
-        // Compiles on C++ despite the blanket async exclusion below.
-        if name == "issue-1598.wit" {
-            return false;
-        }
-        return match name {
-            "named-fixed-length-list.wit" => true,
-            _ => false,
-        } || config.async_;
+        false
     }
 
     fn prepare(&self, runner: &mut Runner) -> anyhow::Result<()> {

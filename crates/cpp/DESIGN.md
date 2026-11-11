@@ -94,3 +94,16 @@ For now for functions the guest import convention is used in both directions:
   with one modification:
 
    Resource IDs become usize, so you can optimize the resource table away.
+
+## C++20 Coroutine & Async Support
+
+The C++ backend targets C++20 (`-std=c++20`).
+
+Asynchronous functions in WIT are mapped to idiomatic C++20 coroutines:
+- Functions defined as `async func(...) -> T` or filtered via `--async`/`--sync` return `wit::Task<T>` (or `wit::Task<void>` for functions returning void).
+- Callers can `co_await` imported async functions or inspect completion with `.done()`, `.get()`.
+- Export implementations use `co_return` (or `co_return value;`) within a coroutine body returning `wit::Task<T>`.
+- WIT `future<T>` is mapped to `wit::FutureReader<T>`.
+- WIT `stream<T>` is mapped to `wit::StreamReader<T>`.
+- WIT `error-context` is mapped to `wit::ErrorContext`.
+
