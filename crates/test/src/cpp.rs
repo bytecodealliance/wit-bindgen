@@ -146,12 +146,8 @@ impl LanguageMethods for Cpp {
         .arg(&bindings_object);
         runner.run_command(&mut cmd)?;
 
-        // Now link the runner's source code with the above object and the
-        // component-type object into a core module, then componentize with
-        // the workspace's `wit-component` (mirroring the C harness). This
-        // skips the WIT processing of the wasi-sdk's bundled
-        // `wasm-component-ld`, which may predate component-model features
-        // used by the embedded metadata (e.g. `map`).
+        // Now compile the runner's source code to with the above object and the
+        // component-type object into a final component.
         let output = compile.output.with_extension("core.wasm");
         let mut cmd = Command::new(compiler);
         cmd.arg(&compile.component.path)
