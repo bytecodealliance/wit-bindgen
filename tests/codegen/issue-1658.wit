@@ -1,0 +1,16 @@
+package test:issue1658;
+
+interface options {
+  record options {
+    flag: bool,
+  }
+
+  resource client {
+    constructor(o: options);
+    get-flag: func() -> bool;
+  }
+}
+
+world test {
+  export options;
+}
