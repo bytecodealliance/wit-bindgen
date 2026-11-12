@@ -1,0 +1,24 @@
+//@ async = true
+package test:async-ns;
+
+interface types {
+  record callback-id {
+    id: u32,
+  }
+}
+
+interface callbacks {
+  use types.{callback-id};
+
+  invoke-async: async func(cb: callback-id) -> result<result<list<u8>, string>>;
+}
+
+world test {
+  export callbacks;
+}
+
+world runner {
+  import callbacks;
+
+  export run: async func();
+}
