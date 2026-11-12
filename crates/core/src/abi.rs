@@ -1354,7 +1354,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // (statically) and then write the result into that
                     // memory, returning the pointer at the end.
                     (_lower_to_memory @ true, _, variant) => match variant {
-                        AbiVariant::GuestExport | AbiVariant::GuestExportAsync => {
+                        AbiVariant::GuestExport
+                        | AbiVariant::GuestExportAsync
+                        | AbiVariant::GuestExportAsyncStackful => {
                             let ElementInfo { size, align } =
                                 self.bindgen.sizes().params(&func.result);
                             let ptr = self.bindgen.return_pointer(size, align);
@@ -1371,9 +1373,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 async_note = async_.then_some("async").unwrap_or("sync"),
                                 func_name = func.name,
                             )
-                        }
-                        AbiVariant::GuestExportAsyncStackful => {
-                            todo!("stackful exports are not yet supported")
                         }
                     },
                 }
