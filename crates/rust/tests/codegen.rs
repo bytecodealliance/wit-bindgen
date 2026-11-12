@@ -760,3 +760,45 @@ fn native_import_resolver_dispatches() {
 
     assert_eq!(native_symbols::test::native::operations::add(20, 22), 42);
 }
+
+#[test]
+fn native_future_vtable_uses_target_pointer_size() {
+    use native_symbols_async::wit_future::FuturePayload;
+    let layout = <String as FuturePayload>::VTABLE.layout;
+    assert_eq!(layout.size(), 2 * core::mem::size_of::<*const u8>());
+    assert_eq!(layout.align(), core::mem::align_of::<*const u8>());
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[test]
+fn native_export_ret_area_is_thread_local() {
+    unsafe extern "C" {
+        fn testX3AnativeX2FoperationsX23describe(value: i32) -> *mut u8;
+        fn cabi_post_testX3AnativeX2FoperationsX23describe(ret: *mut u8);
+    }
+
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let mut handles = Vec::new();
+    for (idx, val) in [(0, 111i32), (1, 222222i32)] {
+        let barrier = barrier.clone();
+        handles.push(std::thread::spawn(move || unsafe {
+            let ret = testX3AnativeX2FoperationsX23describe(val);
+            // Wait until both threads have written to `_RET_AREA` before
+            // either reads or cleans up via `cabi_post_*`.
+            barrier.wait();
+            let ptr = *(ret as *const *const u8);
+            let len = *(ret.add(core::mem::size_of::<*const u8>()) as *const usize);
+            let s = core::str::from_utf8(core::slice::from_raw_parts(ptr, len))
+                .unwrap()
+                .to_owned();
+            cabi_post_testX3AnativeX2FoperationsX23describe(ret);
+            (idx, ret as usize, s)
+        }));
+    }
+
+    let r0 = handles.remove(0).join().unwrap();
+    let r1 = handles.remove(0).join().unwrap();
+    assert_ne!(r0.1, r1.1, "each thread should have its own _RET_AREA");
+    assert_eq!(r0.2, "111");
+    assert_eq!(r1.2, "222222");
+}

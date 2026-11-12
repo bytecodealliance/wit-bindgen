@@ -247,14 +247,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<u8>();"
             );
         } else {
-            // Export return areas are stored in `static` memory as they need to
-            // persist beyond the function call itself (and are cleaned-up in
+            // Export return areas are stored in `static` memory on wasm (or
+            // thread-local storage on native targets with `std`) as they need
+            // to persist beyond the function call itself (and are cleaned-up in
             // `post-return`).
             self.r#gen.return_pointer_area_size = self.r#gen.return_pointer_area_size.max(size);
             self.r#gen.return_pointer_area_align = self.r#gen.return_pointer_area_align.max(align);
+            let (wasm_cfg, native_cfg) = if self.r#gen.r#gen.opts.std_feature {
+                (
+                    "#[cfg(any(target_family = \"wasm\", not(feature = \"std\")))]",
+                    "#[cfg(all(not(target_family = \"wasm\"), feature = \"std\"))]",
+                )
+            } else {
+                (
+                    "#[cfg(target_family = \"wasm\")]",
+                    "#[cfg(not(target_family = \"wasm\"))]",
+                )
+            };
             uwriteln!(
                 self.src,
-                "let ptr{tmp} = (&raw mut _RET_AREA.0).cast::<u8>();"
+                "{wasm_cfg}
+                let ptr{tmp} = (&raw mut _RET_AREA.0).cast::<u8>();
+                {native_cfg}
+                let ptr{tmp} = _RET_AREA.with(|area| (&raw mut (*area.get()).0).cast::<u8>());"
             );
         }
         format!("ptr{tmp}")
