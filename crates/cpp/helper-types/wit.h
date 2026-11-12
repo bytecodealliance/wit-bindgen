@@ -38,7 +38,7 @@ public:
     auto iter = resources.find(id);
     std::optional<R> result;
     if (iter != resources.end()) {
-      result = std::move(iter->second);
+      result.emplace(std::move(iter->second));
       resources.erase(iter);
     }
     return std::move(result);
@@ -62,9 +62,9 @@ class string {
 public:
   // this constructor is helpful for creating vector<string>
   string(string const &b) : string(string::from_view(b.get_view())) {}
-  string(string &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
+  string(string &&b) noexcept : data_(b.data_), length(b.length) { b.data_ = nullptr; }
   string &operator=(string const &) = delete;
-  string &operator=(string &&b) {
+  string &operator=(string &&b) noexcept {
     if (data_ && data_!=empty_ptr()) {
       free(const_cast<uint8_t *>(data_));
     }
@@ -124,9 +124,9 @@ template <class T> class vector {
 
 public:
   vector(vector const &) = delete;
-  vector(vector &&b) : data_(b.data_), length(b.length) { b.data_ = nullptr; }
+  vector(vector &&b) noexcept : data_(b.data_), length(b.length) { b.data_ = nullptr; }
   vector &operator=(vector const &) = delete;
-  vector &operator=(vector &&b) {
+  vector &operator=(vector &&b) noexcept {
     if (data_ && length>0) {
       free(data_);
     }
@@ -194,12 +194,12 @@ private:
 
 public:
   unordered_map(unordered_map const &) = delete;
-  unordered_map(unordered_map &&b) : data_(b.data_), length(b.length) {
+  unordered_map(unordered_map &&b) noexcept : data_(b.data_), length(b.length) {
     b.data_ = nullptr;
     b.length = 0;
   }
   unordered_map &operator=(unordered_map const &) = delete;
-  unordered_map &operator=(unordered_map &&b) {
+  unordered_map &operator=(unordered_map &&b) noexcept {
     if (data_ && length > 0) {
       for (unsigned i = 0; i < length; ++i) { data_[i].~entry_type(); }
       free(data_);
@@ -314,7 +314,7 @@ protected:
 
 public:
   ResourceImportBase(handle_t h = invalid) : handle(h) {}
-  ResourceImportBase(ResourceImportBase &&r) : handle(r.handle) {
+  ResourceImportBase(ResourceImportBase &&r) noexcept : handle(r.handle) {
     r.handle = invalid;
   }
   ResourceImportBase(ResourceImportBase const &) = delete;
@@ -325,7 +325,7 @@ public:
     handle = invalid;
     return h;
   }
-  ResourceImportBase &operator=(ResourceImportBase &&r) {
+  ResourceImportBase &operator=(ResourceImportBase &&r) noexcept {
     assert(handle == invalid);
     handle = r.handle;
     r.handle = invalid;
@@ -863,7 +863,7 @@ public:
       return FinalAwaiter{};
     }
     void return_value(T v) {
-      value = std::move(v);
+      value.emplace(std::move(v));
     }
     void unhandled_exception() {
       assert(false && "unhandled exception in wit::Task");

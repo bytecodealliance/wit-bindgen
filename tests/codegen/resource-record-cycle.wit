@@ -1,0 +1,34 @@
+//@ async = true
+
+package test:cycle;
+
+interface types {
+  record callback-id {
+    id: u32,
+  }
+}
+
+interface world-api {
+  resource entity {
+    ray-trace: func(max-distance: f64) -> option<ray-trace-result>;
+  }
+
+  record ray-trace-result {
+    hit: entity,
+    distance: f64,
+  }
+
+  request-ipc: async func(payload: list<u8>) -> result<result<list<u8>, string>>;
+}
+
+interface callbacks {
+  use types.{callback-id};
+
+  invoke-async: async func(cb: callback-id);
+}
+
+world plugin {
+  import types;
+  import world-api;
+  export callbacks;
+}
