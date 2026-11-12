@@ -1035,10 +1035,33 @@ impl CppInterfaceGenerator<'_> {
 
         for &id in iface_data.types.values() {
             let ty = &self.resolve().types[id];
-            if matches!(ty.kind, TypeDefKind::Resource) {
-                if let Some(name) = &ty.name {
-                    let pascal = name.to_upper_camel_case();
-                    uwriteln!(self.r#gen.h_src.src, "class {pascal};");
+            if ty.owner != TypeOwner::Interface(iface) {
+                continue;
+            }
+            if let Some(name) = &ty.name {
+                match &ty.kind {
+                    TypeDefKind::Resource => {
+                        let pascal = name.to_upper_camel_case();
+                        uwriteln!(self.r#gen.h_src.src, "class {pascal};");
+                    }
+                    TypeDefKind::Record(_) => {
+                        let pascal = name.to_pascal_case();
+                        uwriteln!(self.r#gen.h_src.src, "struct {pascal};");
+                        let needs_param = match self.r#gen.opts.ownership {
+                            Ownership::Owning => false,
+                            Ownership::CoarseBorrowing => !self.r#gen.types.get(id).has_own_handle,
+                            Ownership::FineBorrowing => true,
+                        };
+                        if needs_param {
+                            let param_pascal = format!("{name}-param").to_pascal_case();
+                            uwriteln!(self.r#gen.h_src.src, "struct {param_pascal};");
+                        }
+                    }
+                    TypeDefKind::Variant(_) => {
+                        let pascal = name.to_pascal_case();
+                        uwriteln!(self.r#gen.h_src.src, "struct {pascal};");
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1298,8 +1321,13 @@ impl CppInterfaceGenerator<'_> {
     ) -> HighlevelSignature {
         let mut res = HighlevelSignature::default();
 
-        let (namespace, func_name_h) =
-            self.func_namespace_name(func, matches!(abi_variant, AbiVariant::GuestExport), false);
+        let is_export = matches!(
+            abi_variant,
+            AbiVariant::GuestExport
+                | AbiVariant::GuestExportAsync
+                | AbiVariant::GuestExportAsyncStackful
+        );
+        let (namespace, func_name_h) = self.func_namespace_name(func, is_export, false);
         res.name = func_name_h;
         res.namespace = namespace;
         let is_drop = is_special_method(func);
@@ -3111,8 +3139,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn store(&mut self, ty: &str, offset: ArchitectureSize, operands: &[String]) {
         uwriteln!(
             self.src,
-            "*(({}*)({} + {})) = {};",
-            ty,
+            "*(({ty}*)({} + {})) = ({ty})({});",
             operands[1],
             offset.format(POINTER_SIZE_EXPRESSION),
             operands[0]
@@ -4623,6 +4650,35 @@ fn is_special_method(func: &Function) -> SpecialMethod {
 
 /// Sort the specified types topologically, taking the parameter and result
 /// types of resource functions into consideration.
+fn reaches_hard(resolve: &Resolve, start: TypeId, targets: &HashSet<TypeId>) -> bool {
+    struct HardChecker<'a> {
+        targets: &'a HashSet<TypeId>,
+        seen: HashSet<TypeId>,
+        found: bool,
+    }
+
+    impl TypeIdVisitor for HardChecker<'_> {
+        fn before_visit_type_id(&mut self, id: TypeId) -> bool {
+            if self.found {
+                return false;
+            }
+            if self.targets.contains(&id) {
+                self.found = true;
+                return false;
+            }
+            self.seen.insert(id)
+        }
+    }
+
+    let mut checker = HardChecker {
+        targets,
+        seen: HashSet::new(),
+        found: false,
+    };
+    checker.visit_type_id(resolve, start);
+    checker.found
+}
+
 fn sort_types<'a>(
     resolve: &Resolve,
     types: &'a IndexMap<String, TypeId>,
@@ -4630,47 +4686,101 @@ fn sort_types<'a>(
     struct Visitor<'a> {
         resolve: &'a Resolve,
         sorted: IndexSet<TypeId>,
-        visited: HashSet<TypeId>,
+        active: HashSet<TypeId>,
+    }
+
+    impl Visitor<'_> {
+        fn visit_soft_type(&mut self, ty: &Type) {
+            let Type::Id(tid) = *ty else {
+                return;
+            };
+            if self.sorted.contains(&tid) || self.active.contains(&tid) {
+                return;
+            }
+            if !reaches_hard(self.resolve, tid, &self.active) {
+                self.visit_type_id(self.resolve, tid);
+                return;
+            }
+            // `tid` transitively embeds an active resource by value (e.g. a record
+            // holding an owned handle to this resource), so a record/variant must be
+            // emitted after the resource (relying on its forward declaration). Still
+            // unwrap structural wrappers and `using` aliases so inner non-cyclic types
+            // (like enums or aliases) are emitted before the resource.
+            match &self.resolve.types[tid].kind {
+                TypeDefKind::Record(_) | TypeDefKind::Variant(_) | TypeDefKind::Resource => {}
+                TypeDefKind::Option(inner) | TypeDefKind::List(inner) => {
+                    self.visit_soft_type(inner);
+                }
+                TypeDefKind::Type(inner) | TypeDefKind::FixedLengthList(inner, _) => {
+                    self.visit_soft_type(inner);
+                    self.sorted.insert(tid);
+                }
+                TypeDefKind::Future(inner) | TypeDefKind::Stream(inner) => {
+                    if let Some(inner) = inner {
+                        self.visit_soft_type(inner);
+                    }
+                    self.sorted.insert(tid);
+                }
+                TypeDefKind::Result(r) => {
+                    if let Some(ok) = &r.ok {
+                        self.visit_soft_type(ok);
+                    }
+                    if let Some(err) = &r.err {
+                        self.visit_soft_type(err);
+                    }
+                }
+                TypeDefKind::Tuple(t) => {
+                    for elem in &t.types {
+                        self.visit_soft_type(elem);
+                    }
+                }
+                TypeDefKind::Map(k, v) => {
+                    self.visit_soft_type(k);
+                    self.visit_soft_type(v);
+                }
+                TypeDefKind::Handle(_) | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
+                    self.sorted.insert(tid);
+                }
+                TypeDefKind::Unknown => unreachable!(),
+            }
+        }
     }
 
     impl TypeIdVisitor for Visitor<'_> {
         fn before_visit_type_id(&mut self, id: TypeId) -> bool {
+            if self.sorted.contains(&id) || self.active.contains(&id) {
+                return false;
+            }
+            self.active.insert(id);
+
             let ty = &self.resolve.types[id];
             if let TypeDefKind::Resource = &ty.kind {
-                // Here we avoid infinite recursion by remembering if we've seen
-                // this type already.
-                if self.visited.contains(&id) {
-                    false
-                } else {
-                    self.visited.insert(id);
+                // TypeIdVisitor does not consider the parameter and return
+                // types of resource associated functions to be transitive
+                // types, so we handle them as soft dependencies (yielding to
+                // hard value-layout dependencies if a cycle exists).
+                if let TypeOwner::Interface(interface) = ty.owner {
+                    for function in self.resolve.interfaces[interface].functions.values() {
+                        if let Some(resource) = function.kind.resource()
+                            && resource == id
+                        {
+                            for parameter in &function.params {
+                                self.visit_soft_type(&parameter.ty);
+                            }
 
-                    // TypeIdVisitor does not consider the parameter and return
-                    // types of resource associated functions to be transitive
-                    // types, so we need to handle that ourselves here.
-                    if let TypeOwner::Interface(interface) = ty.owner {
-                        for function in self.resolve.interfaces[interface].functions.values() {
-                            if let Some(resource) = function.kind.resource()
-                                && resource == id
-                            {
-                                for parameter in &function.params {
-                                    self.visit_type(self.resolve, &parameter.ty);
-                                }
-
-                                if let Some(ty) = function.result {
-                                    self.visit_type(self.resolve, &ty);
-                                }
+                            if let Some(ty) = function.result {
+                                self.visit_soft_type(&ty);
                             }
                         }
                     }
-
-                    true
                 }
-            } else {
-                true
             }
+
+            true
         }
 
         fn after_visit_type_id(&mut self, id: TypeId) {
+            self.active.remove(&id);
             self.sorted.insert(id);
         }
     }
@@ -4678,7 +4788,7 @@ fn sort_types<'a>(
     let mut visitor = Visitor {
         resolve,
         sorted: Default::default(),
-        visited: Default::default(),
+        active: Default::default(),
     };
 
     for &id in types.values() {

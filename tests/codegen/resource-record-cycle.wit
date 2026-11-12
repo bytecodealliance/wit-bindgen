@@ -1,0 +1,16 @@
+package test:cycle;
+
+interface world-api {
+  resource entity {
+    ray-trace: func(max-distance: f64) -> option<ray-trace-result>;
+  }
+
+  record ray-trace-result {
+    hit: entity,
+    distance: f64,
+  }
+}
+
+world plugin {
+  import world-api;
+}
