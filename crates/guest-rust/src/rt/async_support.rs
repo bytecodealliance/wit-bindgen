@@ -25,55 +25,7 @@ macro_rules! rtdebug {
     }
 }
 
-/// Helper macro to deduplicate foreign definitions of wasm functions.
-///
-/// On wasm targets this declares the canonical ABI built-ins as ordinary
-/// linker-resolved imports. On native targets each one instead becomes a shim
-/// that asks the host's import resolver for its implementation on first call
-/// (see `rt::native_imports`), identified by the same module and name, so the
-/// generated code is the same on both targets and only who satisfies the
-/// import differs.
-macro_rules! extern_wasm {
-    (
-        #[link(wasm_import_module = $module:literal)]
-        unsafe extern "C" {
-            $(
-                #[link_name = $name:literal]
-                $vis:vis fn $func_name:ident ( $($arg:ident : $ty:ty),* $(,)? ) $(-> $ret:ty)?;
-            )*
-        }
-    ) => {
-        $(
-            #[cfg(not(target_family = "wasm"))]
-            #[allow(dead_code, reason = "mirrors the wasm import set even if unused natively")]
-            $vis unsafe fn $func_name($($arg: $ty),*) $(-> $ret)? {
-                static CACHE: ::core::sync::atomic::AtomicPtr<()> =
-                    ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
-                // Named so as not to shadow any parameter.
-                let mut __impl = CACHE.load(::core::sync::atomic::Ordering::Acquire);
-                if __impl.is_null() {
-                    __impl = crate::rt::resolve_import(
-                        crate::rt::native_imports::cstr(concat!($module, "\0")),
-                        crate::rt::native_imports::cstr(concat!($name, "\0")),
-                    );
-                    CACHE.store(__impl, ::core::sync::atomic::Ordering::Release);
-                }
-                let __func: unsafe extern "C" fn($($ty),*) $(-> $ret)? =
-                    unsafe { ::core::mem::transmute(__impl) };
-                unsafe { __func($($arg),*) }
-            }
-        )*
-
-        #[cfg(target_family = "wasm")]
-        #[link(wasm_import_module = $module)]
-        unsafe extern "C" {
-            $(
-                #[link_name = $name]
-                $vis fn $func_name($($arg: $ty),*) $(-> $ret)?;
-            )*
-        }
-    };
-}
+use crate::rt::extern_wasm;
 
 mod abi_buffer;
 mod cabi;
@@ -571,7 +523,7 @@ impl ReturnCode {
 #[cfg(not(target_env = "p3"))]
 mod task_state {
     pub fn get() -> *mut u8 {
-        extern_wasm! {
+        super::extern_wasm! {
             #[link(wasm_import_module = "$root")]
             unsafe extern "C" {
                 #[link_name = "[context-get-0]"]
@@ -583,7 +535,7 @@ mod task_state {
     }
 
     pub unsafe fn set(value: *mut u8) {
-        extern_wasm! {
+        super::extern_wasm! {
             #[link(wasm_import_module = "$root")]
             unsafe extern "C" {
                 #[link_name = "[context-set-0]"]

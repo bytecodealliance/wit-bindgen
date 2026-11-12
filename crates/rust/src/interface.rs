@@ -674,14 +674,6 @@ macro_rules! {macro_name} {{
             PayloadFor::Future => "Future",
             PayloadFor::Stream => "Stream",
         };
-        let start_extra = match payload_for {
-            PayloadFor::Future => "",
-            PayloadFor::Stream => ", _: usize",
-        };
-        // On wasm the VTABLE stores the address of a local wrapper rather than
-        // the canonical import directly (see the wrapper functions below). The
-        // wrappers need *named* extra params to forward, where the extern block
-        // and native stubs only need the type.
         let start_extra_named = match payload_for {
             PayloadFor::Future => "",
             PayloadFor::Stream => ", _extra: usize",
@@ -718,80 +710,12 @@ macro_rules! {macro_name} {{
             }
         }
 
-        // Natively the intrinsics are resolved through the host's import
-        // resolver, exactly like every other import.
         let rt = self.r#gen.runtime_path();
-        let handle = || ("handle".to_string(), "u32");
-        let mut extra: Vec<(String, &str)> = Vec::new();
-        if let PayloadFor::Stream = payload_for {
-            extra.push(("amt".to_string(), "usize"));
-        }
-        let mut native_intrinsics = String::new();
-        for (rust_name, core_name, params, result) in [
-            (
-                "new",
-                format!("[{import_prefix}-new-{index}]{func_name}"),
-                vec![],
-                Some("u64"),
-            ),
-            (
-                "cancel_write",
-                format!("[{import_prefix}-cancel-write-{index}]{func_name}"),
-                vec![handle()],
-                Some("u32"),
-            ),
-            (
-                "cancel_read",
-                format!("[{import_prefix}-cancel-read-{index}]{func_name}"),
-                vec![handle()],
-                Some("u32"),
-            ),
-            (
-                "drop_writable",
-                format!("[{import_prefix}-drop-writable-{index}]{func_name}"),
-                vec![handle()],
-                None,
-            ),
-            (
-                "drop_readable",
-                format!("[{import_prefix}-drop-readable-{index}]{func_name}"),
-                vec![handle()],
-                None,
-            ),
-            (
-                "start_read",
-                format!("[async-lower][{import_prefix}-read-{index}]{func_name}"),
-                [
-                    vec![handle(), ("ptr".to_string(), "*mut u8")],
-                    extra.clone(),
-                ]
-                .concat(),
-                Some("u32"),
-            ),
-            (
-                "start_write",
-                format!("[async-lower][{import_prefix}-write-{index}]{func_name}"),
-                [
-                    vec![handle(), ("ptr".to_string(), "*const u8")],
-                    extra.clone(),
-                ]
-                .concat(),
-                Some("u32"),
-            ),
-        ] {
-            native_intrinsics.push_str(&crate::native_import_shim(
-                &module, &core_name, rust_name, &params, result, rt,
-            ));
-        }
-
         let code = format!(
             r#"
 #[doc(hidden)]
 #[allow(unused_unsafe)]
 pub mod vtable{ordinal} {{
-
-    {native_intrinsics}
-
     // Work around a behavior of LLD where in a shared library when an address
     // is taken of an imported function that only shows up as a `GOT.func`
     // import which means there's not actual import for wit-component to
@@ -799,40 +723,34 @@ pub mod vtable{ordinal} {{
     // that simply delegate to the imports. Seems to work for now even though
     // it seems like optimizations should defeat this, but it's not all that
     // much more indirection and in theory gets things working for now.
-    #[cfg(target_arch = "wasm32")]
     mod imports {{
-        #[link(wasm_import_module = "{module}")]
-        unsafe extern "C" {{
-            #[link_name = "[{import_prefix}-new-{index}]{func_name}"]
-            pub(super) fn new() -> u64;
-            #[link_name = "[{import_prefix}-cancel-write-{index}]{func_name}"]
-            pub(super) fn cancel_write(_: u32) -> u32;
-            #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
-            pub(super) fn cancel_read(_: u32) -> u32;
-            #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
-            pub(super) fn drop_writable(_: u32);
-            #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
-            pub(super) fn drop_readable(_: u32);
-            #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
-            pub(super) fn start_read(_: u32, _: *mut u8{start_extra}) -> u32;
-            #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
-            pub(super) fn start_write(_: u32, _: *const u8{start_extra}) -> u32;
+        {rt}::extern_wasm! {{
+            #[link(wasm_import_module = "{module}")]
+            unsafe extern "C" {{
+                #[link_name = "[{import_prefix}-new-{index}]{func_name}"]
+                pub(super) fn new() -> u64;
+                #[link_name = "[{import_prefix}-cancel-write-{index}]{func_name}"]
+                pub(super) fn cancel_write(handle: u32) -> u32;
+                #[link_name = "[{import_prefix}-cancel-read-{index}]{func_name}"]
+                pub(super) fn cancel_read(handle: u32) -> u32;
+                #[link_name = "[{import_prefix}-drop-writable-{index}]{func_name}"]
+                pub(super) fn drop_writable(handle: u32);
+                #[link_name = "[{import_prefix}-drop-readable-{index}]{func_name}"]
+                pub(super) fn drop_readable(handle: u32);
+                #[link_name = "[async-lower][{import_prefix}-read-{index}]{func_name}"]
+                pub(super) fn start_read(handle: u32, ptr: *mut u8{start_extra_named}) -> u32;
+                #[link_name = "[async-lower][{import_prefix}-write-{index}]{func_name}"]
+                pub(super) fn start_write(handle: u32, ptr: *const u8{start_extra_named}) -> u32;
+            }}
         }}
     }}
 
-    #[cfg(target_arch = "wasm32")]
     unsafe extern "C" fn new() -> u64 {{ unsafe {{ imports::new() }} }}
-    #[cfg(target_arch = "wasm32")]
     unsafe extern "C" fn cancel_write(handle: u32) -> u32 {{ unsafe {{ imports::cancel_write(handle) }} }}
-    #[cfg(target_arch = "wasm32")]
     unsafe extern "C" fn cancel_read(handle: u32) -> u32 {{ unsafe {{ imports::cancel_read(handle) }} }}
-    #[cfg(target_arch = "wasm32")]
     unsafe extern "C" fn drop_writable(handle: u32) {{ unsafe {{ imports::drop_writable(handle) }} }}
-    #[cfg(target_arch = "wasm32")]
     unsafe extern "C" fn drop_readable(handle: u32) {{ unsafe {{ imports::drop_readable(handle) }} }}
-    #[cfg(target_arch = "wasm32")]
     unsafe extern "C" fn start_read(handle: u32, ptr: *mut u8{start_extra_named}) -> u32 {{ unsafe {{ imports::start_read(handle, ptr{start_extra_arg}) }} }}
-    #[cfg(target_arch = "wasm32")]
     unsafe extern "C" fn start_write(handle: u32, ptr: *const u8{start_extra_named}) -> u32 {{ unsafe {{ imports::start_write(handle, ptr{start_extra_arg}) }} }}
 
     {lift_fn}
@@ -1279,7 +1197,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
             // for more details.
             uwrite!(
                 self.src,
-                "#[cfg(target_arch=\"wasm32\")]\n{run_ctors_once}();",
+                "#[cfg(target_family=\"wasm\")]\n{run_ctors_once}();",
             );
         }
 
@@ -1439,7 +1357,7 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
     /// `export_name`.
     ///
     /// Has to exist due to the fact that native names cannot contain
-    /// special characters that wasm32 can like '/'.
+    /// special characters that wasm can like '/'.
     ///
     /// `cfg_attr` conditions are mutually exclusive, so exactly one attribute
     /// applies on any target (for names that survive encoding unchanged, such
@@ -1448,8 +1366,8 @@ unsafe fn call_import(&mut self, _params: Self::ParamsLower, _results: *mut u8) 
         let prefix = self.r#gen.opts.export_prefix.as_deref().unwrap_or("");
         let native = symbol_name::make_external_component(export_name);
         format!(
-            "#[cfg_attr(target_arch = \"wasm32\", unsafe(export_name = \"{prefix}{export_name}\"))]\n\
-             #[cfg_attr(not(target_arch = \"wasm32\"), unsafe(export_name = \"{prefix}{native}\"))]\n"
+            "#[cfg_attr(target_family = \"wasm\", unsafe(export_name = \"{prefix}{export_name}\"))]\n\
+             #[cfg_attr(not(target_family = \"wasm\"), unsafe(export_name = \"{prefix}{native}\"))]\n"
         )
     }
 

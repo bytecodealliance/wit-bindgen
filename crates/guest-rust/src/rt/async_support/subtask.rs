@@ -273,7 +273,7 @@ impl<T: Subtask> InProgress<T> {
     }
 }
 
-extern_wasm! {
+crate::rt::extern_wasm! {
     #[link(wasm_import_module = "$root")]
     unsafe extern "C" {
         #[link_name = "[subtask-cancel]"]

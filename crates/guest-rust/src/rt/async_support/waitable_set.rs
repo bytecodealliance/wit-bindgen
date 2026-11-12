@@ -65,7 +65,7 @@ impl Drop for WaitableSet {
     }
 }
 
-extern_wasm! {
+crate::rt::extern_wasm! {
     #[link(wasm_import_module = "$root")]
     unsafe extern "C" {
         #[link_name = "[waitable-set-new]"]

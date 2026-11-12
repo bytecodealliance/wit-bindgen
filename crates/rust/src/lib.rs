@@ -548,33 +548,6 @@ impl RustWasm {
         Ok(remapped)
     }
 
-    /// Emits the world's native marker symbol, `__wit_bindgen_world_<world>`,
-    /// which hosts look up before calling anything else to check that the
-    /// library they opened implements the world they expect. It's keyed on
-    /// the world name and `type_section_suffix`, like the `component-type`
-    /// section on wasm.
-    fn finish_native_world_marker(&mut self, resolve: &Resolve, world: WorldId) {
-        let world = &resolve.worlds[world];
-        let pkg = world
-            .package
-            .map(|p| resolve.packages[p].name.to_string())
-            .unwrap_or_default();
-        let name = format!("{pkg}/{}", world.name);
-        let suffix = self.opts.type_section_suffix.as_deref().unwrap_or("");
-        let symbol = symbol_name::make_external_component(&format!("{name}{suffix}"));
-        uwriteln!(
-            self.src,
-            r#"
-#[cfg(not(target_arch = "wasm32"))]
-#[unsafe(no_mangle)]
-#[allow(non_snake_case)]
-pub extern "C" fn __wit_bindgen_world_{symbol}() -> *const ::core::ffi::c_char {{
-    c"{name}".as_ptr()
-}}
-"#
-        );
-    }
-
     fn finish_runtime_module(&mut self) {
         if !self.rt_module.is_empty() {
             // As above, disable rustfmt, as we use prettyplease.
@@ -754,7 +727,7 @@ pub unsafe fn bool_lift(val: u8) -> bool {
                 let rt = self.runtime_path();
                 self.src.push_str(&format!(
                     r#"
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub fn run_ctors_once() {{
     {rt}::run_ctors_once();
 }}
@@ -1023,11 +996,18 @@ macro_rules! __export_{world_name}_impl {{
         section_suffix: &str,
         func_name: Option<&str>,
     ) {
+        let emit_native_world =
+            !self.opts.pub_export_macro || section_suffix == "imports and exports";
+
         // As above, disable rustfmt, as we use prettyplease.
         if self.opts.format {
             uwriteln!(self.src, "#[rustfmt::skip]");
         }
-        self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
+        if !emit_native_world {
+            self.src.push_str("\n#[cfg(target_family = \"wasm\")]\n");
+        } else {
+            self.src.push_str("\n");
+        }
 
         // The custom section name here must start with "component-type" but
         // otherwise is attempted to be unique here to ensure that this doesn't get
@@ -1039,8 +1019,8 @@ macro_rules! __export_{world_name}_impl {{
         let pkg = &resolve.packages[world.package.unwrap()].name;
         let version = env!("CARGO_PKG_VERSION");
         self.src.push_str(&format!(
-            "#[unsafe(link_section = \"component-type:wit-bindgen:{version}:\
-             {pkg}:{world_name}:{section_suffix}{opts_suffix}\")]\n"
+            "#[cfg_attr(target_family = \"wasm\", unsafe(link_section = \"component-type:wit-bindgen:{version}:\
+             {pkg}:{world_name}:{section_suffix}{opts_suffix}\"))]\n"
         ));
 
         let mut producers = wasm_metadata::Producers::empty();
@@ -1099,6 +1079,28 @@ macro_rules! __export_{world_name}_impl {{
 
         self.src.push_str("\";\n");
         self.src.set_indent(old_indent);
+
+        if emit_native_world {
+            let symbol =
+                symbol_name::make_external_component(&format!("{pkg}/{world_name}{opts_suffix}"));
+            uwriteln!(
+                self.src,
+                "
+                #[cfg(not(target_family = \"wasm\"))]
+                const _: () = {{
+                    #[unsafe(export_name = \"__wit_bindgen_world_{symbol}\")]
+                    unsafe extern \"C\" fn __wit_bindgen_world(len: *mut usize) -> *const u8 {{
+                        if !len.is_null() {{
+                            unsafe {{
+                                *len = __WIT_BINDGEN_COMPONENT_TYPE.len();
+                            }}
+                        }}
+                        __WIT_BINDGEN_COMPONENT_TYPE.as_ptr()
+                    }}
+                }};
+            ",
+            );
+        }
 
         if let Some(func_name) = func_name {
             let rt = self.runtime_path().to_string();
@@ -1532,7 +1534,6 @@ impl WorldGenerator for RustWasm {
         let exports = mem::take(&mut self.export_modules);
         self.emit_modules(exports);
 
-        self.finish_native_world_marker(resolve, world);
         self.finish_runtime_module();
         self.finish_export_macro(resolve, world);
 
@@ -1919,10 +1920,8 @@ fn declare_import(
     rt: &str,
 ) -> String {
     let mut sig = "(".to_owned();
-    for param in params.iter() {
-        sig.push_str("_: ");
-        sig.push_str(wasm_type(*param));
-        sig.push_str(", ");
+    for (i, param) in params.iter().enumerate() {
+        uwrite!(sig, "arg{i}: {}, ", wasm_type(*param));
     }
     sig.push(')');
     assert!(results.len() < 2);
@@ -1930,79 +1929,16 @@ fn declare_import(
         sig.push_str(" -> ");
         sig.push_str(wasm_type(*result));
     }
-
-    let named_params: Vec<(String, &str)> = params
-        .iter()
-        .enumerate()
-        .map(|(i, ty)| (format!("arg{i}"), wasm_type(*ty)))
-        .collect();
-    let native = native_import_shim(
-        wasm_import_module,
-        wasm_import_name,
-        rust_name,
-        &named_params,
-        results.first().map(|r| wasm_type(*r)),
-        rt,
-    );
-
     format!(
-        r#"
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "{wasm_import_module}")]
-            unsafe extern "C" {{
-                #[link_name = "{wasm_import_name}"]
-                fn {rust_name}{sig};
-            }}
-            {native}
-        "#,
-    )
-}
-
-/// Emits the native (non-`wasm32`) definition of the core import
-/// `module`/`name`: an `unsafe extern "C" fn` named `rust_name` that asks the
-/// host's import resolver for the implementation on first call (see
-/// `rt::resolve_import`) and caches it. `params` are `(name, type)` pairs.
-fn native_import_shim(
-    module: &str,
-    name: &str,
-    rust_name: &str,
-    params: &[(String, &str)],
-    result: Option<&str>,
-    rt: &str,
-) -> String {
-    let named_params = params
-        .iter()
-        .map(|(arg, ty)| format!("{arg}: {ty}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let param_types = params
-        .iter()
-        .map(|(_, ty)| *ty)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let call_args = params
-        .iter()
-        .map(|(arg, _)| arg.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let ret_sig = result.map(|r| format!(" -> {r}")).unwrap_or_default();
-
-    format!(
-        r#"
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn {rust_name}({named_params}){ret_sig} {{
-                static CACHE: ::core::sync::atomic::AtomicPtr<()> =
-                    ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
-                // Named so as not to shadow any parameter.
-                let mut __impl = CACHE.load(::core::sync::atomic::Ordering::Acquire);
-                if __impl.is_null() {{
-                    __impl = {rt}::resolve_import(c"{module}", c"{name}");
-                    CACHE.store(__impl, ::core::sync::atomic::Ordering::Release);
+        "
+            {rt}::extern_wasm! {{
+                #[link(wasm_import_module = \"{wasm_import_module}\")]
+                unsafe extern \"C\" {{
+                    #[link_name = \"{wasm_import_name}\"]
+                    fn {rust_name}{sig};
                 }}
-                let __func: unsafe extern "C" fn({param_types}){ret_sig} = unsafe {{ ::core::mem::transmute(__impl) }};
-                unsafe {{ __func({call_args}) }}
             }}
-        "#,
+        "
     )
 }
 

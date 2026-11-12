@@ -70,7 +70,7 @@ struct RetPtr {
     len: usize,
 }
 
-extern_wasm! {
+crate::rt::extern_wasm! {
     #[link(wasm_import_module = "$root")]
     unsafe extern "C" {
         #[link_name = "[error-context-new-utf8]"]
