@@ -192,13 +192,67 @@ pub unsafe fn cabi_realloc(
     return ptr;
 }
 
+#[cfg(not(target_family = "wasm"))]
+mod native_imports;
+
+#[cfg(not(target_family = "wasm"))]
+pub use native_imports::{register_import_resolver, resolve_import};
+
+/// Helper macro emitted by generated bindings and used internally by `rt` to
+/// declare canonical ABI imports.
+///
+/// On `wasm` targets this expands to a standard `#[link(wasm_import_module)]`
+/// `extern "C"` block. On non-`wasm` targets each declaration expands to a shim
+/// that resolves `(module, name)` through [`register_import_resolver`] on first
+/// call and caches the resulting function pointer.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __extern_wasm {
+    (
+        #[link(wasm_import_module = $module:literal)]
+        unsafe extern "C" {
+            $(
+                #[link_name = $name:literal]
+                $vis:vis fn $func_name:ident ( $($arg:ident : $ty:ty),* $(,)? ) $(-> $ret:ty)?;
+            )*
+        }
+    ) => {
+        $(
+            #[cfg(not(target_family = "wasm"))]
+            #[allow(dead_code, reason = "mirrors the wasm import set even if unused natively")]
+            $vis unsafe fn $func_name($($arg: $ty),*) $(-> $ret)? {
+                static CACHE: ::core::sync::atomic::AtomicPtr<()> =
+                    ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
+                unsafe {
+                    ::core::mem::transmute::<
+                        *mut (),
+                        unsafe extern "C" fn($($ty),*) $(-> $ret)?,
+                    >($crate::rt::resolve_import($module, $name, &CACHE))($($arg),*)
+                }
+            }
+        )*
+
+        #[cfg(target_family = "wasm")]
+        #[link(wasm_import_module = $module)]
+        unsafe extern "C" {
+            $(
+                #[link_name = $name]
+                $vis fn $func_name($($arg: $ty),*) $(-> $ret)?;
+            )*
+        }
+    };
+}
+
+#[doc(hidden)]
+pub use crate::__extern_wasm as extern_wasm;
+
 /// Provide a hook for generated export functions to run static constructors at
 /// most once.
 ///
 /// wit-bindgen-rust generates a call to this function at the start of all
 /// component export functions. Importantly, it is not called as part of
 /// `cabi_realloc`, which is a *core* export func, but should not execute ctors.
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub fn run_ctors_once() {
     #[cfg(not(wasi_has_initialize))]
     {

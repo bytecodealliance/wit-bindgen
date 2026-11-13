@@ -67,6 +67,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             &rust_name,
             params,
             results,
+            self.r#gen.r#gen.runtime_path(),
         ));
         rust_name
     }
@@ -246,8 +247,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 "let ptr{tmp} = ret_area.0.as_mut_ptr().cast::<u8>();"
             );
         } else {
-            // Export return areas are stored in `static` memory as they need to
-            // persist beyond the function call itself (and are cleaned-up in
+            // Export return areas are stored in `static` memory as they need
+            // to persist beyond the function call itself (and are cleaned-up in
             // `post-return`).
             self.r#gen.return_pointer_area_size = self.r#gen.return_pointer_area_size.max(size);
             self.r#gen.return_pointer_area_align = self.r#gen.return_pointer_area_align.max(align);

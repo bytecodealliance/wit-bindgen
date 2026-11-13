@@ -13,7 +13,9 @@
 
 #[cfg(not(feature = "rustc-dep-of-std"))]
 extern crate alloc;
-#[cfg(feature = "std")]
+#[cfg(docsrs)]
+extern crate self as wit_bindgen;
+#[cfg(any(feature = "std", not(target_family = "wasm")))]
 extern crate std;
 
 /// Generate bindings for an input WIT document.
@@ -893,6 +895,15 @@ extern crate std;
 /// });
 /// ```
 ///
+/// ## Native (non-WebAssembly) targets
+///
+/// Generated bindings compile and link on native targets, but calling imported
+/// functions will panic at runtime by default because `wit-bindgen` only
+/// provides the guest side of the ABI. Running native bindings against a host
+/// implementation requires a separate native host runtime; see [`NATIVE.md`]
+/// for details on the symbol conventions and runtime hooks.
+///
+/// [`NATIVE.md`]: https://github.com/bytecodealliance/wit-bindgen/blob/main/crates/guest-rust/NATIVE.md
 /// [WIT package]: https://component-model.bytecodealliance.org/design/packages.html
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::generate;

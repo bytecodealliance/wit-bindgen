@@ -25,7 +25,7 @@ mod multiple_paths {
 mod inline_and_path {
     wit_bindgen::generate!({
         inline: r#"
-        package test:paths;
+        package test:inline-and-path-root;
 
         world test {
             import test:inline-and-path/bar;
@@ -240,7 +240,7 @@ mod owning_method_chaining {
 mod borrowing_method_chaining {
     wit_bindgen::generate!({
         inline: r#"
-        package test:method-chaining;
+        package test:borrowing-method-chaining;
         world test {
             resource a {
                 constructor();

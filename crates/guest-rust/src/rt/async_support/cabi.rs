@@ -76,21 +76,33 @@
 use alloc::boxed::Box;
 use core::ffi::c_void;
 
-extern_wasm! {
-    unsafe extern "C" {
-        /// Sets the global task pointer to `ptr` provided. Returns the previous
-        /// value.
-        ///
-        /// This function acts as a dual getter and a setter. To get the
-        /// current task pointer a dummy `ptr` can be provided (e.g. NULL) and then
-        /// it's passed back when you're done working with it. When setting the
-        /// current task pointer it's recommended to call this and then call it
-        /// again with the previous value when the tasks's work is done.
-        ///
-        /// For executors they need to ensure that the `ptr` passed in lives for
-        /// the entire lifetime of the component model task.
-        pub fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task;
-    }
+#[cfg(target_family = "wasm")]
+unsafe extern "C" {
+    /// Sets the global task pointer to `ptr` provided. Returns the previous
+    /// value.
+    ///
+    /// This function acts as a dual getter and a setter. To get the
+    /// current task pointer a dummy `ptr` can be provided (e.g. NULL) and then
+    /// it's passed back when you're done working with it. When setting the
+    /// current task pointer it's recommended to call this and then call it
+    /// again with the previous value when the tasks's work is done.
+    ///
+    /// For executors they need to ensure that the `ptr` passed in lives for
+    /// the entire lifetime of the component model task.
+    pub fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task;
+}
+
+/// Native counterpart of the C-defined `wasip3_task_set` above. Uses
+/// thread-local storage so multiple threads can poll async exports concurrently
+/// without interfering. Note that unlike the weak C symbol on wasm, each
+/// version of `wit-bindgen` has its own thread-local slot here.
+#[cfg(not(target_family = "wasm"))]
+pub unsafe fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task {
+    use core::cell::Cell;
+    std::thread_local!(
+        static CURRENT: Cell<*mut wasip3_task> = const { Cell::new(core::ptr::null_mut()) }
+    );
+    CURRENT.with(|current| current.replace(ptr))
 }
 
 /// The first version of `wasip3_task` which implies the existence of the

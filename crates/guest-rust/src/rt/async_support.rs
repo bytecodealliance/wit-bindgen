@@ -25,39 +25,7 @@ macro_rules! rtdebug {
     }
 }
 
-/// Helper macro to deduplicate foreign definitions of wasm functions.
-///
-/// This automatically imports when on wasm targets and then defines a dummy
-/// panicking shim for native targets to support native compilation but fail at
-/// runtime.
-macro_rules! extern_wasm {
-    (
-        $(#[$extern_attr:meta])*
-        unsafe extern "C" {
-            $(
-                $(#[$func_attr:meta])*
-                $vis:vis fn $func_name:ident ( $($args:tt)* ) $(-> $ret:ty)?;
-            )*
-        }
-    ) => {
-        $(
-            #[cfg(not(target_family = "wasm"))]
-            #[allow(unused, reason = "dummy shim for non-wasm compilation, never invoked")]
-            $vis unsafe fn $func_name($($args)*) $(-> $ret)? {
-                unreachable!();
-            }
-        )*
-
-        #[cfg(target_family = "wasm")]
-        $(#[$extern_attr])*
-        unsafe extern "C" {
-            $(
-                $(#[$func_attr])*
-                $vis fn $func_name($($args)*) $(-> $ret)?;
-            )*
-        }
-    };
-}
+use crate::rt::extern_wasm;
 
 mod abi_buffer;
 mod cabi;
@@ -555,7 +523,7 @@ impl ReturnCode {
 #[cfg(not(target_env = "p3"))]
 mod task_state {
     pub fn get() -> *mut u8 {
-        extern_wasm! {
+        super::extern_wasm! {
             #[link(wasm_import_module = "$root")]
             unsafe extern "C" {
                 #[link_name = "[context-get-0]"]
@@ -567,7 +535,7 @@ mod task_state {
     }
 
     pub unsafe fn set(value: *mut u8) {
-        extern_wasm! {
+        super::extern_wasm! {
             #[link(wasm_import_module = "$root")]
             unsafe extern "C" {
                 #[link_name = "[context-set-0]"]
