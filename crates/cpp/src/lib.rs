@@ -3367,27 +3367,17 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
 
                 let op0 = &operands[0];
-                let ok_ty = self.r#gen.optional_type_name(
-                    result.ok.as_ref(),
-                    &self.namespace,
-                    Flavor::InStruct,
-                );
-                let err_ty = self.r#gen.optional_type_name(
-                    result.err.as_ref(),
-                    &self.namespace,
-                    Flavor::InStruct,
-                );
                 // Bind payloads by reference: the payload's heap data must
                 // stay owned by `op0` (which outlives the lowered call). A
                 // by-value binding would free that data at the end of the
                 // `if`/`else` block below, before the flat ABI consumes it.
                 let bind_ok = if let Some(_ok) = result.ok.as_ref() {
-                    format!("{ok_ty}&& {ok_payload} = std::move({op0}).value();")
+                    format!("auto&& {ok_payload} = std::move({op0}).value();")
                 } else {
                     String::new()
                 };
                 let bind_err = if let Some(_err) = result.err.as_ref() {
-                    format!("{err_ty}&& {err_payload} = std::move({op0}).error();")
+                    format!("auto&& {err_payload} = std::move({op0}).error();")
                 } else {
                     String::new()
                 };
