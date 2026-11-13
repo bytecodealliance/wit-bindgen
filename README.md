@@ -431,6 +431,10 @@ To avoid touching the files during regeneration (including `moon.pkg` or `moon.m
 
 /!\ MoonBit is still evolving, so please check out the [Weekly Updates](https://www.moonbitlang.com/weekly-updates/) for any breaking changes or deprecations.
 
+### Guest: Zig
+
+See the [wit-bindgen-zig README.md](crates/zig/README.md) for details on generating and using Zig bindings.
+
 ### Guest: Other Languages
 
 A (non-exhaustive) list of other languages known to support components are:
