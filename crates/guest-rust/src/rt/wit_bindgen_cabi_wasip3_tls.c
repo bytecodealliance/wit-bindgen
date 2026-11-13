@@ -22,3 +22,12 @@ void wit_bindgen_0_63_0_set_task_context(void *ptr) {
   }
   task_context = ptr;
 }
+
+static _Thread_local void *WASIP3_TASK = NULL;
+
+__attribute__((__weak__))
+void *wasip3_task_set(void *ptr) {
+  void *ret = WASIP3_TASK;
+  WASIP3_TASK = ptr;
+  return ret;
+}
