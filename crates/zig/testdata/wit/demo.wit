@@ -1,0 +1,60 @@
+package demo:gen@1.2.0;
+
+interface types {
+    /// Where something is.
+    record point {
+        x: s32,
+        y: s32,
+        /// Optional label.
+        label: option<string>,
+    }
+
+    enum color { red, green, blue }
+
+    flags access { read, write, exec }
+
+    variant shape {
+        nothing,
+        circle(f32),
+        polygon(list<point>),
+    }
+
+    type pair = tuple<u8, f64>;
+    type names = list<string>;
+}
+
+interface host {
+    use types.{point, color, shape, access};
+
+    resource canvas {
+        constructor(width: u32, height: u32);
+        /// Opens a canvas stored on disk.
+        open: static func(path: string) -> result<canvas, string>;
+        draw: func(shape: shape, at: point, color: color);
+        /// Copies `other` on top of this canvas.
+        blend: func(other: borrow<canvas>, types: access);
+        name: func() -> option<string>;
+    }
+
+    /// Shows the canvas and closes it.
+    present: func(canvas: canvas) -> u64;
+    log: func(message: string);
+}
+
+interface guest {
+    use types.{point};
+
+    describe: func() -> point;
+}
+
+world plugin {
+    use host.{canvas};
+    use types.{shape, pair};
+
+    import host;
+
+    export guest;
+    export start: func(canvas: canvas) -> result<_, string>;
+    export measure: func(shape: shape, scale: pair) -> f32;
+    export stop: func();
+}

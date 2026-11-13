@@ -1,0 +1,24 @@
+[package]
+name = "wit-bindgen-zig"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+rust-version = { workspace = true }
+description = """
+Zig bindings generator for WIT and the component model, typically used through
+the `wit-bindgen-cli` crate.
+"""
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, optional = true }
+indexmap = { workspace = true }
+wit-bindgen-core = { workspace = true }
+
+[features]
+clap = ['dep:clap', 'wit-bindgen-core/clap']
