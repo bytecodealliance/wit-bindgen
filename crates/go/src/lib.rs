@@ -599,6 +599,12 @@ func wasm_{kind}_drop_readable_{snake}(handle int32)
 //go:wasmimport {module} [{kind}-drop-writable-{index}]{func_name}
 func wasm_{kind}_drop_writable_{snake}(handle int32)
 
+//go:wasmimport {module} [{kind}-cancel-read-{index}]{func_name}
+func wasm_{kind}_cancel_read_{snake}(handle int32) uint32
+
+//go:wasmimport {module} [{kind}-cancel-write-{index}]{func_name}
+func wasm_{kind}_cancel_write_{snake}(handle int32) uint32
+
 {lift}
 
 {lower}
@@ -608,8 +614,8 @@ var wasm_{kind}_vtable_{snake} = witTypes.{upper_kind}Vtable[{payload}]{{
 	Align: {align},
 	Read: wasm_{kind}_read_{snake},
 	Write: wasm_{kind}_write_{snake},
-	CancelRead: nil,
-	CancelWrite: nil,
+	CancelRead: wasm_{kind}_cancel_read_{snake},
+	CancelWrite: wasm_{kind}_cancel_write_{snake},
 	DropReadable: wasm_{kind}_drop_readable_{snake},
 	DropWritable: wasm_{kind}_drop_writable_{snake},
 	Lift: {lift_name},
