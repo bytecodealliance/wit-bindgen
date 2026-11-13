@@ -996,18 +996,11 @@ macro_rules! __export_{world_name}_impl {{
         section_suffix: &str,
         func_name: Option<&str>,
     ) {
-        let emit_native_world =
-            !self.opts.pub_export_macro || section_suffix == "imports and exports";
-
         // As above, disable rustfmt, as we use prettyplease.
         if self.opts.format {
             uwriteln!(self.src, "#[rustfmt::skip]");
         }
-        if !emit_native_world {
-            self.src.push_str("\n#[cfg(target_family = \"wasm\")]\n");
-        } else {
-            self.src.push_str("\n");
-        }
+        self.src.push_str("\n");
 
         // The custom section name here must start with "component-type" but
         // otherwise is attempted to be unique here to ensure that this doesn't get
@@ -1080,27 +1073,25 @@ macro_rules! __export_{world_name}_impl {{
         self.src.push_str("\";\n");
         self.src.set_indent(old_indent);
 
-        if emit_native_world {
-            let symbol =
-                symbol_name::make_external_component(&format!("{pkg}/{world_name}{opts_suffix}"));
-            uwriteln!(
-                self.src,
-                "
-                #[cfg(not(target_family = \"wasm\"))]
-                const _: () = {{
-                    #[unsafe(export_name = \"__wit_bindgen_world_{symbol}\")]
-                    unsafe extern \"C\" fn __wit_bindgen_world(len: *mut usize) -> *const u8 {{
-                        if !len.is_null() {{
-                            unsafe {{
-                                *len = __WIT_BINDGEN_COMPONENT_TYPE.len();
-                            }}
+        let symbol =
+            symbol_name::make_external_component(&format!("{pkg}/{world_name}{opts_suffix}"));
+        uwriteln!(
+            self.src,
+            "
+            #[cfg(not(target_family = \"wasm\"))]
+            const _: () = {{
+                #[unsafe(export_name = \"__wit_bindgen_world_{symbol}\")]
+                unsafe extern \"C\" fn __wit_bindgen_world(len: *mut usize) -> *const u8 {{
+                    if !len.is_null() {{
+                        unsafe {{
+                            *len = __WIT_BINDGEN_COMPONENT_TYPE.len();
                         }}
-                        __WIT_BINDGEN_COMPONENT_TYPE.as_ptr()
                     }}
-                }};
-            ",
-            );
-        }
+                    __WIT_BINDGEN_COMPONENT_TYPE.as_ptr()
+                }}
+            }};
+        ",
+        );
 
         if let Some(func_name) = func_name {
             let rt = self.runtime_path().to_string();

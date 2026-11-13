@@ -50,9 +50,10 @@ decode this symbol before calling into a dynamic library so any mismatch in WIT
 world, interfaces, types, or function signatures is caught at load time.
 
 When `pub_export_macro: true` is used (for example in an API wrapper crate), the
-`__wit_bindgen_world_<world>` symbol is emitted inside the generated `export!`
-macro so it is exported by the downstream `cdylib` that implements the world
-rather than by intermediate `rlib` dependencies.
+top-level bindings emit `__wit_bindgen_world_<world>-with-all-of-its-exports-removed`
+(describing only imports) and the generated `export!` macro additionally emits
+`__wit_bindgen_world_<world>` (describing both imports and exports), matching the
+two `component-type` custom sections emitted on WebAssembly.
 
 Binding the same world more than once in a single linkage unit requires setting
 `type_section_suffix` (to disambiguate `__wit_bindgen_world_<world>`) and
@@ -105,14 +106,8 @@ space (each `cdylib` links its own allocator):
 
 ## Async Task Context (`wasip3_task_set`)
 
-When the `async` feature is enabled on native targets:
-
-- With the `std` feature enabled (default), `wasip3_task_set` stores the current
-  task pointer in `std::thread_local!` storage so multiple host threads can poll
-  async guest exports concurrently. Note that unlike the weak C symbol used on
-  WebAssembly, each version of `wit-bindgen` maintains its own thread-local slot
-  on native targets.
-- Without the `std` feature (`no_std`), `wasip3_task_set` is routed through the
-  native import resolver under module `"wit-bindgen"` and name
-  `"wasip3_task_set"` with signature
-  `unsafe extern "C" fn(*mut wasip3_task) -> *mut wasip3_task`.
+When the `async` feature is enabled on native targets, `wasip3_task_set` stores
+the current task pointer in `std::thread_local!` storage so multiple host
+threads can poll async guest exports concurrently. Note that unlike the weak C
+symbol used on WebAssembly, each version of `wit-bindgen` maintains its own
+thread-local slot on native targets.

@@ -92,29 +92,17 @@ unsafe extern "C" {
     pub fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task;
 }
 
-/// Native counterpart of the C-defined `wasip3_task_set` above when `std` is
-/// available. Uses thread-local storage so multiple threads can poll async
-/// exports concurrently without interfering. Note that unlike the weak C symbol
-/// on wasm, each version of `wit-bindgen` has its own thread-local slot here.
-#[cfg(all(not(target_family = "wasm"), feature = "std"))]
+/// Native counterpart of the C-defined `wasip3_task_set` above. Uses
+/// thread-local storage so multiple threads can poll async exports concurrently
+/// without interfering. Note that unlike the weak C symbol on wasm, each
+/// version of `wit-bindgen` has its own thread-local slot here.
+#[cfg(not(target_family = "wasm"))]
 pub unsafe fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task {
     use core::cell::Cell;
     std::thread_local!(
         static CURRENT: Cell<*mut wasip3_task> = const { Cell::new(core::ptr::null_mut()) }
     );
     CURRENT.with(|current| current.replace(ptr))
-}
-
-// Without `std` there are no thread-locals on stable Rust, so delegate task
-// context storage to the host's native import resolver rather than assuming
-// single-threaded execution.
-#[cfg(all(not(target_family = "wasm"), not(feature = "std")))]
-crate::rt::extern_wasm! {
-    #[link(wasm_import_module = "wit-bindgen")]
-    unsafe extern "C" {
-        #[link_name = "wasip3_task_set"]
-        pub fn wasip3_task_set(ptr: *mut wasip3_task) -> *mut wasip3_task;
-    }
 }
 
 /// The first version of `wasip3_task` which implies the existence of the

@@ -432,30 +432,12 @@ macro_rules! {macro_name} {{
 
     pub fn finish(&mut self) -> String {
         if !self.return_pointer_area_size.is_empty() {
-            let (wasm_cfg, native_cfg) = if self.r#gen.opts.std_feature {
-                (
-                    "#[cfg(any(target_family = \"wasm\", not(feature = \"std\")))]",
-                    "#[cfg(all(not(target_family = \"wasm\"), feature = \"std\"))]",
-                )
-            } else {
-                (
-                    "#[cfg(target_family = \"wasm\")]",
-                    "#[cfg(not(target_family = \"wasm\"))]",
-                )
-            };
             uwriteln!(self.src,);
             self.align_area(self.return_pointer_area_align);
             uwrite!(
                 self.src,
-                "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
-                {wasm_cfg}
-                static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
-                {native_cfg}
-                ::std::thread_local! {{
-                    static _RET_AREA: ::core::cell::UnsafeCell<_RetArea> = const {{
-                        ::core::cell::UnsafeCell::new(_RetArea([::core::mem::MaybeUninit::uninit(); {size}]))
-                    }};
-                }}
+                    "struct _RetArea([::core::mem::MaybeUninit::<u8>; {size}]);
+                    static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); {size}]);
 ",
                 size = self.return_pointer_area_size.format_term(POINTER_SIZE_EXPRESSION, true),
             );

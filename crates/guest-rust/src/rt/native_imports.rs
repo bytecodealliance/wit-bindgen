@@ -9,6 +9,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::Mutex;
 
 type ResolverFn = dyn Fn(&str, &str) -> Option<NonNull<()>> + Send + Sync;
 
@@ -43,7 +44,10 @@ pub unsafe fn register_import_resolver<F>(resolver: F)
 where
     F: Fn(&str, &str) -> Option<NonNull<()>> + Send + Sync + 'static,
 {
-    RESOLVERS.lock().push(Arc::new(resolver));
+    RESOLVERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(Arc::new(resolver));
 }
 
 /// Fast-path lookup called by [`crate::rt::extern_wasm!`] shims.
@@ -60,14 +64,14 @@ pub fn resolve_import(module: &str, name: &str, cache: &AtomicPtr<()>) -> *mut (
 #[cold]
 #[inline(never)]
 fn resolve_import_cold(module: &str, name: &str, cache: &AtomicPtr<()>) -> *mut () {
-    let len = RESOLVERS.lock().len();
+    let len = RESOLVERS.lock().unwrap_or_else(|e| e.into_inner()).len();
     assert!(
         len > 0,
         "import `{module}#{name}` was called on a native target without an import resolver \
          registered via `wit_bindgen::rt::register_import_resolver`"
     );
     for i in (0..len).rev() {
-        let resolver = RESOLVERS.lock()[i].clone();
+        let resolver = RESOLVERS.lock().unwrap_or_else(|e| e.into_inner())[i].clone();
         if let Some(ptr) = resolver(module, name) {
             let ptr = ptr.as_ptr();
             cache.store(ptr, Ordering::Release);
@@ -75,82 +79,6 @@ fn resolve_import_cold(module: &str, name: &str, cache: &AtomicPtr<()>) -> *mut 
         }
     }
     panic!("no registered import resolver provided an implementation for import `{module}#{name}`");
-}
-
-#[cfg(feature = "std")]
-struct Mutex<T>(std::sync::Mutex<T>);
-
-#[cfg(feature = "std")]
-impl<T> Mutex<T> {
-    const fn new(val: T) -> Self {
-        Self(std::sync::Mutex::new(val))
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, T> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
-    }
-}
-
-#[cfg(not(feature = "std"))]
-use no_std_mutex::Mutex;
-
-#[cfg(not(feature = "std"))]
-mod no_std_mutex {
-    use core::cell::UnsafeCell;
-    use core::ops::{Deref, DerefMut};
-    use core::sync::atomic::{AtomicBool, Ordering};
-
-    pub(super) struct Mutex<T> {
-        locked: AtomicBool,
-        data: UnsafeCell<T>,
-    }
-
-    unsafe impl<T: Send> Send for Mutex<T> {}
-    unsafe impl<T: Send> Sync for Mutex<T> {}
-
-    impl<T> Mutex<T> {
-        pub(super) const fn new(data: T) -> Self {
-            Self {
-                locked: AtomicBool::new(false),
-                data: UnsafeCell::new(data),
-            }
-        }
-
-        pub(super) fn lock(&self) -> MutexGuard<'_, T> {
-            while self
-                .locked
-                .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_err()
-            {
-                core::hint::spin_loop();
-            }
-            MutexGuard { lock: self }
-        }
-    }
-
-    pub(super) struct MutexGuard<'a, T> {
-        lock: &'a Mutex<T>,
-    }
-
-    impl<T> Deref for MutexGuard<'_, T> {
-        type Target = T;
-
-        fn deref(&self) -> &T {
-            unsafe { &*self.lock.data.get() }
-        }
-    }
-
-    impl<T> DerefMut for MutexGuard<'_, T> {
-        fn deref_mut(&mut self) -> &mut T {
-            unsafe { &mut *self.lock.data.get() }
-        }
-    }
-
-    impl<T> Drop for MutexGuard<'_, T> {
-        fn drop(&mut self) {
-            self.lock.locked.store(false, Ordering::Release);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -204,7 +132,6 @@ mod tests {
         assert_eq!(CALLS.load(Ordering::Relaxed), 2);
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn concurrent_registration_and_resolution() {
         crate::rt::extern_wasm! {

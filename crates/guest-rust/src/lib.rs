@@ -15,7 +15,7 @@
 extern crate alloc;
 #[cfg(docsrs)]
 extern crate self as wit_bindgen;
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", not(target_family = "wasm")))]
 extern crate std;
 
 /// Generate bindings for an input WIT document.
