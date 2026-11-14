@@ -286,6 +286,17 @@ fn get_package_fqn(root_pkg: &str, id: PackageId, resolve: &Resolve) -> String {
     )
 }
 
+fn format_docs(docs: &Docs) -> String {
+    docs.contents.as_deref().map_or_else(
+        || "///\n".to_string(),
+        |contents| {
+            contents
+                .lines()
+                .fold("".to_string(), |accum, line| format!("{accum}/// {line}\n"))
+        },
+    )
+}
+
 fn get_interface_fqn(
     root_pkg: &str,
     interface_id: &WorldKey,
@@ -638,10 +649,8 @@ impl WorldGenerator for D {
                     let upper_name = ty.name.as_ref().unwrap().to_upper_camel_case();
                     let escaped_name = escape_d_identifier(&upper_name);
 
-                    r#gen.src.push_str(&format!(
-                        "\n/++\n{}\n+/\n",
-                        ty.docs.contents.as_deref().unwrap_or_default()
-                    ));
+                    r#gen.src.push_str("\n");
+                    r#gen.src.push_str(&format_docs(&ty.docs));
 
                     r#gen
                         .src
@@ -811,10 +820,7 @@ impl WorldGenerator for D {
 
         let world = &resolve.worlds[world_id];
 
-        world_src.push_str(&format!(
-            "/++\n{}\n+/\n",
-            world.docs.contents.as_deref().unwrap_or_default()
-        ));
+        world_src.push_str(&format_docs(&world.docs));
 
         world_src.push_str(&format!("module {};\n\n", self.world_fqn));
         world_src.push_str(&format!("import {};\n\n", self.common_module));
@@ -1134,10 +1140,7 @@ impl<'a> DInterfaceGenerator<'a> {
 
         let interface = &self.resolve.interfaces[self.interface.unwrap()];
 
-        self.src.push_str(&format!(
-            "/++\n{}\n+/\n",
-            interface.docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str(&format_docs(&interface.docs));
 
         self.src.push_str(&format!("module {};\n\n", self.fqn));
 
@@ -1322,10 +1325,8 @@ impl<'a> DInterfaceGenerator<'a> {
 
         let d_sig = self.get_d_signature(func);
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            func.docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&func.docs));
 
         if d_sig.static_member {
             self.src.push_str("static ");
@@ -1450,10 +1451,8 @@ impl<'a> DInterfaceGenerator<'a> {
             params.push(&param);
         }
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            func.docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&func.docs));
 
         self.src.push_str(&format!(
             "alias {}_Sig = {} function({});\n",
@@ -1725,10 +1724,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             .unwrap()
             .to_string();
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
+
         self.src.push_str(&format!("struct {escaped_name} {{\n"));
 
         let mut is_first = true;
@@ -1742,10 +1740,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                 self.src.push_str("\n");
             }
 
-            self.src.push_str(&format!(
-                "/++\n{}\n+/\n",
-                field.docs.contents.as_deref().unwrap_or_default()
-            ));
+            self.src.push_str(&format_docs(&field.docs));
             self.src.push_str(&format!(
                 "{} {escaped_name};\n",
                 self.type_name(&field.ty, &owner_fqn)
@@ -1804,10 +1799,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         match self.direction {
             None => panic!("Resources can only be generated for imports, or exports. Not common."),
             Some(Direction::Import) => {
-                self.src.push_str(&format!(
-                    "\n/++\n{}\n+/\n",
-                    docs.contents.as_deref().unwrap_or_default()
-                ));
+                self.src.push_str("\n");
+                self.src.push_str(&format_docs(&docs));
 
                 self.src.push_str(&format!(
                     "struct {escaped_name} {{
@@ -1963,10 +1956,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
                         panic!("Emitting resource from `interface` outside that interface?");
                     }
 
-                    self.src.push_str(&format!(
-                        "\n/++\n{}\n+/\n",
-                        docs.contents.as_deref().unwrap_or_default()
-                    ));
+                    self.src.push_str("\n");
+                    self.src.push_str(&format_docs(&docs));
 
                     self.src.push_str(&format!(
                         "struct {escaped_name} {{
@@ -2098,10 +2089,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let upper_name = name.to_upper_camel_case();
         let escaped_name = escape_d_identifier(&upper_name);
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
 
         let owner_fqn = self
             .type_owner_fqn(&self.resolve.types[id].owner, false)
@@ -2129,10 +2118,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             repr => todo!("flags {repr:?}"),
         };
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
+
         self.src.push_str(&format!("struct {escaped_name} {{\n"));
 
         self.src
@@ -2142,10 +2130,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             if index != 0 {
                 self.src.push_str("\n");
             }
-            self.src.push_str(&format!(
-                "/++\n{}\n+/\n",
-                flag.docs.contents.as_deref().unwrap_or_default()
-            ));
+            self.src.push_str(&format_docs(&flag.docs));
             self.src.push_str(&format!(
                 "enum {} = {escaped_name}[{index}];\n",
                 escape_d_identifier(&flag.name.to_lower_camel_case())
@@ -2170,10 +2155,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             .unwrap()
             .to_string();
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
+
         self.src.push_str(&format!("struct {escaped_name} {{\n"));
 
         self.src.push_str("mixin WitVariant!(\n");
@@ -2208,10 +2192,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             } else {
                 self.src.push_str("\n");
             }
-            self.src.push_str(&format!(
-                "/++\n{}\n+/\n",
-                case.docs.contents.as_deref().unwrap_or_default()
-            ));
+            self.src.push_str(&format_docs(&case.docs));
             self.src.push_str(&format!(
                 "{},\n",
                 escape_d_identifier(&case.name.to_lower_camel_case())
@@ -2224,10 +2205,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             .push_str("pragma(inline, true) Tag tag() const @safe @nogc nothrow pure => _tag;\n");
 
         for case in &variant.cases {
-            self.src.push_str(&format!(
-                "\n/++\n{}\n+/\n",
-                case.docs.contents.as_deref().unwrap_or_default()
-            ));
+            self.src.push_str("\n");
+            self.src.push_str(&format_docs(&case.docs));
+
             let upper_case_name = case.name.to_upper_camel_case();
             let escaped_upper_case_name = escape_d_identifier(&upper_case_name);
 
@@ -2314,10 +2294,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let upper_name = name.to_upper_camel_case();
         let escaped_name = escape_d_identifier(&upper_name);
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
 
         let owner_fqn = self
             .type_owner_fqn(&self.resolve.types[id].owner, false)
@@ -2332,10 +2310,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let upper_name = name.to_upper_camel_case();
         let escaped_name = escape_d_identifier(&upper_name);
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
 
         let owner_fqn = self
             .type_owner_fqn(&self.resolve.types[id].owner, false)
@@ -2358,10 +2334,9 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             Int::U64 => "ulong",
         };
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
+
         self.src
             .push_str(&format!("enum {escaped_name} : {storage_type} {{\n"));
 
@@ -2372,10 +2347,7 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
             } else {
                 self.src.push_str("\n");
             }
-            self.src.push_str(&format!(
-                "/++\n{}\n+/\n",
-                case.docs.contents.as_deref().unwrap_or_default()
-            ));
+            self.src.push_str(&format_docs(&case.docs));
             self.src.push_str(&format!(
                 "{},\n",
                 escape_d_identifier(&case.name.to_lower_camel_case())
@@ -2389,10 +2361,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let upper_name = name.to_upper_camel_case();
         let escaped_name = escape_d_identifier(&upper_name);
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
 
         let typename = self.type_name(
             alias_ty,
@@ -2408,10 +2378,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let upper_name = name.to_upper_camel_case();
         let escaped_name = escape_d_identifier(&upper_name);
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
 
         let owner_fqn = self
             .type_owner_fqn(&self.resolve.types[id].owner, false)
@@ -2433,10 +2401,8 @@ impl<'a> InterfaceGenerator<'a> for DInterfaceGenerator<'a> {
         let upper_name = name.to_upper_camel_case();
         let escaped_name = escape_d_identifier(&upper_name);
 
-        self.src.push_str(&format!(
-            "\n/++\n{}\n+/\n",
-            docs.contents.as_deref().unwrap_or_default()
-        ));
+        self.src.push_str("\n");
+        self.src.push_str(&format_docs(&docs));
 
         let owner_fqn = self
             .type_owner_fqn(&self.resolve.types[id].owner, false)
