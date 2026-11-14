@@ -2,6 +2,7 @@ import {
   "moonbitlang/core/deque" @deque,
   "moonbitlang/core/ref" @ref,
   "moonbitlang/core/set" @set,
+  "moonbitlang/core/sorted_map" @sorted_map,
 }
 
 warnings = "-44"

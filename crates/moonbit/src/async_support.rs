@@ -1255,6 +1255,11 @@ impl<'a> InterfaceGenerator<'a> {
             .world_gen
             .pkg_resolver
             .qualify_package(&helper_package, ASYNC_CORE_DIR);
+        let sorted_map = endpoint_use.lower.then(|| {
+            self.world_gen
+                .pkg_resolver
+                .qualify_external_package(&helper_package, "moonbitlang/core/sorted_map")
+        });
 
         let elem_size = result_type
             .map(|ty| self.world_gen.sizes.size(ty).size_wasm32())
@@ -1753,7 +1758,7 @@ fn wasm{symbol_name}FutureLowerCommitted(future : {ffi}Future[{result}]) -> Int 
                         )
                     })
                     .unwrap_or_default();
-                let lower_bridge = if endpoint_use.lower {
+                let lower_bridge = if let Some(sorted_map) = &sorted_map {
                     format!(
                         r#"
 ///|
@@ -1763,7 +1768,7 @@ priv struct Wasm{symbol_name}FutureProducer {{
 }}
 
 ///|
-let wasm{symbol_name}FutureProducers : Map[Int, Wasm{symbol_name}FutureProducer] = Map([])
+let wasm{symbol_name}FutureProducers : {sorted_map}SortedMap[Int, Wasm{symbol_name}FutureProducer] = {sorted_map}SortedMap([])
 
 {reject_prepared_func}
 
@@ -2093,7 +2098,7 @@ fn wasm{symbol_name}StreamLowerCommitted(stream : {ffi}Stream[{result}]) -> Int 
                         )
                     })
                     .unwrap_or_default();
-                let lower_bridge = if endpoint_use.lower {
+                let lower_bridge = if let Some(sorted_map) = &sorted_map {
                     format!(
                         r#"
 ///|
@@ -2103,7 +2108,7 @@ priv struct Wasm{symbol_name}StreamProducer {{
 }}
 
 ///|
-let wasm{symbol_name}StreamProducers : Map[Int, Wasm{symbol_name}StreamProducer] = Map([])
+let wasm{symbol_name}StreamProducers : {sorted_map}SortedMap[Int, Wasm{symbol_name}StreamProducer] = {sorted_map}SortedMap([])
 
 {reject_prepared_func}
 

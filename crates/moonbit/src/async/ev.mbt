@@ -17,7 +17,7 @@
 /// source; `owned_coroutines` contains only runtime bridge coroutines.
 priv struct ComponentTaskState {
   lane : TaskLane
-  subscribers : Map[Int, Subscriber]
+  subscribers : @sorted_map.SortedMap[Int, Subscriber]
   task : Coroutine
   owned_coroutines : @set.Set[Coroutine]
   mut resolution : TaskResolution
@@ -52,7 +52,7 @@ fn current_waitableset() -> WaitableSet {
 
 ///|
 fn component_task_state(waitable_set : WaitableSet) -> ComponentTaskState? {
-  component_tasks.get(waitable_set)
+  component_tasks.get(waitable_set.0)
 }
 
 ///|
@@ -66,7 +66,7 @@ fn finish_waitableset(
   }
   drop_task_wakeup(task_state)
   guard task_state.subscribers.is_empty() else { panic() }
-  component_tasks.remove(waitable_set)
+  component_tasks.remove(waitable_set.0)
   waitable_set.drop()
   tls_set(0)
 }
@@ -154,13 +154,13 @@ pub fn with_waitableset(f : async () -> Unit) -> Int {
   let task = spawn_owned(f, lane, None)
   let task_state = {
     lane,
-    subscribers: Map([]),
+    subscribers: SortedMap([]),
     task,
     owned_coroutines: Set([]),
     resolution: Pending,
     cancellation_pending: false,
   }
-  component_tasks.set(waitable_set, task_state)
+  component_tasks.set(waitable_set.0, task_state)
   reschedule(lane)
   next_callback(waitable_set, task_state)
 }
@@ -215,7 +215,9 @@ pub fn cb(event : Int, waitable_id : Int, code : Int) -> Int {
 }
 
 ///|
-let component_tasks : Map[WaitableSet, ComponentTaskState] = Map([])
+// Host handles need not be dense. An ordered map bounds lookup cost without
+// hashing or allocating storage up to the largest handle.
+let component_tasks : @sorted_map.SortedMap[Int, ComponentTaskState] = SortedMap([])
 
 ///|
 /// Spawn a coroutine owned by the current component-model async task.
