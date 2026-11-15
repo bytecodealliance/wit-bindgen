@@ -129,9 +129,13 @@ pub fn endCall() void {
 }
 
 fn cabiRealloc(old: ?[*]u8, old_len: usize, alignment: usize, new_len: usize) callconv(.c) ?[*]u8 {
+    if (new_len == 0) return @ptrFromInt(alignment);
     const a: std.mem.Alignment = .fromByteUnits(alignment);
     const new = arena().rawAlloc(new_len, a, @returnAddress()) orelse @panic("OOM");
-    if (old) |p| @memcpy(new[0..old_len], p[0..old_len]);
+    if (old) |p| {
+        const copy_len = @min(old_len, new_len);
+        @memcpy(new[0..copy_len], p[0..copy_len]);
+    }
     return new;
 }
 
@@ -191,6 +195,7 @@ pub fn alignOf(comptime T: type) comptime_int {
         .int => |i| if (i.bits == 21) 4 else @divExact(i.bits, 8),
         .float => |f| @divExact(f.bits, 8),
         .pointer => 4,
+        .array => |a| alignOf(a.child),
         .@"enum" => if (isHandle(T)) 4 else @sizeOf(Discriminant(caseCount(T))),
         .optional => |o| @max(1, alignOf(o.child)),
         .@"union" => |u| blk: {
@@ -221,6 +226,7 @@ pub fn sizeOf(comptime T: type) comptime_int {
         .int => |i| if (i.bits == 21) 4 else @divExact(i.bits, 8),
         .float => |f| @divExact(f.bits, 8),
         .pointer => 8,
+        .array => |a| a.len * sizeOf(a.child),
         .@"enum" => if (isHandle(T)) 4 else @sizeOf(Discriminant(caseCount(T))),
         .optional => |o| alignUp(payloadOffset(T) + sizeOf(o.child), alignOf(T)),
         .@"union" => |u| blk: {
@@ -295,6 +301,12 @@ fn flattenType(comptime T: type) []const Core {
         .int => |i| if (i.bits == 64) &.{.i64} else &.{.i32},
         .float => |f| if (f.bits == 64) &.{.f64} else &.{.f32},
         .pointer => &.{ .i32, .i32 },
+        .array => |a| blk: {
+            var out: []const Core = &.{};
+            const elem = flatten(a.child);
+            for (0..a.len) |_| out = out ++ elem;
+            break :blk out;
+        },
         .optional => |o| flattenCases(&.{ void, o.child }),
         .@"union" => |u| blk: {
             var payloads: []const type = &.{};
@@ -358,6 +370,10 @@ pub fn lowerFlat(comptime T: type, value: T, slots: []u64) void {
         },
         .float => |f| slots[0] = if (f.bits == 64) @bitCast(value) else @as(u32, @bitCast(value)),
         .pointer => |p| lowerSlice(p.child, value, slots),
+        .array => |a| {
+            const step = comptime flatten(a.child).len;
+            for (value, 0..) |item, i| lowerFlat(a.child, item, slots[i * step ..]);
+        },
         .@"enum" => {
             if (comptime isHandle(T)) untrack(T, value);
             slots[0] = @intFromEnum(value);
@@ -412,6 +428,12 @@ pub fn liftFlat(comptime T: type, slots: []const u64) T {
             return @bitCast(@as(u32, @truncate(slots[0])));
         },
         .pointer => |p| return liftSlice(p.child, slots[0], slots[1]),
+        .array => |a| {
+            var out: T = undefined;
+            const step = comptime flatten(a.child).len;
+            for (&out, 0..) |*item, i| item.* = liftFlat(a.child, slots[i * step ..]);
+            return out;
+        },
         .@"enum" => {
             const value: T = @enumFromInt(slots[0]);
             if (comptime isHandle(T)) track(T, value);
@@ -490,6 +512,10 @@ pub fn store(comptime T: type, value: T, ptr: [*]u8) void {
             put(u32, ptr, @intCast(slots[0]));
             put(u32, ptr + 4, @intCast(slots[1]));
         },
+        .array => |a| {
+            const step = comptime sizeOf(a.child);
+            for (value, 0..) |item, i| store(a.child, item, ptr + i * step);
+        },
         .@"enum" => {
             if (comptime isHandle(T)) {
                 untrack(T, value);
@@ -525,6 +551,12 @@ pub fn load(comptime T: type, ptr: [*]const u8) T {
         .int => |i| return if (i.bits == 21) @truncate(get(u32, ptr)) else get(T, ptr),
         .float => |f| return @bitCast(get(std.meta.Int(.unsigned, f.bits), ptr)),
         .pointer => |p| return liftSlice(p.child, get(u32, ptr), get(u32, ptr + 4)),
+        .array => |a| {
+            var out: T = undefined;
+            const step = comptime sizeOf(a.child);
+            for (&out, 0..) |*item, i| item.* = load(a.child, ptr + i * step);
+            return out;
+        },
         .@"enum" => {
             if (comptime isHandle(T)) {
                 const value: T = @enumFromInt(get(u32, ptr));

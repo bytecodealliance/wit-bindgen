@@ -27,6 +27,26 @@ impl LanguageMethods for Zig {
             || name.contains("stream")
             || name.contains("map")
             || name.contains("resource-borrow-in-record")
+            // Guest-exported resources and borrowed handles inside aggregates
+            // are not yet supported by `wit-bindgen-zig`.
+            || matches!(
+                name,
+                "import-and-export-resource.wit"
+                    | "import-and-export-resource-alias.wit"
+                    | "issue929.wit"
+                    | "issue929-no-import.wit"
+                    | "issue929-only-methods.wit"
+                    | "issue1466.wit"
+                    | "issue1703.wit"
+                    | "issue1731.wit"
+                    | "resource-alias.wit"
+                    | "resource-fallible-constructor.wit"
+                    | "resource-local-alias.wit"
+                    | "resource-local-alias-borrow.wit"
+                    | "resources.wit"
+                    | "resources-in-aggregates.wit"
+                    | "resources-with-lists.wit"
+            )
     }
 
     fn prepare(&self, runner: &mut Runner) -> Result<()> {
@@ -49,7 +69,7 @@ impl LanguageMethods for Zig {
             .arg("-target")
             .arg("wasm32-wasi")
             .arg("-O")
-            .arg("ReleaseSmall")
+            .arg("ReleaseSafe")
             .arg("-fno-entry")
             .arg("-rdynamic")
             .arg("-mexec-model=reactor")

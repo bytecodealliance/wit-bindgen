@@ -1,6 +1,5 @@
 [package]
 name = "wit-bindgen-zig"
-authors = ["Alex Crichton <alex@alexcrichton.com>"]
 version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
@@ -13,6 +12,10 @@ the `wit-bindgen-cli` crate.
 
 [lints]
 workspace = true
+
+[lib]
+doctest = false
+test = false
 
 [dependencies]
 anyhow = { workspace = true }
