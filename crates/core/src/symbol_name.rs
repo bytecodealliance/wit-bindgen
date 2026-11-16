@@ -1,4 +1,4 @@
-use wit_bindgen_core::abi;
+use crate::abi;
 
 fn hexdigit(v: u32) -> char {
     if v < 10 {

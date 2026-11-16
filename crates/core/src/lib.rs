@@ -16,6 +16,7 @@ mod async_;
 pub use async_::AsyncFilterSet;
 mod chainable_method;
 pub use chainable_method::{ChainableMethodFilterSet, ChainingMode};
+pub mod symbol_name;
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Direction {

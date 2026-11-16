@@ -9,7 +9,7 @@ use core::alloc::Layout;
 #[derive(Copy, Clone)]
 pub struct UnitStreamOps;
 
-extern_wasm! {
+crate::rt::extern_wasm! {
     #[link(wasm_import_module = "$root")]
     unsafe extern "C" {
         #[link_name = "[stream-new-unit]"]
