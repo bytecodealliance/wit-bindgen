@@ -149,6 +149,16 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", clap(long))]
     pub print_remote_pkg_version: bool,
 
+    /// If true, async exports are stackful (`[async-lift-stackful]`) instead of
+    /// callback-based.
+    ///
+    /// A stackful export runs on its own stack and may block on a waitable
+    /// set. The generated code does not export a `[callback]` function. This
+    /// needs a runtime that can block a thread, such as TinyGo with
+    /// cooperative threads.
+    #[cfg_attr(feature = "clap", clap(long))]
+    pub stackful_exports: bool,
+
     /// When generating Go package names, include the WIT package version even
     /// if only one version of that package is referenced by the specified
     /// world.
@@ -1313,7 +1323,14 @@ func {camel}({go_params}) {go_results} {{
 
         let async_ = self.opts.async_.is_async(resolve, interface, func, false);
 
-        let (variant, prefix) = if async_ {
+        let stackful = async_ && self.opts.stackful_exports;
+
+        let (variant, prefix) = if stackful {
+            (
+                AbiVariant::GuestExportAsyncStackful,
+                "[async-lift-stackful]",
+            )
+        } else if async_ {
             (AbiVariant::GuestExportAsync, "[async-lift]")
         } else {
             (AbiVariant::GuestExport, "")
@@ -1398,30 +1415,47 @@ func {camel}({go_params}) {go_results} {{
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            (
-                if abi::guest_export_needs_post_return(resolve, func) {
-                    format!(
-                        "{PINNER} := &runtime.Pinner{{}}
-                    defer {PINNER}.Unpin()"
-                    )
-                } else {
-                    String::new()
-                },
+            let pinner = if abi::guest_export_needs_post_return(resolve, func) {
                 format!(
-                    "
+                    "{PINNER} := &runtime.Pinner{{}}
+                    defer {PINNER}.Unpin()"
+                )
+            } else {
+                String::new()
+            };
+            let task_return = format!(
+                "//go:wasmimport [export]{module} [task-return]{function}
+func wasm_export_task_return_{name}({task_return_params})
+"
+            );
+            if stackful {
+                (
+                    pinner,
+                    format!(
+                        "
+
+{task_return}"
+                    ),
+                    "witAsync.Run(func() {",
+                    "})",
+                )
+            } else {
+                (
+                    pinner,
+                    format!(
+                        "
 
 //go:wasmexport [callback]{prefix}{export_name}
 func wasm_export_callback_{name}(event0 uint32, event1 uint32, event2 uint32) uint32 {{
         return witAsync.Callback(event0, event1, event2)
 }}
 
-//go:wasmimport [export]{module} [task-return]{function}
-func wasm_export_task_return_{name}({task_return_params})
-"
-                ),
-                "return int32(witAsync.Run(func() {",
-                "}))",
-            )
+{task_return}"
+                    ),
+                    "return int32(witAsync.Run(func() {",
+                    "}))",
+                )
+            }
         } else if abi::guest_export_needs_post_return(resolve, func) {
             (
                 format!("{PINNER} := &{SYNC_EXPORT_PINNER}"),
