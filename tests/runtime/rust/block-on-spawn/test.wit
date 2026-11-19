@@ -1,0 +1,15 @@
+package my:test;
+
+world runner {
+  import foo: interface {
+    hi: async func();
+  }
+
+  export run: async func();
+}
+
+world test {
+  export foo: interface {
+    hi: async func();
+  }
+}

@@ -8,8 +8,8 @@ use core::sync::atomic::{
 /// Small helper type to wrap `T` in a lock-like primitive which only supports
 /// the `try_lock` operation.
 ///
-/// This is useful on wasm right now where threads aren't actually a thing so
-/// there shouldn't ever be contention, but the Rust type system still requires
+/// This is useful on wasm, where threads never run in parallel and there
+/// shouldn't ever be contention, but the Rust type system still requires
 /// Send/Sync.
 #[derive(Default)]
 pub struct TryLock<T> {

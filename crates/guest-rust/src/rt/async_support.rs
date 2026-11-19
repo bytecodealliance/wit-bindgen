@@ -116,6 +116,9 @@ struct SharedTaskState {
     // Note the `TryLock` is the same as `waitables` above, it's serving the
     // purpose of interior mutability.
     waitable_set: TryLock<Option<WaitableSet>>,
+
+    /// Tasks spawned onto this task through the `rust_spawn` hook.
+    spawned: spawn::Spawned,
 }
 
 /// An entry of `SharedTaskState::waitables` which is added through the C ABI.
@@ -198,7 +201,7 @@ impl<'a> TaskState<'a> {
                     .store(SLEEP_STATE_POLLING, Ordering::Relaxed);
 
                 // Poll our future, seeing if it was able to make progress.
-                let poll = me.tasks.poll_next(&mut context);
+                let poll = me.tasks.poll_next(&mut context, &me.shared.spawned);
 
                 match poll {
                     // The task list is empty, but there might be remaining work
@@ -328,10 +331,12 @@ impl Drop for TaskState<'_> {
         // execute arbitrary code. This arbitrary code might require the p3 APIs
         // for managing waitables, notably around removing them. In this
         // situation we ensure that the p3 task is set while futures are being
-        // destroyed.
+        // destroyed. The same applies to tasks that these destructors spawn
+        // onto this task.
         if !self.tasks.is_empty() {
             self.with_p3_task_set(|me| {
                 me.tasks = Default::default();
+                me.shared.spawned.take();
             })
         }
     }
@@ -418,8 +423,9 @@ impl SharedTaskState {
     }
 
     #[cfg(feature = "async-spawn")]
-    unsafe fn cabi_rust_spawn(_ptr: *mut c_void, task: Box<dyn Future<Output = ()>>) {
-        spawn::push(Pin::from(task))
+    unsafe fn cabi_rust_spawn(ptr: *mut c_void, task: Box<dyn Future<Output = ()>>) {
+        let me = unsafe { Self::cabi_to_self(ptr) };
+        me.spawned.push(Pin::from(task))
     }
 }
 
