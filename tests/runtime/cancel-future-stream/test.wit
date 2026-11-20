@@ -1,0 +1,22 @@
+//@ async = true
+package my:test;
+
+interface i {
+  pending-future: async func(x: future);
+  pending-stream: async func(x: stream);
+
+  // Creates a stream and stashes its writer for `pending-stream-write`.
+  make-stream: func() -> stream;
+  // Writes to the stashed writer; blocks until the reader reads or drops.
+  pending-stream-write: async func();
+}
+
+world test {
+  export i;
+}
+
+world runner {
+  import i;
+
+  export run: async func();
+}
