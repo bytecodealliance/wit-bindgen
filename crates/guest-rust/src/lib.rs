@@ -576,7 +576,7 @@ extern crate std;
 /// #     // ...
 /// # }
 /// #
-/// export!(MyComponent with_types_in self);
+/// export!({ ty: MyComponent, with_types_in: self });
 /// #
 /// # fn main() {}
 /// ```
@@ -609,7 +609,7 @@ extern crate std;
 /// #     // ...
 /// # }
 /// #
-/// bindings::export!(MyComponent with_types_in bindings);
+/// bindings::export!({ ty: MyComponent, with_types_in: bindings });
 /// #
 /// # fn main() {}
 /// ```
