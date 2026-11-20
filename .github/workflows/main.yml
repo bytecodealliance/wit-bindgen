@@ -79,7 +79,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # moonbit removed from language matrix for now - causing CI failures
-        lang: [c, rust, csharp, cpp, go, d]
+        lang: [c, rust, csharp, cpp, go, d, zig]
         exclude:
           # For now csharp doesn't work on macos, so exclude it from testing.
           - os: macos-latest
@@ -126,6 +126,12 @@ jobs:
       with:
         compiler: ldc-1.42
       if: matrix.lang == 'd'
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v2
+      with:
+        version: 0.16.0
+      if: matrix.lang == 'zig'
 
       # Hacky work-around for https://github.com/dotnet/runtime/issues/80619
     - run: dotnet new console -o /tmp/foo
@@ -206,6 +212,7 @@ jobs:
     - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown
     - run: cargo build --no-default-features --features moonbit
+    - run: cargo build --no-default-features --features zig
 
     # Feature combos of the `wit-bindgen` crate
     - run: cargo build --target wasm32-wasip1 -p wit-bindgen --no-default-features

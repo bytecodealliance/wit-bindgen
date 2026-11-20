@@ -83,6 +83,15 @@ enum Opt {
         args: Common,
     },
 
+    /// Generates bindings for Zig guest modules.
+    #[cfg(feature = "zig")]
+    Zig {
+        #[clap(flatten)]
+        opts: wit_bindgen_zig::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
+
     // doc-comments are present on `wit_bindgen_test::Opts` for clap to use.
     Test {
         #[clap(flatten)]
@@ -161,6 +170,8 @@ fn main() -> Result<()> {
         Opt::Csharp { opts, args } => (opts.build(), args),
         #[cfg(feature = "d")]
         Opt::D { opts, args } => (opts.build(args.out_dir.as_ref()), args),
+        #[cfg(feature = "zig")]
+        Opt::Zig { opts, args } => (opts.build(), args),
         Opt::Test { opts } => return opts.run(std::env::args_os().nth(0).unwrap().as_ref()),
     };
 

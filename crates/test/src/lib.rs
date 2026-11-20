@@ -23,6 +23,7 @@ mod moonbit;
 mod runner;
 mod rust;
 mod wat;
+mod zig;
 
 /// Tool to run tests that exercise the `wit-bindgen` bindings generator.
 ///
@@ -231,6 +232,7 @@ enum Language {
     MoonBit,
     Go,
     D,
+    Zig,
     Custom(custom::Language),
 }
 
@@ -454,6 +456,7 @@ impl Runner {
             "mbt" => Language::MoonBit,
             "go" => Language::Go,
             "d" => Language::D,
+            "zig" => Language::Zig,
             other => Language::Custom(custom::Language::lookup(self, other)?),
         };
 
@@ -1357,6 +1360,7 @@ impl Language {
         Language::MoonBit,
         Language::Go,
         Language::D,
+        Language::Zig,
     ];
 
     fn obj(&self) -> &dyn LanguageMethods {
@@ -1369,6 +1373,7 @@ impl Language {
             Language::MoonBit => &moonbit::MoonBit,
             Language::Go => &go::Go,
             Language::D => &d::D,
+            Language::Zig => &zig::Zig,
             Language::Custom(custom) => custom,
         }
     }

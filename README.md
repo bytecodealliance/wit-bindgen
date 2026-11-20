@@ -31,7 +31,7 @@ between bindings definitions.
 
 The `wit-bindgen` repository is currently focused on **guest** programs which
 are those compiled to WebAssembly. Languages developed in this repository are
-Rust, C, C++, C#, and Go. For other languages see the [documentation
+Rust, C, C++, C#, Go, D, and Zig. For other languages see the [documentation
 below](#guest-other-languages).
 
 Executing a component in a host is not
@@ -430,6 +430,61 @@ You will find the files to be modified with the name `**/stub.mbt`.
 To avoid touching the files during regeneration (including `moon.pkg` or `moon.mod`) you may use `--ignore-stub`.
 
 /!\ MoonBit is still evolving, so please check out the [Weekly Updates](https://www.moonbitlang.com/weekly-updates/) for any breaking changes or deprecations.
+
+### Guest: Zig
+
+See the [`wit-bindgen-zig` README.md](crates/zig/README.md) for complete documentation on type mappings, memory and resource lifetimes, and `build.zig` integration.
+
+Generate the Zig bindings for `wit/host.wit` using the [`wit-bindgen` CLI][cli-install]:
+
+```sh
+wit-bindgen zig ./wit --out-dir src/bindings
+# Generating "src/bindings/wit.zig"
+# Generating "src/bindings/wit/abi.zig"
+# Generating "src/bindings/wit/exports.zig"
+# Generating "src/bindings/wit/root.zig"
+```
+
+Implement the guest component by importing the generated `wit` module and registering your export functions in a `comptime` block:
+
+```zig
+// src/guest.zig
+const wit = @import("wit");
+
+comptime {
+    wit.exports.run(run);
+}
+
+fn run() void {
+    wit.root.print("Hello, world!");
+}
+```
+
+Compile the guest as a WebAssembly reactor module with `zig` (0.16.0 or newer), embed the WIT metadata, and produce a component with [`wasm-tools`]:
+
+```sh
+zig build-exe \
+  -target wasm32-wasi \
+  -O ReleaseSmall \
+  -fno-entry \
+  -rdynamic \
+  -mexec-model=reactor \
+  --dep wit \
+  -Mroot=src/guest.zig \
+  -Mwit=src/bindings/wit.zig \
+  -femit-bin=my-core.wasm
+
+wasm-tools component embed ./wit my-core.wasm -o my-embedded.wasm
+wasm-tools component new my-embedded.wasm \
+  --adapt wasi_snapshot_preview1.reactor.wasm \
+  -o my-component.wasm
+```
+
+You can then inspect the resulting component's WIT interface with:
+
+```sh
+wasm-tools component wit ./my-component.wasm
+```
 
 ### Guest: Other Languages
 

@@ -26,6 +26,7 @@ const CRATES_TO_PUBLISH: &[&str] = &[
     "wit-bindgen-moonbit",
     "wit-bindgen-go",
     "wit-bindgen-d",
+    "wit-bindgen-zig",
     "wit-bindgen-rust-macro",
     "wit-bindgen-rt",
     "wit-bindgen",
